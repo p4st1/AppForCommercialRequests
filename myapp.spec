@@ -9,7 +9,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('ui/*.ui', 'ui'),
-        ('utilities/*', 'json')
+        ('utilities/*.json', 'utilities')
     ],
     hiddenimports=[],
     hookspath=[],

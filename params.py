@@ -1,25 +1,13 @@
-from PyQt6.QtCore import Qt, QDate, QDateTime, pyqtSignal
-from PyQt6.QtWidgets import (
-    QMainWindow,
-    QFileDialog,
-    QMessageBox,
-    QTableWidgetItem,
-    QMenu,
-    QPushButton,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit
-)
-from PyQt6.QtGui import (
-    QFont
-)
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit
 from PyQt6 import uic
 import json
 from utilities.config import Config
+import sys
+import os
 
 
-
-class Dialog():
+class Dialog:
     def myDialog(self):
         dlg = QMessageBox(self)
         dlg.setWindowTitle("Подтверждение")
@@ -39,29 +27,34 @@ class Dialog():
 class addNewParamGUI(QMainWindow):
     def __init__(self, parent=None):
         super(addNewParamGUI, self).__init__(parent)
-        uic.loadUi("ui/createParams.ui", self)
+        uic.loadUi(self.resourcePath("ui/createParams.ui"), self)
 
         self.addButton.clicked.connect(self.addParam)
         self.cancelButton.clicked.connect(self.cancelParam)
-        
+
     def cancelParam(self):
         self.close()
-        
+
     def addParam(self):
-        
-        with open('utilities/variables.json', 'r', encoding='utf-8') as f:
+
+        with open(
+            self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
+        ) as f:
             self.paramsData = json.load(f)
-            self.paramsData['parameters'][len(self.paramsData['parameters']) + 1] = [self.nameEdit.text(), 
-                                                                                     self.valueEdit.text(), 
-                                                                                     Config.types[self.typeEdit.currentText()]]
-        with open('utilities/variables.json', 'w', encoding='utf-8') as f:
+            self.paramsData["parameters"][len(self.paramsData["parameters"]) + 1] = [
+                self.nameEdit.text(),
+                self.valueEdit.text(),
+                Config.types[self.typeEdit.currentText()],
+            ]
+        with open(
+            self.resourcePath("utilities/variables.json"), "w", encoding="utf-8"
+        ) as f:
             json.dump(self.paramsData, f, indent=4)
         self.close()
-    
-    
+
     def closeEvent(self, event):
         self.close()
-    
+
     def funcExitSystem(self):
         self.close()
 
@@ -71,23 +64,23 @@ class mainWindow(QMainWindow):
 
     def __init__(self, parent=None):
         super(mainWindow, self).__init__(parent)
-        uic.loadUi("ui/paramsGui.ui", self)
-    
+        uic.loadUi(self.resourcePath("ui/paramsGui.ui"), self)
+
         self.parameters = {}
         self.hasChanges = False
-        
-        with open('utilities/variables.json', 'r', encoding='utf-8') as f:
+
+        with open(
+            self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
+        ) as f:
             self.paramsData = json.load(f)
 
         self.saveButton.setDisabled(True)
         self.saveAndCloseButton.setDisabled(True)
-        
-        for key, item in self.paramsData['parameters'].items():
-            print(key, item)
-            
+
+        for key, item in self.paramsData["parameters"].items():
             label = QLabel()
             label.setText(item[0])
-            _name = f'lineEdit{key}'
+            _name = f"lineEdit{key}"
             self._name = QLineEdit()
             value = str(item[1]) + self.getValueType(item[2])
             self._name.setText(value)
@@ -106,53 +99,58 @@ class mainWindow(QMainWindow):
 
     def saveChanges(self):
         for key, item in self.parameters.items():
-            value = item.text().split('%')[0]
+            value = item.text().split("%")[0]
             if value.isdigit():
-                self.paramsData['parameters'][key] = [self.paramsData['parameters'][key][0], value, 'percents']
+                self.paramsData["parameters"][key] = [
+                    self.paramsData["parameters"][key][0],
+                    value,
+                    "percents",
+                ]
             else:
                 error = QMessageBox(self)
                 error.setWindowTitle("Ошибка")
-                error.setText(
-                    f"Введены некорректные данные: {value}")
+                error.setText(f"Введены некорректные данные: {value}")
                 error.exec()
-        with open('utilities/variables.json', 'w') as f:
+        with open(self.resourcePath("utilities/variables.json"), "w") as f:
             json.dump(self.paramsData, f, indent=4)
         self.saveButton.setDisabled(True)
         self.saveAndCloseButton.setDisabled(True)
         self.hasChanges = False
-    
+
     def saveChangesAndClose(self):
         for key, item in self.parameters.items():
-            value = item.text().split('%')[0]
+            value = item.text().split("%")[0]
             if value.isdigit():
-                self.paramsData['parameters'][key] = [self.paramsData['parameters'][key][0], value, 'percents']
+                self.paramsData["parameters"][key] = [
+                    self.paramsData["parameters"][key][0],
+                    value,
+                    "percents",
+                ]
             else:
                 error = QMessageBox(self)
                 error.setWindowTitle("Ошибка")
-                error.setText(
-                    f"Введены некорректные данные: {value}")
+                error.setText(f"Введены некорректные данные: {value}")
                 error.exec()
-        with open('utilities/variables.json', 'w') as f:
+        with open(self.resourcePath("utilities/variables.json"), "w") as f:
             json.dump(self.paramsData, f, indent=4)
         self.saveButton.setDisabled(True)
         self.saveAndCloseButton.setDisabled(True)
         self.hasChanges = False
         self.close()
-            
+
     def onTextValueChanged(self, arg):
         self.hasChanges = True
         self.saveButton.setDisabled(False)
         self.saveAndCloseButton.setDisabled(False)
-    
+
     def getValueType(self, value):
-        if value == 'percents':
-            return '%'
-          
+        if value == "percents":
+            return "%"
+
     def addNewParamGui(self):
         window = addNewParamGUI(self)
         window.show()
-        print(window)
-        
+
     def cancelChanges(self):
         if self.hasChanges:
             res = Dialog.myDialog(self)
@@ -160,11 +158,19 @@ class mainWindow(QMainWindow):
                 self.close()
         else:
             self.close()
-        
+
+    def resourcePath(self, relativePath):
+        try:
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path - os.path.abspath(".")
+
+        return os.path.join(base_path, relativePath)
+
     def closeEvent(self, event):
         self.windowClosed.emit()
         super().closeEvent(event)
         self.close()
-    
+
     def funcExitSystem(self):
         self.close()
