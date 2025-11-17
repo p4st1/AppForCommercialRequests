@@ -442,7 +442,7 @@
 		</data>
 		<key>Resources/base_library.zip</key>
 		<data>
-		aPmwmqTmqrK4Gjd8qQbhoeZcF1o=
+		zDCMRQIy+ydiCNWuy7JHRHPtJSo=
 		</data>
 		<key>Resources/dateutil/zoneinfo/dateutil-zoneinfo.tar.gz</key>
 		<data>
@@ -547,26 +547,6 @@
 		<key>Resources/icon-windowed.icns</key>
 		<data>
 		eEHOuYpZLB0vKGVIWGZOh5rH8+o=
-		</data>
-		<key>Resources/json/__pycache__/config.cpython-312.pyc</key>
-		<data>
-		uIkaGR84rO549pHCLSnWdA8dJs4=
-		</data>
-		<key>Resources/json/__pycache__/config.cpython-313.pyc</key>
-		<data>
-		64bmovdvxdF2ANOgJeSocII6S00=
-		</data>
-		<key>Resources/json/config.json</key>
-		<data>
-		IHA1Hx4arTmD39yHEB5qKalVrGQ=
-		</data>
-		<key>Resources/json/config.py</key>
-		<data>
-		otTi0s1CIAtQBQis8WYzswUWTes=
-		</data>
-		<key>Resources/json/variables.json</key>
-		<data>
-		Csqzv4yKWSdWo3FDFjNTMJyCsow=
 		</data>
 		<key>Resources/lxml/isoschematron/resources/rng/iso-schematron.rng</key>
 		<data>
@@ -3088,6 +3068,14 @@
 		<data>
 		DXfazbtz275mHDhJi77AUaViVsU=
 		</data>
+		<key>Resources/utilities/config.json</key>
+		<data>
+		IHA1Hx4arTmD39yHEB5qKalVrGQ=
+		</data>
+		<key>Resources/utilities/variables.json</key>
+		<data>
+		Csqzv4yKWSdWo3FDFjNTMJyCsow=
+		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
@@ -3457,11 +3445,6 @@
 		<dict>
 			<key>symlink</key>
 			<string>../Resources/docx</string>
-		</dict>
-		<key>Frameworks/json</key>
-		<dict>
-			<key>symlink</key>
-			<string>../Resources/json</string>
 		</dict>
 		<key>Frameworks/libcrypto.3.dylib</key>
 		<dict>
@@ -4573,6 +4556,11 @@
 			<key>symlink</key>
 			<string>../Resources/ui</string>
 		</dict>
+		<key>Frameworks/utilities</key>
+		<dict>
+			<key>symlink</key>
+			<string>../Resources/utilities</string>
+		</dict>
 		<key>Resources/MarkupSafe-3.0.2.dist-info/INSTALLER</key>
 		<dict>
 			<key>hash2</key>
@@ -5420,7 +5408,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			duXSVKJ2YnGnF7+3Czqkd+KqJFIhb+/9O+QTB6k1fpo=
+			PX38YqGz5IVtXjaQeFBfeUcaTi3+u2Rn8NGocOhTgV0=
 			</data>
 		</dict>
 		<key>Resources/charset_normalizer</key>
@@ -5608,41 +5596,6 @@
 			<key>hash2</key>
 			<data>
 			uQo7VuWRab4Phv4EEGmfQsyqFqDIXZgO8OtgaAMvCzY=
-			</data>
-		</dict>
-		<key>Resources/json/__pycache__/config.cpython-312.pyc</key>
-		<dict>
-			<key>hash2</key>
-			<data>
-			7zlJbHlmnQWAsH20voPLWiLGkn9wtrOT3jTP3chvGnc=
-			</data>
-		</dict>
-		<key>Resources/json/__pycache__/config.cpython-313.pyc</key>
-		<dict>
-			<key>hash2</key>
-			<data>
-			W+CJ8xr7xx3Gpin52+kw/yZrcpjkgH3CLJZUa3yywFU=
-			</data>
-		</dict>
-		<key>Resources/json/config.json</key>
-		<dict>
-			<key>hash2</key>
-			<data>
-			LqS9R2f6+KZEnkjAZIg9YtJ0PnAuu7hd5glu3b8cjRE=
-			</data>
-		</dict>
-		<key>Resources/json/config.py</key>
-		<dict>
-			<key>hash2</key>
-			<data>
-			WxK0Oxj1HpiBmyo9l/lK1pCZF8BnSmCJZY5NuINKqmM=
-			</data>
-		</dict>
-		<key>Resources/json/variables.json</key>
-		<dict>
-			<key>hash2</key>
-			<data>
-			KIy0F8EnRYd5KUh2oy7ReIqfQ0gf6HaZcTXvBED5bYs=
 			</data>
 		</dict>
 		<key>Resources/libcrypto.3.dylib</key>
@@ -10113,6 +10066,20 @@
 			<key>hash2</key>
 			<data>
 			V9Kcg0gAR2u1TdMt8vGoKJ+53NpceF4RLmYHcgjSV2k=
+			</data>
+		</dict>
+		<key>Resources/utilities/config.json</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			LqS9R2f6+KZEnkjAZIg9YtJ0PnAuu7hd5glu3b8cjRE=
+			</data>
+		</dict>
+		<key>Resources/utilities/variables.json</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			KIy0F8EnRYd5KUh2oy7ReIqfQ0gf6HaZcTXvBED5bYs=
 			</data>
 		</dict>
 	</dict>
