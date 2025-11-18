@@ -1,0 +1,4 @@
+*.app binary
+*.app -diff
+*.app -merge
+*.app -text
