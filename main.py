@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QTableWidgetI
 from PyQt6 import uic
 from params import mainWindow as paramsWindow
 from create import createTextFile as exportTextFile
+from suppliers import mainWindow as suppliersWindow
 import pandas as pd
 import json
 import sys
@@ -38,7 +39,12 @@ class mainWindow(QMainWindow):
         self.logisticNum.setText(self.configData["config"]["logisticNum"])
 
         self.openTableButton.clicked.connect(self.openTable)
+        
+        #edit menu buttons
         self.editParamsButton.triggered.connect(self.openParamsWindow)
+        
+        #settings menu buttons
+        self.suppliersMenuButton.triggered.connect(self.openSuppliersWindow)
 
     def openTable(self):
         self.KpTable.clearContents()
@@ -100,6 +106,11 @@ class mainWindow(QMainWindow):
         window = paramsWindow(self)
         window.show()
         window.windowClosed.connect(self.test)
+        
+    def openSuppliersWindow(self):
+        window = suppliersWindow(self)
+        window.show()
+        # window.windowClosed.connect(self.test)
 
     def test(self):
         with open(

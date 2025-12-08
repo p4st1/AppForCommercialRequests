@@ -1038,6 +1038,8 @@ QTableWidget::item:selected {
     </property>
     <addaction name="action_1"/>
     <addaction name="action"/>
+    <addaction name="separator"/>
+    <addaction name="action_3"/>
    </widget>
    <widget class="QMenu" name="EditMenu">
     <property name="title">
@@ -1045,11 +1047,13 @@ QTableWidget::item:selected {
     </property>
     <addaction name="editTableButton"/>
     <addaction name="editParamsButton"/>
+    <addaction name="separator"/>
    </widget>
    <widget class="QMenu" name="SettingsMenu">
     <property name="title">
      <string>Настройки</string>
     </property>
+    <addaction name="suppliersMenuButton"/>
    </widget>
    <widget class="QMenu" name="WindowMenu">
     <property name="title">
@@ -1086,6 +1090,21 @@ QTableWidget::item:selected {
   <action name="editParamsButton">
    <property name="text">
     <string>Редактировать переменные</string>
+   </property>
+  </action>
+  <action name="action_3">
+   <property name="text">
+    <string>Настройки</string>
+   </property>
+  </action>
+  <action name="suppliersMenu">
+   <property name="text">
+    <string>Поставщики</string>
+   </property>
+  </action>
+  <action name="suppliersMenuButton">
+   <property name="text">
+    <string>Поставщики</string>
    </property>
   </action>
  </widget>
