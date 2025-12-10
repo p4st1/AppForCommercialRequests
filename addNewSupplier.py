@@ -29,7 +29,32 @@ class mainWindow(QMainWindow):
     def __init__(self, parent=None):
         super(mainWindow, self).__init__(parent)
         uic.loadUi(self.resourcePath("ui/addSupplierGui.ui"), self)
+        
+        self.logoURL = 'None'
+        
+        self.acceptButton.clicked.connect(self.addNewSupplier)
 
+    def addNewSupplier(self):
+        db = Database()
+        db.open(self.resourcePath('database/database.db'))
+        data = (self.nameLine.text(),
+                self.emailLine.text(),
+                self.streetLine.text(),
+                self.cityLine.text(),
+                self.TINLine.text(),
+                self.phoneNumLine.text(),
+                self.websiteLine.text(),
+                self.mailIndexLine.text(),
+                self.roomLine.text(),
+                self.buildingLine.text(),
+                self.RRCLine.text(),
+                self.logoURL
+                )
+        db.createSupplier(data)
+        db.save()
+        db.close()
+        self.close()
+    
     def resourcePath(self, relativePath):
         try:
             base_path = sys._MEIPASS

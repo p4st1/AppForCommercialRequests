@@ -31,17 +31,21 @@ class mainWindow(QMainWindow):
         super(mainWindow, self).__init__(parent)
         uic.loadUi(self.resourcePath("ui/suppliersGui.ui"), self)
         
+        self.suppliersList.itemClicked.connect(self.supplierSelected)
+        self.closeButton.clicked.connect(self.close)
+        self.addSupplierButton.clicked.connect(self.openNewSupplier)
+        
+        self.showSuppliers()
+    
+    def showSuppliers(self):
         db = Database()
         db.open(self.resourcePath("database/database.db"))
-        self.suppliers = db.getSuppliers()
+        self.suppliers = db.getAllSuppliers()
+        db.close()
         
+        self.suppliersList.clear()
         for supplier in self.suppliers:
             self.suppliersList.addItem(supplier[1])
-        
-        self.suppliersList.itemClicked.connect(self.supplierSelected)
-        self.closeButton.clicked.connect(self.closeEvent)
-        self.addSupplierButton.clicked.connect(self.openNewSupplier)
-        print(self.suppliers)
         
     def supplierSelected(self, item):
         print(item.text())
@@ -51,6 +55,7 @@ class mainWindow(QMainWindow):
     def openNewSupplier(self):
         window = newSupplierWindow(self)
         window.show()
+        window.windowClosed.connect(self.showSuppliers)
         
     def resourcePath(self, relativePath):
         try:

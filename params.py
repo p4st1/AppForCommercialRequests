@@ -51,6 +51,14 @@ class addNewParamGUI(QMainWindow):
         ) as f:
             json.dump(self.paramsData, f, indent=4)
         self.close()
+    
+    def resourcePath(self, relativePath):
+        try:
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relativePath)
 
     def closeEvent(self, event):
         self.close()
@@ -111,7 +119,7 @@ class mainWindow(QMainWindow):
                 error.setWindowTitle("Ошибка")
                 error.setText(f"Введены некорректные данные: {value}")
                 error.exec()
-        with open(self.resourcePath("utilities/variables.json"), "w") as f:
+        with open(self.resourcePath("utilities/variables.json"), "w", encoding='utf-8') as f:
             json.dump(self.paramsData, f, indent=4)
         self.saveButton.setDisabled(True)
         self.saveAndCloseButton.setDisabled(True)
@@ -131,7 +139,7 @@ class mainWindow(QMainWindow):
                 error.setWindowTitle("Ошибка")
                 error.setText(f"Введены некорректные данные: {value}")
                 error.exec()
-        with open(self.resourcePath("utilities/variables.json"), "w") as f:
+        with open(self.resourcePath("utilities/variables.json"), "w", encoding='utf-8') as f:
             json.dump(self.paramsData, f, indent=4)
         self.saveButton.setDisabled(True)
         self.saveAndCloseButton.setDisabled(True)
@@ -146,6 +154,10 @@ class mainWindow(QMainWindow):
     def getValueType(self, value):
         if value == "percents":
             return "%"
+        if value == 'multiply':
+            return '*'
+        if value == 'division':
+            return '/'
 
     def addNewParamGui(self):
         window = addNewParamGUI(self)
@@ -163,7 +175,7 @@ class mainWindow(QMainWindow):
         try:
             base_path = sys._MEIPASS
         except Exception:
-            base_path - os.path.abspath(".")
+            base_path = os.path.abspath(".")
 
         return os.path.join(base_path, relativePath)
 

@@ -75,16 +75,24 @@ class Database:
                             img
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', data)
-        
-    def getSuppliers(self):
+    
+    def getAllSuppliers(self):
         try:
             self.cursor.execute('SELECT * FROM suppliers')
-            users = self.cursor.fetchall()
+            suppliers = self.cursor.fetchall()
         except:
             return -1
         else:
-            return users
+            return suppliers
         
+    def getSupplier(self, name):
+        try:
+            self.cursor.execute(f'SELECT * FROM suppliers WHERE name = ?', (name, ))
+            suppliers =  self.cursor.fetchall()
+        except:
+            return -1
+        else:
+            return suppliers
 
         
 test = ['ООО "АЛЬФА ИНЖИНИРИННГ', 
@@ -92,11 +100,10 @@ test = ['ООО "АЛЬФА ИНЖИНИРИННГ',
         'ул. рябиновая',
         'г. Москва',
         '3717342374',
-        '8933472200',
+        '89334728200',
         'alphakappa.ru',
         '660028',
         '26',
         '1',
         '485874395',
         'None']
-

@@ -48,7 +48,11 @@
          </widget>
         </item>
         <item row="2" column="1">
-         <widget class="QLineEdit" name="emailLine"/>
+         <widget class="QLineEdit" name="emailLine">
+          <property name="placeholderText">
+           <string>supplier@mail.com</string>
+          </property>
+         </widget>
         </item>
         <item row="1" column="1">
          <widget class="QLabel" name="label_4">
@@ -58,14 +62,21 @@
          </widget>
         </item>
         <item row="2" column="0">
-         <widget class="QLineEdit" name="name">
+         <widget class="QLineEdit" name="nameLine">
           <property name="text">
            <string/>
+          </property>
+          <property name="placeholderText">
+           <string>ООО &quot;Поставщик&quot;</string>
           </property>
          </widget>
         </item>
         <item row="2" column="2">
-         <widget class="QLineEdit" name="phoneNumLine"/>
+         <widget class="QLineEdit" name="phoneNumLine">
+          <property name="placeholderText">
+           <string>79876543210</string>
+          </property>
+         </widget>
         </item>
         <item row="1" column="0">
          <widget class="QLabel" name="label">
@@ -115,7 +126,11 @@
        </widget>
       </item>
       <item row="1" column="1">
-       <widget class="QLineEdit" name="streetLine"/>
+       <widget class="QLineEdit" name="streetLine">
+        <property name="placeholderText">
+         <string>ул. Арбат</string>
+        </property>
+       </widget>
       </item>
       <item row="2" column="0">
        <widget class="QLabel" name="label_8">
@@ -132,7 +147,11 @@
        </widget>
       </item>
       <item row="1" column="2">
-       <widget class="QLineEdit" name="buildingLine"/>
+       <widget class="QLineEdit" name="buildingLine">
+        <property name="placeholderText">
+         <string>стр. 1</string>
+        </property>
+       </widget>
       </item>
       <item row="0" column="2">
        <widget class="QLabel" name="label_6">
@@ -142,13 +161,25 @@
        </widget>
       </item>
       <item row="1" column="0">
-       <widget class="QLineEdit" name="cityLine"/>
+       <widget class="QLineEdit" name="cityLine">
+        <property name="placeholderText">
+         <string>г. Москва</string>
+        </property>
+       </widget>
       </item>
       <item row="3" column="0">
-       <widget class="QLineEdit" name="mailIndexLine"/>
+       <widget class="QLineEdit" name="mailIndexLine">
+        <property name="placeholderText">
+         <string>00000</string>
+        </property>
+       </widget>
       </item>
       <item row="3" column="1">
-       <widget class="QLineEdit" name="roomLine"/>
+       <widget class="QLineEdit" name="roomLine">
+        <property name="placeholderText">
+         <string>1</string>
+        </property>
+       </widget>
       </item>
      </layout>
     </item>
@@ -196,13 +227,25 @@
        </widget>
       </item>
       <item row="1" column="0">
-       <widget class="QLineEdit" name="TINLine"/>
+       <widget class="QLineEdit" name="TINLine">
+        <property name="placeholderText">
+         <string>123123123</string>
+        </property>
+       </widget>
       </item>
       <item row="1" column="1">
-       <widget class="QLineEdit" name="RRCLine"/>
+       <widget class="QLineEdit" name="RRCLine">
+        <property name="placeholderText">
+         <string>123123123</string>
+        </property>
+       </widget>
       </item>
       <item row="1" column="2">
-       <widget class="QLineEdit" name="websiteLine"/>
+       <widget class="QLineEdit" name="websiteLine">
+        <property name="placeholderText">
+         <string>supplier.com</string>
+        </property>
+       </widget>
       </item>
      </layout>
     </item>

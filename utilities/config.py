@@ -1,4 +1,6 @@
 class Config:
     types = {
-            '%': 'percents'
+            '%': 'percents',
+            '*': 'multiply',
+            '/': 'division'
         }

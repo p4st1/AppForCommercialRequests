@@ -2,34 +2,27 @@ from docx import Document
 from docx.shared import Inches
 from docx.shared import Inches, Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from utilities.tools import DatabaseTools as Tools
 from datetime import datetime
 
 class createTextFile:
     def __init__(self, data):
         print(data)
         self.rows = data[0]
-        self.cols = data[1]
-        self.table = data[2]
+        self.table = data[1]
         self.headers = ['№',
                         'Наименование',
                         'Каталожный товар',
                         'Ед. изм',
                         'Кол-во',
-                        'Цена за ед. без НДС',
-                        'Итого без НДС',
-                        'Логистика',
-                        'Таможня',
-                        'Цена за ед.',
                         'Цена реализации за ед. без ндс',
-                        'Итого реализации',
                         'Итого реализации без НДС',
                         'Итого реализации c НДС',
-                        'Срок поставки',
-                        'Срок поставщика'
                         ]
         
         document = Document()
         
+        print(data)
 
         section = document.sections[0]
         
@@ -72,7 +65,7 @@ class createTextFile:
         run.font.size = Pt(11)
         
 
-        table = document.add_table(rows=self.rows + 1, cols=self.cols)
+        table = document.add_table(rows=self.rows + 1, cols=len(self.headers))
         table.style = "Table Grid"
 
         for col in table.columns:
@@ -80,21 +73,24 @@ class createTextFile:
 
         table.columns[1].width = Inches(4)
 
-        for col in range(self.cols):
+        for col in range(len(self.headers)):
             cell = table.cell(0, col)
             cell.text = self.headers[col]
             paragraph = cell.paragraphs[0]
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             run = paragraph.runs[0]
-            run.font.size = Pt(8)
+            run.font.size = Pt(11)
             run.font.name = run.font.name = 'Calibri'
+            run.font.bold = True
+            
             
         for row in range(self.rows):
-            for col in range(self.cols):
+            for col in range(len(self.headers)):
                 cell = table.cell(row + 1, col)
                 cell.text = self.table[row][col]
                 paragraph = cell.paragraphs[0]
                 run = paragraph.runs[0]
-                run.font.size = Pt(8)
+                run.font.size = Pt(11)
                 run.font.name = 'Calibri'
 
         p = document.add_paragraph()
@@ -144,4 +140,7 @@ class createTextFile:
         run = p.add_run(f"""С уважением,\nГениральнай директор""")
         run.font.size = Pt(11)
 
-        document.save("kp1.docx")
+        try:
+            document.save("kp1.docx")
+        except Exception as e:
+            print(e)

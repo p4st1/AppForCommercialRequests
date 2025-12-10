@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QTableWidgetItem
 from PyQt6 import uic
 from params import mainWindow as paramsWindow
-from create import createTextFile as exportTextFile
 from suppliers import mainWindow as suppliersWindow
+from createDocument import mainWindow as createDocWindow
+from database.database import Database
 import pandas as pd
 import json
 import sys
@@ -36,18 +37,27 @@ class mainWindow(QMainWindow):
         ) as f:
             self.configData = json.load(f)
 
+        self.db = Database()
+
         self.logisticNum.setText(self.configData["config"]["logisticNum"])
 
         self.openTableButton.clicked.connect(self.openTable)
-        
-        #edit menu buttons
+
+        # edit menu buttons
         self.editParamsButton.triggered.connect(self.openParamsWindow)
-        
-        #settings menu buttons
+
+        # settings menu buttons
         self.suppliersMenuButton.triggered.connect(self.openSuppliersWindow)
+        
+        # func buttons 
+        self.createDocButton.clicked.connect(self.getTableData)
+        self.logisiticVar.currentIndexChanged.connect(self.logisticVarChanged)
+        
+        self.KpTable.resizeColumnsToContents()   
 
     def openTable(self):
         self.KpTable.clearContents()
+        
         filename = QFileDialog.getOpenFileName(
             self, "Открыть файл", "", "csv (*.csv);; Excel Files (*.xls, *.xlsx)"
         )[0]
@@ -65,7 +75,7 @@ class mainWindow(QMainWindow):
                 "unitPrice": [],
                 "totalPrice": [],
             }
-
+            self.KpTable.setRowCount(self.rows)
             for rowNum in range(1, self.rows):
                 colNum = 0
                 for col in df.columns:
@@ -94,7 +104,7 @@ class mainWindow(QMainWindow):
                 )
 
             # calc and write
-            self.test()
+            self.calculating()
 
         except Exception as e:
             error = QMessageBox(self)
@@ -102,44 +112,36 @@ class mainWindow(QMainWindow):
             error.setText(f"Невозможно прочитать таблицу\n{e}")
             error.exec()
 
+    def openCreateDocWindow(self, tableData):
+        window = createDocWindow(self, tableData=tableData)
+        window.show()
+        
     def openParamsWindow(self):
         window = paramsWindow(self)
         window.show()
-        window.windowClosed.connect(self.test)
-        
+        # window.windowClosed.connect(self.test)
+
     def openSuppliersWindow(self):
         window = suppliersWindow(self)
         window.show()
         # window.windowClosed.connect(self.test)
 
-    def test(self):
+    def calculating(self):
         with open(
             self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
         ) as f:
             self.paramsData = json.load(f)
 
+        self.logisticCalculate()
+        
         for rowNum in range(self.rows - 1):
-            f = round(
-                60000
-                + self.tableData["totalPrice"][rowNum]
-                / sum(self.tableData["totalPrice"])
-                * self.tableData["totalPrice"][rowNum],
-                2,
-            )
-            price = f / self.tableData["amount"][rowNum]
+            price =  self.tableData['logistic'][rowNum] / self.tableData["amount"][rowNum]
             realPrice = 0
-            self.KpTable.setItem(
-                rowNum,
-                7,
-                QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}{str(f).replace('.', ',')}"
-                ),
-            )
             self.KpTable.setItem(
                 rowNum,
                 8,
                 QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}{str(f).replace('.', ',')}"
+                    f"{self.tableData['currency'][rowNum]}{str(self.tableData['logistic'][rowNum]).replace('.', ',')}"
                 ),
             )
             self.KpTable.setItem(
@@ -177,11 +179,55 @@ class mainWindow(QMainWindow):
                     f"{str(realPrice * self.tableData['amount'][rowNum] * temp_var).replace('.', ',')}"
                 ),
             )
-
-        a = self.createTextFile()
-        exportTextFile(a)
-
-    def createTextFile(self):
+    
+    def getCustomsNum(self):
+        with open(
+            self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
+        ) as f:
+            self.paramsData = json.load(f)
+            
+        text = self.customsNum.text()
+        res = ''
+        for i in text.split('$'):
+            if i in self.paramsData['parameters']:
+                
+                res += str(self.paramsData[i])
+            else:
+                res += i
+            
+        print(eval(res))
+    def logisticVarChanged(self, ind):
+        self.logisticCalculate()
+        
+    def logisticCalculate(self):
+        logisticVarInd = self.logisiticVar.currentIndex()
+        print(self.tableData)
+        for rowNum in range(self.rows - 1):
+            self.tableData['logistic'] = []
+            print(rowNum)
+            if logisticVarInd == 1:
+                f = round(
+                        self.tableData["totalPrice"][rowNum] + 60000/sum(self.tableData["totalPrice"]) * self.tableData["totalPrice"][rowNum],
+                        2,
+                    )
+            else:
+                f = round(
+                        self.tableData["totalPrice"][rowNum] * float(self.logisticNum.text()),
+                        2
+                )
+            print(self.tableData["totalPrice"][rowNum], float(self.logisticNum.text()), f, logisticVarInd) 
+            self.KpTable.setItem(
+            rowNum,
+            7,
+            QTableWidgetItem(
+                f"{self.tableData['currency'][rowNum]}{str(f).replace('.', ',')}"
+            ),
+            )
+            self.tableData['logistic'].append(f)
+        print(self.tableData)
+            
+        
+    def getTableData(self):
         table_data = []
 
         row_count = self.KpTable.rowCount()
@@ -189,7 +235,14 @@ class mainWindow(QMainWindow):
 
         for row in range(row_count):
             row_data = []
-            for col in range(col_count):
+            for col in range(5):
+                item = self.KpTable.item(row, col)
+                if item is not None:
+                    row_data.append(item.text())
+                else:
+                    row_data.append("")
+                    
+            for col in range(10, 13):
                 item = self.KpTable.item(row, col)
                 if item is not None:
                     row_data.append(item.text())
@@ -197,7 +250,11 @@ class mainWindow(QMainWindow):
                     row_data.append("")
             table_data.append(row_data)
 
-        return (len(table_data), len(table_data[0]), table_data)
+        self.db.open(self.resourcePath('database/database.db'))
+        
+        self.openCreateDocWindow((
+            len(table_data),
+            table_data))
 
     def resourcePath(self, relativePath):
         try:
