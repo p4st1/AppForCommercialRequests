@@ -1,4 +1,7 @@
 import decimal
+import json
+import sys
+import os
 
 class DatabaseTools:
     def __init__(self):
@@ -9,6 +12,48 @@ class DatabaseTools:
         num = str(num)
         return f'+{num[0]} ({num[1:4]}) {num[4:7]}-{num[7:9]}-{num[9:]}'
     
+    @staticmethod
+    def evalWithVars(line):
+        with open(
+            DatabaseTools.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
+        ) as f:
+            paramsData = json.load(f)
+            
+        res = ''
+        for i in line.split('$'):
+            print(res)
+            for key, val in paramsData['parameters'].items():
+                variable, value, calc = val
+                if i == variable:
+                    if calc == 'percents':
+                        res += f'*{value}/100'
+                        break
+                    else:        
+                        res += f'{DatabaseTools.getCalc(calc)}{value}'
+                        break
+            else:
+                res += i
+        
+        return eval(res)
+    
+    @staticmethod         
+    def resourcePath(relativePath):
+        try:
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relativePath)
+    
+    @staticmethod         
+    def getCalc(value):
+        if value == "percents":
+            return "%"
+        if value == 'multiply':
+            return '*'
+        if value == 'division':
+            return '/'
+        
 class Tools:
     def __init__(self):
         self.units = (

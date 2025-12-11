@@ -1484,7 +1484,7 @@ QPushButton:pressed {
        </widget>
       </item>
       <item row="1" column="4">
-       <widget class="QLineEdit" name="lineEdit">
+       <widget class="QLineEdit" name="customLine">
         <property name="styleSheet">
          <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
     background-color: white;

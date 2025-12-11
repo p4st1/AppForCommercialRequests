@@ -6,7 +6,6 @@ import os
 
 def write_log(message):
     log_path = Path.home() / 'myapp_startup.log'
-    print(message)
     with open(log_path, 'a', encoding='utf-8') as f:
         timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
         f.write(f"[{timestamp}] {message}\n")

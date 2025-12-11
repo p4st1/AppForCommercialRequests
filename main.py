@@ -1,9 +1,10 @@
 from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QTableWidgetItem
-from PyQt6 import uic
-from params import mainWindow as paramsWindow
-from suppliers import mainWindow as suppliersWindow
 from createDocument import mainWindow as createDocWindow
+from suppliers import mainWindow as suppliersWindow
+from params import mainWindow as paramsWindow
 from database.database import Database
+from utilities.tools import DatabaseTools as Tool
+from PyQt6 import uic
 import pandas as pd
 import json
 import sys
@@ -104,6 +105,7 @@ class mainWindow(QMainWindow):
                 )
 
             # calc and write
+            self.logisticCalculate()
             self.calculating()
 
         except Exception as e:
@@ -131,17 +133,21 @@ class mainWindow(QMainWindow):
             self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
         ) as f:
             self.paramsData = json.load(f)
-
-        self.logisticCalculate()
         
         for rowNum in range(self.rows - 1):
+            print(f'tableData:{self.tableData}')
             price =  self.tableData['logistic'][rowNum] / self.tableData["amount"][rowNum]
             realPrice = 0
+            
+            print(rowNum)
+            
+            
+            #Qline edit сделать работу с переменными
             self.KpTable.setItem(
                 rowNum,
                 8,
                 QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}{str(self.tableData['logistic'][rowNum]).replace('.', ',')}"
+                    f"{self.tableData['currency'][rowNum]}{str(Tool.evalWithVars(f'{self.tableData['logistic'][rowNum]}{self.customLine.text()}')).replace('.', ',')}"
                 ),
             )
             self.KpTable.setItem(
@@ -179,32 +185,15 @@ class mainWindow(QMainWindow):
                     f"{str(realPrice * self.tableData['amount'][rowNum] * temp_var).replace('.', ',')}"
                 ),
             )
-    
-    def getCustomsNum(self):
-        with open(
-            self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
-        ) as f:
-            self.paramsData = json.load(f)
-            
-        text = self.customsNum.text()
-        res = ''
-        for i in text.split('$'):
-            if i in self.paramsData['parameters']:
-                
-                res += str(self.paramsData[i])
-            else:
-                res += i
-            
-        print(eval(res))
+        
     def logisticVarChanged(self, ind):
         self.logisticCalculate()
+        self.calculating()
         
     def logisticCalculate(self):
         logisticVarInd = self.logisiticVar.currentIndex()
-        print(self.tableData)
+        self.tableData['logistic'] = []
         for rowNum in range(self.rows - 1):
-            self.tableData['logistic'] = []
-            print(rowNum)
             if logisticVarInd == 1:
                 f = round(
                         self.tableData["totalPrice"][rowNum] + 60000/sum(self.tableData["totalPrice"]) * self.tableData["totalPrice"][rowNum],
@@ -215,7 +204,6 @@ class mainWindow(QMainWindow):
                         self.tableData["totalPrice"][rowNum] * float(self.logisticNum.text()),
                         2
                 )
-            print(self.tableData["totalPrice"][rowNum], float(self.logisticNum.text()), f, logisticVarInd) 
             self.KpTable.setItem(
             rowNum,
             7,
@@ -224,7 +212,6 @@ class mainWindow(QMainWindow):
             ),
             )
             self.tableData['logistic'].append(f)
-        print(self.tableData)
             
         
     def getTableData(self):
