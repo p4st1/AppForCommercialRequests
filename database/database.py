@@ -1,4 +1,5 @@
 from datetime import datetime
+import shutil
 import sqlite3
 
 
@@ -51,7 +52,6 @@ class Database:
         self.cursor.execute("SELECT MAX(id) FROM offers")
         id = self.cursor.fetchone()[0]
         offerName = f'{id}/{datetime.now().strftime('%d.%m')}'
-        print(offerName)
         self.cursor.execute('''INSERT INTO offers (
                             date
                             ) VALUES (?)
@@ -96,3 +96,25 @@ class Database:
             self.cursor.execute(f'DELETE FROM customers WHERE companyName = ?', (name, ))
         except:
             return -1
+    
+    def export(self, source, target):
+        shutil.copy2(source, target)
+        
+    def import_(self, source, target):
+        try:
+            print(source)
+            self.otherConnection = sqlite3.connect(source)
+            self.otherCursor = self.otherConnection.cursor()
+            self.otherCursor.execute('SELECT * FROM customers')
+            otherCustomers = self.otherCursor.fetchall()
+            for customer in otherCustomers:
+                self.open(target)
+                self.createCustomer(customer[1:])
+                self.save()
+                
+        except Exception as e:
+            print(e)
+            return -1
+        
+        
+        

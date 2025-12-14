@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QTableWidgetItem
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QDesktopServices
+from PySide6.QtCore import Qt, QUrl
 from createDocument import mainWindow as createDocWindow
 from customers import mainWindow as customersWindow
 from settings import mainWindow as settingsWindow
@@ -8,6 +9,7 @@ from params import mainWindow as paramsWindow
 from database.database import Database
 from utilities.config import Config
 from ui_mainGui import Ui_MainWindow
+from datetime import datetime
 
 
 import pandas as pd
@@ -44,20 +46,114 @@ class mainWindow(QMainWindow):
 
         self.ui.openTableButton.clicked.connect(self.openTable)
 
-        # edit menu buttons
         self.ui.editParamsButton.triggered.connect(self.openParamsWindow)
-
-        # # settings menu buttons
+        
         self.ui.suppliersMenuButton.triggered.connect(self.openSuppliersWindow)
         self.ui.settingsMenuButton.triggered.connect(self.openSettingsWindow)
+        self.ui.exportMenuButton.triggered.connect(self.exportDatabase)
+        self.ui.importMenuButton.triggered.connect(self.importDatabase)
         
-        # func buttons 
+        self.ui.helpMenuButton.triggered.connect(self.show_help)
+        self.ui.aboutMenuButton.triggered.connect(self.show_about)
+        self.ui.GitHubMenuButton.triggered.connect(lambda: self.open_url("https://github.com/p4st1/AppForCommercialRequests"))
+        self.ui.supportMenuButton.triggered.connect(self.show_help)
+        
         self.ui.createDocButton.clicked.connect(self.getTableData)
         self.ui.logisiticVar.currentIndexChanged.connect(self.logisticVarChanged)
         self.ui.customLine.editingFinished.connect(self.processFormula)
         self.ui.termDeliveryLine.editingFinished.connect(self.processFormula)
         self.ui.closeTableButton.clicked.connect(self.closeTable)
         self.ui.KpTable.resizeColumnsToContents()
+
+    def open_url(self, url):
+        try:
+            QDesktopServices.openUrl(QUrl(url))
+        except Exception as e:
+            print(f"{e}")
+            
+    def show_help(self):
+        help_text = """
+        <html>
+        <head>
+        <style>
+            h2 { color: #2c3e50; }
+            h3 { color: #34495e; }
+            .hotkey { background: #ecf0f1; padding: 2px 6px; border-radius: 3px; }
+        </style>
+        </head>
+        <body>
+        <h2>📖 Справка по программе</h2>
+        
+        <h3>Основные функции</h3>
+        <ul>
+            <li><b>Настройки → Импортировать БД</b> - импортировать БД с заказчиками</li>
+            <li><b>Настройки → Экспортировать БД</b> - сохранить текущую БД с заказчиками</li>
+        </ul>
+        
+        <h3>Переменные</h3>
+        <p>Для заполнения переменных, необходимо перейти в <b>Редактировать -> редактировать переменные</b>. Далее для использования переменных 
+        необходимо соблюдать формат: $название переменной$</p>
+        
+        <h3>Логистика</h3>
+        <li><b>Распределение</b> - распределяет указанную сумму на столбцы</li>
+            <li><b>Коэффициент</b> - умножает указанную сумму на столбцы</li>
+        
+        <h3>Горячие клавиши</h3>
+        <ul>
+            <li><span class="hotkey">F1</span> - открыть справку</li>
+            <li><span class="hotkey">Ctrl+O</span> - открыть таблицу</li>
+        </ul>
+        
+        <h3>Поддержка</h3>
+        <p>При возникновении проблем:</p>
+        <ol>
+            <li>Перезапустите программу</li>
+            <li>Проверьте наличие обновлений</li>
+            <li>Обратитесь в техподдержку: zemtsovpast@yandex.ru</li>
+            <li>Телеграм: @p4strick</li>
+        </ol>
+        </body>
+        </html>
+        """
+        
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Справка")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(help_text)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+    
+    def show_about(self):
+        """Показать информацию о программе"""
+        QMessageBox.about(
+            self,
+            "О программе",
+            "<b>Автоматизация подгтовки коммерческих приложений</b><br>"
+            "Версия 1.0.0<br><br>"
+            "Создано с использованием PySide6<br>"
+            "© 2024 Все права защищены<br>"
+            "Автор: https://github.com/p4st1"
+        )
+        
+    def exportDatabase(self):
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,                    
+            "Сохранить файл",
+            f"database_{datetime.now().strftime('%d.%m.%Y')}.db",
+            "База данных (*.db);;Все файлы (*)"
+        )
+        self.db.export(self.resourcePath('database/database.db'), file_path)
+        
+    def importDatabase(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,                    
+            "Открыть файл",
+            "",
+            "База данных (*.db);;Все файлы (*)"
+        )
+        print(file_path)
+        self.db.import_(file_path, self.resourcePath('database/database.db'))
         
     def processFormula(self):
         self.formulaCustom = str(Tool.evalWithVars(f'{self.ui.customLine.text()}'))

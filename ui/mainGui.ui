@@ -989,7 +989,7 @@ QDialog QPushButton {
        </font>
       </property>
       <property name="currentIndex">
-       <number>1</number>
+       <number>0</number>
       </property>
       <widget class="QWidget" name="tab_3">
        <attribute name="title">
@@ -1763,10 +1763,10 @@ QPushButton:pressed {
     <property name="title">
      <string>Файл</string>
     </property>
-    <addaction name="action_1"/>
-    <addaction name="action_9"/>
+    <addaction name="openTableMenuButton"/>
+    <addaction name="closeTableMenuButton"/>
     <addaction name="separator"/>
-    <addaction name="action"/>
+    <addaction name="createDocMenuButton"/>
     <addaction name="action_10"/>
    </widget>
    <widget class="QMenu" name="EditMenu">
@@ -1817,7 +1817,10 @@ QPushButton:pressed {
     <property name="title">
      <string>Помощь</string>
     </property>
-    <addaction name="action_2"/>
+    <addaction name="helpMenuButton"/>
+    <addaction name="GitHubMenuButton"/>
+    <addaction name="supportMenuButton"/>
+    <addaction name="aboutMenuButton"/>
    </widget>
    <addaction name="FileMenu"/>
    <addaction name="EditMenu"/>
@@ -1832,7 +1835,7 @@ QPushButton:pressed {
     </font>
    </property>
   </widget>
-  <action name="action_1">
+  <action name="openTableMenuButton">
    <property name="text">
     <string>Окрыть таблицу</string>
    </property>
@@ -1842,7 +1845,7 @@ QPushButton:pressed {
     </font>
    </property>
   </action>
-  <action name="action">
+  <action name="createDocMenuButton">
    <property name="text">
     <string>Сформировать КП</string>
    </property>
@@ -1878,7 +1881,7 @@ QPushButton:pressed {
     <font/>
    </property>
   </action>
-  <action name="action_2">
+  <action name="helpMenuButton">
    <property name="text">
     <string>Справка</string>
    </property>
@@ -1906,7 +1909,7 @@ QPushButton:pressed {
     <string>Импортировать БД...</string>
    </property>
   </action>
-  <action name="action_9">
+  <action name="closeTableMenuButton">
    <property name="text">
     <string>Закрыть таблицу</string>
    </property>
@@ -1914,6 +1917,21 @@ QPushButton:pressed {
   <action name="action_10">
    <property name="text">
     <string>Сформировать таблицу</string>
+   </property>
+  </action>
+  <action name="GitHubMenuButton">
+   <property name="text">
+    <string>GitHub</string>
+   </property>
+  </action>
+  <action name="supportMenuButton">
+   <property name="text">
+    <string>Поддержка</string>
+   </property>
+  </action>
+  <action name="aboutMenuButton">
+   <property name="text">
+    <string>О программе</string>
    </property>
   </action>
  </widget>
