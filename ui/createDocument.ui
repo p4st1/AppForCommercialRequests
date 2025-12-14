@@ -563,6 +563,24 @@ QListWidget::item:selected {
             </property>
            </widget>
           </item>
+          <item row="1" column="3">
+           <widget class="QRadioButton" name="radioButton">
+            <property name="autoFillBackground">
+             <bool>false</bool>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">
+	color:  #2c3e50;
+	font-weight: 600;
+	 font-size: 12px;
+
+</string>
+            </property>
+            <property name="text">
+             <string>Отображать столбец &quot;Срок поставки&quot;</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </item>
         <item>

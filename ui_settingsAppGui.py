@@ -16,8 +16,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QPushButton, QSizePolicy,
-    QSpacerItem, QVBoxLayout, QWidget)
+    QLineEdit, QMainWindow, QPushButton, QScrollArea,
+    QSizePolicy, QSpacerItem, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -27,6 +27,7 @@ class Ui_MainWindow(object):
         MainWindow.setAutoFillBackground(False)
         MainWindow.setStyleSheet(u"QQMainWindow {\n"
 "    background-color: #f5f7fa;\n"
+"	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;\n"
 "}\n"
 "\n"
 "/* ===== \u0426\u0415\u041d\u0422\u0420\u0410\u041b\u042c\u041d\u042b\u0419 \u0412\u0418\u0414\u0416\u0415\u0422 ===== */\n"
@@ -49,11 +50,11 @@ class Ui_MainWindow(object):
 "    padding: 2px;\n"
 "}\n"
 "\n"
-"/* \u0417\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0438 \u0441\u0442\u043e\u043b\u0431\u0446\u043e\u0432 \u0442\u0430\u0431\u043b\u0438\u0446\u044b */\n"
+"/* \u0417\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0438 \u0441\u0442\u043e\u043b\u0431\u0446\u043e\u0432 \u0442\u0430\u0431\u043b\u0438"
+                        "\u0446\u044b */\n"
 "QHeaderView::section {\n"
 "    background-color: #2c3e50;\n"
-"  "
-                        "  color: white;\n"
+"    color: white;\n"
 "    padding: 12px 15px;\n"
 "    border: none;\n"
 "    font-weight: 600;\n"
@@ -85,11 +86,11 @@ class Ui_MainWindow(object):
 "}\n"
 "\n"
 "QTableWidget::item:nth-child(odd) {\n"
-"    background-color: #ffffff;\n"
+"    back"
+                        "ground-color: #ffffff;\n"
 "}\n"
 "\n"
-"/* \u0412\u044b\u0434\u0435\u043b\u0435\u043d\u043d"
-                        "\u0430\u044f \u0441\u0442\u0440\u043e\u043a\u0430 */\n"
+"/* \u0412\u044b\u0434\u0435\u043b\u0435\u043d\u043d\u0430\u044f \u0441\u0442\u0440\u043e\u043a\u0430 */\n"
 "QTableWidget::item:selected {\n"
 "    background-color: #e3f2fd;\n"
 "    color: #1565c0;\n"
@@ -129,11 +130,11 @@ class Ui_MainWindow(object):
 "}\n"
 "\n"
 "QPushButton#exportButton:hover {\n"
-"    background-color: #8e44ad;\n"
+"    background-colo"
+                        "r: #8e44ad;\n"
 "}\n"
 "\n"
-"/* ===== \u041f\u0410\u041d\u0415\u041b\u042c \u0418\u041d\u0421"
-                        "\u0422\u0420\u0423\u041c\u0415\u041d\u0422\u041e\u0412 ===== */\n"
+"/* ===== \u041f\u0410\u041d\u0415\u041b\u042c \u0418\u041d\u0421\u0422\u0420\u0423\u041c\u0415\u041d\u0422\u041e\u0412 ===== */\n"
 "QToolBar {\n"
 "    background-color: #2c3e50;\n"
 "    border: none;\n"
@@ -171,10 +172,10 @@ class Ui_MainWindow(object):
 "    padding: 0 10px;\n"
 "}\n"
 "\n"
-"/* ===== \u041c\u0415\u041d\u042e \u0411\u0410\u0420 ===== */\n"
+"/* ===== \u041c\u0415"
+                        "\u041d\u042e \u0411\u0410\u0420 ===== */\n"
 "QMenuBar {\n"
-"    background-color: #2c3e"
-                        "50;\n"
+"    background-color: #2c3e50;\n"
 "    color: white;\n"
 "    border-bottom: 2px solid #1a252f;\n"
 "}\n"
@@ -216,8 +217,8 @@ class Ui_MainWindow(object):
 "    margin: 5px 10px;\n"
 "}\n"
 "\n"
-"/* ===== \u041f\u0410\u041d\u0415\u041b\u042c \u0418\u041d\u0421\u0422\u0420\u0423\u041c\u0415\u041d\u0422\u041e\u0412 \u0421\u041b\u0415\u0412\u0410/\u0421\u041f\u0420"
-                        "\u0410\u0412\u0410 ===== */\n"
+"/* ===== \u041f\u0410\u041d\u0415\u041b\u042c \u0418\u041d\u0421\u0422\u0420\u0423"
+                        "\u041c\u0415\u041d\u0422\u041e\u0412 \u0421\u041b\u0415\u0412\u0410/\u0421\u041f\u0420\u0410\u0412\u0410 ===== */\n"
 "QDockWidget {\n"
 "    background-color: #ffffff;\n"
 "    border: 1px solid #dee2e6;\n"
@@ -251,11 +252,11 @@ class Ui_MainWindow(object):
 "\n"
 "QGroupBox::title {\n"
 "    subcontrol-origin: margin;\n"
-"    left: 15px;\n"
+"  "
+                        "  left: 15px;\n"
 "    padding: 0 10px;\n"
 "    background-color: #2c3e50;\n"
-"    colo"
-                        "r: white;\n"
+"    color: white;\n"
 "    border-radius: 4px;\n"
 "}\n"
 "\n"
@@ -299,11 +300,11 @@ class Ui_MainWindow(object):
 "QComboBox::down-arrow {\n"
 "    image: url(down_arrow.png);\n"
 "    width: 12px;\n"
-"    height: 6px;\n"
+"    height: 6"
+                        "px;\n"
 "}\n"
 "\n"
-"/* ===== \u041f\u041e\u041b\u041e\u0421\u042b \u041f\u0420\u041e\u041a"
-                        "\u0420\u0423\u0422\u041a\u0418 ===== */\n"
+"/* ===== \u041f\u041e\u041b\u041e\u0421\u042b \u041f\u0420\u041e\u041a\u0420\u0423\u0422\u041a\u0418 ===== */\n"
 "QScrollBar:vertical {\n"
 "    border: none;\n"
 "    background: #f8f9fa;\n"
@@ -344,11 +345,11 @@ class Ui_MainWindow(object):
 "\n"
 "/* ===== \u0421\u041f\u0418\u0421\u041e\u041a (QListWidget) ===== */\n"
 "QListWidget {\n"
-"    background-color: white;\n"
+"    ba"
+                        "ckground-color: white;\n"
 "    border: 1px solid #dee2e6;\n"
 "    border-radius: 8px;\n"
-""
-                        "    font-size: 12px;\n"
+"    font-size: 12px;\n"
 "    padding: 5px;\n"
 "}\n"
 "\n"
@@ -386,13 +387,13 @@ class Ui_MainWindow(object):
 "QTabWidget::pane {\n"
 "    border: 1px solid #dee2e6;\n"
 "    border-radius: 8px;\n"
-"    background-color: white;\n"
+"    background-color: white"
+                        ";\n"
 "    margin-top: 5px;\n"
 "}\n"
 "\n"
 "QTabBar::tab {\n"
-"    background-color: #f8f9fa"
-                        ";\n"
+"    background-color: #f8f9fa;\n"
 "    color: #2c3e50;\n"
 "    padding: 10px 20px;\n"
 "    margin-right: 2px;\n"
@@ -428,13 +429,13 @@ class Ui_MainWindow(object):
 "    color: #f39c12;\n"
 "    font-weight: 600;\n"
 "}\n"
-"\n"
+""
+                        "\n"
 "QLabel[status=\"error\"] {\n"
 "    color: #e74c3c;\n"
 "    font-weight: 600;\n"
 "}\n"
-""
-                        "\n"
+"\n"
 "/* ===== \u0424\u0418\u041d\u0410\u041d\u0421\u041e\u0412\u042b\u0415 \u0421\u0422\u0418\u041b\u0418 (\u0434\u043b\u044f \u0442\u0430\u0431\u043b\u0438\u0446\u044b) ===== */\n"
 "QTableWidget::item[positive=\"true\"] {\n"
 "    color: #27ae60;\n"
@@ -465,10 +466,10 @@ class Ui_MainWindow(object):
 "    background-color: rgba(44, 62, 80, 0.1);\n"
 "}\n"
 "\n"
-"/* ===== \u0420\u0410\u0417\u0414\u0415\u041b\u0418\u0422\u0415\u041b\u0418 ===== */\n"
+"/* ===== \u0420\u0410"
+                        "\u0417\u0414\u0415\u041b\u0418\u0422\u0415\u041b\u0418 ===== */\n"
 "QFrame#line {\n"
-" "
-                        "   background-color: #dee2e6;\n"
+"    background-color: #dee2e6;\n"
 "    border: none;\n"
 "    min-height: 1px;\n"
 "    max-height: 1px;\n"
@@ -491,8 +492,28 @@ class Ui_MainWindow(object):
         self.verticalLayout_2 = QVBoxLayout(self.centralwidget)
         self.verticalLayout_2.setSpacing(0)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
-        self.closeTableCheckBox = QCheckBox(self.centralwidget)
+        self.verticalLayout_2.setContentsMargins(0, 10, 0, 0)
+        self.scrollArea = QScrollArea(self.centralwidget)
+        self.scrollArea.setObjectName(u"scrollArea")
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollAreaWidgetContents = QWidget()
+        self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
+        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 798, 588))
+        self.verticalLayout_3 = QVBoxLayout(self.scrollAreaWidgetContents)
+        self.verticalLayout_3.setSpacing(0)
+        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
+        self.verticalLayout_3.setContentsMargins(5, 0, 5, 0)
+        self.verticalLayout = QVBoxLayout()
+        self.verticalLayout.setObjectName(u"verticalLayout")
+        self.autoFillCheckBox = QCheckBox(self.scrollAreaWidgetContents)
+        self.autoFillCheckBox.setObjectName(u"autoFillCheckBox")
+        self.autoFillCheckBox.setStyleSheet(u"color: #2c3e50;\n"
+"font-size: 16px;\n"
+"padding: 2px;")
+
+        self.verticalLayout.addWidget(self.autoFillCheckBox)
+
+        self.closeTableCheckBox = QCheckBox(self.scrollAreaWidgetContents)
         self.closeTableCheckBox.setObjectName(u"closeTableCheckBox")
         font = QFont()
         self.closeTableCheckBox.setFont(font)
@@ -500,12 +521,13 @@ class Ui_MainWindow(object):
 "font-size: 16px;\n"
 "padding: 2px;")
 
-        self.verticalLayout_2.addWidget(self.closeTableCheckBox)
+        self.verticalLayout.addWidget(self.closeTableCheckBox)
 
         self.horizontalLayout = QHBoxLayout()
+        self.horizontalLayout.setSpacing(10)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.horizontalLayout.setContentsMargins(-1, 10, -1, -1)
-        self.label = QLabel(self.centralwidget)
+        self.horizontalLayout.setContentsMargins(7, 0, -1, -1)
+        self.label = QLabel(self.scrollAreaWidgetContents)
         self.label.setObjectName(u"label")
         self.label.setStyleSheet(u"color: #2c3e50;\n"
 "font-size: 16px;\n"
@@ -513,7 +535,7 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout.addWidget(self.label)
 
-        self.dirOpenButton = QPushButton(self.centralwidget)
+        self.dirOpenButton = QPushButton(self.scrollAreaWidgetContents)
         self.dirOpenButton.setObjectName(u"dirOpenButton")
         self.dirOpenButton.setMinimumSize(QSize(108, 32))
         self.dirOpenButton.setStyleSheet(u"QPushButton {\n"
@@ -539,7 +561,7 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout.addWidget(self.dirOpenButton)
 
-        self.CPdirLine = QLineEdit(self.centralwidget)
+        self.CPdirLine = QLineEdit(self.scrollAreaWidgetContents)
         self.CPdirLine.setObjectName(u"CPdirLine")
         self.CPdirLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
 "    background-color: white;\n"
@@ -555,11 +577,18 @@ class Ui_MainWindow(object):
         self.horizontalLayout.addWidget(self.CPdirLine)
 
 
-        self.verticalLayout_2.addLayout(self.horizontalLayout)
+        self.verticalLayout.addLayout(self.horizontalLayout)
 
         self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
-        self.verticalLayout_2.addItem(self.verticalSpacer)
+        self.verticalLayout.addItem(self.verticalSpacer)
+
+
+        self.verticalLayout_3.addLayout(self.verticalLayout)
+
+        self.scrollArea.setWidget(self.scrollAreaWidgetContents)
+
+        self.verticalLayout_2.addWidget(self.scrollArea)
 
         MainWindow.setCentralWidget(self.centralwidget)
 
@@ -570,6 +599,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438", None))
+        self.autoFillCheckBox.setText(QCoreApplication.translate("MainWindow", u"\u0410\u0432\u0442\u043e\u0437\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435 \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445", None))
         self.closeTableCheckBox.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443 \u043f\u0440\u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0438 \u041a\u041f", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"\u0414\u0438\u0440\u0435\u043a\u0442\u043e\u0440\u0438\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f \u041a\u041f", None))
         self.dirOpenButton.setText(QCoreApplication.translate("MainWindow", u"\u0412\u044b\u0431\u0440\u0430\u0442\u044c", None))

@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1440</width>
-    <height>843</height>
+    <height>830</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -1266,11 +1266,6 @@ QTableWidget::item:selected {
             <string>Срок поставщика</string>
            </property>
           </column>
-          <column>
-           <property name="text">
-            <string>Новый столбец</string>
-           </property>
-          </column>
          </widget>
         </item>
        </layout>
@@ -1319,7 +1314,7 @@ QTableWidget::item:selected {
       <property name="horizontalSpacing">
        <number>12</number>
       </property>
-      <item row="2" column="3">
+      <item row="2" column="4">
        <widget class="QPushButton" name="pushButton_2">
         <property name="font">
          <font>
@@ -1354,7 +1349,7 @@ QPushButton:pressed {
         </property>
        </widget>
       </item>
-      <item row="0" column="5">
+      <item row="0" column="6">
        <spacer name="horizontalSpacer">
         <property name="font">
          <font>
@@ -1374,7 +1369,7 @@ QPushButton:pressed {
         </property>
        </spacer>
       </item>
-      <item row="0" column="2">
+      <item row="0" column="3">
        <widget class="QPushButton" name="openTableButton">
         <property name="font">
          <font>
@@ -1439,8 +1434,8 @@ QPushButton:pressed {
         </property>
        </widget>
       </item>
-      <item row="0" column="3">
-       <widget class="QPushButton" name="pushButton">
+      <item row="0" column="4">
+       <widget class="QPushButton" name="closeTableButton">
         <property name="font">
          <font>
           <pointsize>-1</pointsize>
@@ -1614,7 +1609,7 @@ QComboBox::down-arrow {
         </property>
        </widget>
       </item>
-      <item row="2" column="2">
+      <item row="2" column="3">
        <widget class="QPushButton" name="createDocButton">
         <property name="font">
          <font>
@@ -1679,6 +1674,52 @@ QPushButton:pressed {
         </property>
         <property name="placeholderText">
          <string>Коэффициент</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="2">
+       <widget class="QLabel" name="label_2">
+        <property name="styleSheet">
+         <string notr="true">QLabel {
+	color:  #2c3e50;
+	font-weight: 600;
+	 font-size: 12px;
+}
+</string>
+        </property>
+        <property name="text">
+         <string>Срок доставки</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignmentFlag::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="2">
+       <widget class="QLineEdit" name="termDeliveryLine">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #2c3e50;
+    min-height: 8px;
+    selection-background-color: #e3f2fd;
+}</string>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="placeholderText">
+         <string>Число (в сутках)</string>
         </property>
        </widget>
       </item>

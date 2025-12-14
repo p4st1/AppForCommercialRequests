@@ -19,6 +19,7 @@
   <property name="styleSheet">
    <string notr="true">QQMainWindow {
     background-color: #f5f7fa;
+	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 /* ===== ЦЕНТРАЛЬНЫЙ ВИДЖЕТ ===== */
@@ -477,7 +478,7 @@ QDialog QPushButton {
      <number>0</number>
     </property>
     <property name="topMargin">
-     <number>0</number>
+     <number>10</number>
     </property>
     <property name="rightMargin">
      <number>0</number>
@@ -486,49 +487,99 @@ QDialog QPushButton {
      <number>0</number>
     </property>
     <item>
-     <widget class="QCheckBox" name="closeTableCheckBox">
-      <property name="font">
-       <font>
-        <pointsize>-1</pointsize>
-       </font>
+     <widget class="QScrollArea" name="scrollArea">
+      <property name="widgetResizable">
+       <bool>true</bool>
       </property>
-      <property name="styleSheet">
-       <string notr="true">color: #2c3e50;
+      <widget class="QWidget" name="scrollAreaWidgetContents">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>0</y>
+         <width>798</width>
+         <height>588</height>
+        </rect>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_3">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <property name="leftMargin">
+         <number>5</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>5</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <layout class="QVBoxLayout" name="verticalLayout">
+          <item>
+           <widget class="QCheckBox" name="autoFillCheckBox">
+            <property name="styleSheet">
+             <string notr="true">color: #2c3e50;
 font-size: 16px;
 padding: 2px;</string>
-      </property>
-      <property name="text">
-       <string>Закрывать таблицу при сохранении КП</string>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <layout class="QHBoxLayout" name="horizontalLayout">
-      <property name="topMargin">
-       <number>10</number>
-      </property>
-      <item>
-       <widget class="QLabel" name="label">
-        <property name="styleSheet">
-         <string notr="true">color: #2c3e50;
+            </property>
+            <property name="text">
+             <string>Автозаполнение переменных</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="closeTableCheckBox">
+            <property name="font">
+             <font>
+              <pointsize>-1</pointsize>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">color: #2c3e50;
 font-size: 16px;
 padding: 2px;</string>
-        </property>
-        <property name="text">
-         <string>Директория сохранения КП</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="dirOpenButton">
-        <property name="minimumSize">
-         <size>
-          <width>108</width>
-          <height>32</height>
-         </size>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QPushButton {
+            </property>
+            <property name="text">
+             <string>Закрывать таблицу при сохранении КП</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout">
+            <property name="spacing">
+             <number>10</number>
+            </property>
+            <property name="leftMargin">
+             <number>7</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="label">
+              <property name="styleSheet">
+               <string notr="true">color: #2c3e50;
+font-size: 16px;
+padding: 2px;</string>
+              </property>
+              <property name="text">
+               <string>Директория сохранения КП</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="dirOpenButton">
+              <property name="minimumSize">
+               <size>
+                <width>108</width>
+                <height>32</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QPushButton {
     background-color: #2c3e50;
     color: white;
     border: none;
@@ -548,16 +599,16 @@ QPushButton:hover {
 QPushButton:pressed {
     background-color: #1a252f;
 }</string>
-        </property>
-        <property name="text">
-         <string>Выбрать</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLineEdit" name="CPdirLine">
-        <property name="styleSheet">
-         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+              </property>
+              <property name="text">
+               <string>Выбрать</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="CPdirLine">
+              <property name="styleSheet">
+               <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
     background-color: white;
     border: 1px solid #dee2e6;
     border-radius: 6px;
@@ -567,23 +618,29 @@ QPushButton:pressed {
     min-height: 8px;
     selection-background-color: #e3f2fd;
 }</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </item>
-    <item>
-     <spacer name="verticalSpacer">
-      <property name="orientation">
-       <enum>Qt::Orientation::Vertical</enum>
-      </property>
-      <property name="sizeHint" stdset="0">
-       <size>
-        <width>20</width>
-        <height>40</height>
-       </size>
-      </property>
-     </spacer>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <spacer name="verticalSpacer">
+            <property name="orientation">
+             <enum>Qt::Orientation::Vertical</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>40</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+     </widget>
     </item>
    </layout>
   </widget>

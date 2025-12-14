@@ -1,4 +1,4 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import QMainWindow, QFileDialog
 from utilities.tools import DatabaseTools as Tool
 from ui_settingsAppGui import Ui_MainWindow
@@ -20,9 +20,20 @@ class mainWindow(QMainWindow):
 
         
         self.ui.closeTableCheckBox.setChecked(Config.settings['closeTable'])
+        self.ui.autoFillCheckBox.setChecked(Config.settings['autoFill'])
+        
+        self.ui.autoFillCheckBox.toggled.connect(self.autoFillChange)
+        self.ui.closeTableCheckBox.toggled.connect(self.closeTableChange)
+        
         self.ui.CPdirLine.setText(self.resourcePath(Config.config['pathToSaveCP']))
         self.ui.dirOpenButton.clicked.connect(self.selectDirectory)
     
+    def autoFillChange(self, signal):
+        Config.settings['autoFill'] = signal
+        
+    def closeTableChange(self, signal):
+        Config.settings['closeTable'] = signal
+            
     def selectDirectory(self):
         directory = QFileDialog.getExistingDirectory(
             self,

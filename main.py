@@ -1,4 +1,5 @@
 from PySide6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QTableWidgetItem
+from PySide6.QtGui import QIcon
 from createDocument import mainWindow as createDocWindow
 from customers import mainWindow as customersWindow
 from settings import mainWindow as settingsWindow
@@ -20,6 +21,8 @@ class mainWindow(QMainWindow):
         
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        
+        self.setWindowIcon(QIcon(self.resourcePath("logo.ico")))
 
         with open(
             self.resourcePath("utilities/config.json"), "r", encoding="utf-8"
@@ -33,8 +36,11 @@ class mainWindow(QMainWindow):
         print(Config.settings)
                 
         self.db = Database()
-
-        self.ui.logisticNum.setText(self.configData["config"]["logisticNum"])
+        
+        if Config.settings['autoFill']:
+            self.ui.logisticNum.setText(Config.config["logisticNum"])
+            self.ui.customLine.setText(Config.config["customNum"])
+            self.ui.termDeliveryLine.setText(Config.config["termDelivery"])
 
         self.ui.openTableButton.clicked.connect(self.openTable)
 
@@ -49,9 +55,9 @@ class mainWindow(QMainWindow):
         self.ui.createDocButton.clicked.connect(self.getTableData)
         self.ui.logisiticVar.currentIndexChanged.connect(self.logisticVarChanged)
         self.ui.customLine.editingFinished.connect(self.processFormula)
+        self.ui.termDeliveryLine.editingFinished.connect(self.processFormula)
+        self.ui.closeTableButton.clicked.connect(self.closeTable)
         self.ui.KpTable.resizeColumnsToContents()
-        
-        print(1)
         
     def processFormula(self):
         self.formulaCustom = str(Tool.evalWithVars(f'{self.ui.customLine.text()}'))
@@ -62,6 +68,8 @@ class mainWindow(QMainWindow):
 
     def openTable(self):
         self.ui.KpTable.clearContents()
+        self.processFormula()
+        
         Config.isTableOpened = True
         filename = QFileDialog.getOpenFileName(
             self, "Открыть файл", "", "csv (*.csv);; Excel Files (*.xls, *.xlsx)"
@@ -71,9 +79,18 @@ class mainWindow(QMainWindow):
             self.error('Ошибка', 'Заполните поле "Таможня"')
             return
         
+        if not self.ui.termDeliveryLine.text():
+            self.error('Ошибка', 'Заполните поле "Срок поставки"')
+            return
+        
+        if not Tool.validNum(self.ui.termDeliveryLine.text()):
+            self.error('Ошибка', '"Срок поставки" - не является числом')
+            return
+        
         try:
             df = pd.read_csv(filename, header=None, sep=";")
             df.columns = [f"col{i}" for i in range(len(df.columns))]
+            print(df)
             df = df.fillna("")
             self.rows = len(df["col0"])
             totalPrices = []
@@ -83,6 +100,7 @@ class mainWindow(QMainWindow):
                 "currency": [],
                 "unitPrice": [],
                 "totalPrice": [],
+                'termDelivery': []
             }
             self.ui.KpTable.setRowCount(self.rows)
             for rowNum in range(1, self.rows):
@@ -103,6 +121,7 @@ class mainWindow(QMainWindow):
                     self.tableData["amount"][rowNum - 1]
                     * self.tableData["unitPrice"][rowNum - 1]
                 )
+                self.tableData['termDelivery'].append(int(df['col6'][rowNum].split()[0]))
 
                 self.ui.KpTable.setItem(
                     rowNum - 1,
@@ -111,8 +130,15 @@ class mainWindow(QMainWindow):
                         f"{self.tableData['currency'][rowNum - 1]}{str(self.tableData['totalPrice'][rowNum - 1]).replace('.', ',')}"
                     ),
                 )
-
-            # calc and write
+                
+                self.ui.KpTable.setItem(
+                    rowNum - 1,
+                    14,
+                    QTableWidgetItem(
+                        f"{df["col6"][rowNum].split()[0]} суток"
+                    ),
+                )
+                                
             self.logisticCalculate()
             self.calculating()
 
@@ -128,6 +154,9 @@ class mainWindow(QMainWindow):
     def openCreateDocWindow(self, tableData):
         window = createDocWindow(self, tableData=tableData)
         window.show()
+        if Config.settings['closeTable']:
+            window.windowClosed.connect(self.closeTable)
+            self.ui.KpTable.setRowCount(0)
     
     def openParamsWindow(self):
         window = paramsWindow(self)
@@ -141,6 +170,10 @@ class mainWindow(QMainWindow):
         window = customersWindow(self)
         window.show()
 
+    def closeTable(self):
+        self.ui.KpTable.clearContents()
+        self.ui.KpTable.setRowCount(0)
+        
     def calculating(self):
         with open(
             self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
@@ -151,11 +184,7 @@ class mainWindow(QMainWindow):
             print(f'tableData:{self.tableData}')
             price =  self.tableData['logistic'][rowNum] / self.tableData["amount"][rowNum]
             realPrice = 0
-            
-            print(rowNum)
-            
-            
-            #Qline edit сделать работу с переменными
+                         
             self.ui.KpTable.setItem(
                 rowNum,
                 8,
@@ -198,6 +227,14 @@ class mainWindow(QMainWindow):
                     f"{str(realPrice * self.tableData['amount'][rowNum] * temp_var).replace('.', ',')}"
                 ),
             )
+            
+            self.ui.KpTable.setItem(
+                    rowNum,
+                    13,
+                    QTableWidgetItem(
+                        f"{self.tableData['termDelivery'][rowNum] + int(self.ui.termDeliveryLine.text())} суток"
+                    ),
+                )
         
     def logisticVarChanged(self, ind):
         self.logisticCalculate()

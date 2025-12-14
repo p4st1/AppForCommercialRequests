@@ -26,7 +26,7 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(1440, 843)
+        MainWindow.resize(1440, 830)
         sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -1048,8 +1048,8 @@ class Ui_MainWindow(object):
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
         self.KpTable = QTableWidget(self.tab)
-        if (self.KpTable.columnCount() < 16):
-            self.KpTable.setColumnCount(16)
+        if (self.KpTable.columnCount() < 15):
+            self.KpTable.setColumnCount(15)
         __qtablewidgetitem = QTableWidgetItem()
         self.KpTable.setHorizontalHeaderItem(0, __qtablewidgetitem)
         font4 = QFont()
@@ -1090,8 +1090,6 @@ class Ui_MainWindow(object):
         self.KpTable.setHorizontalHeaderItem(13, __qtablewidgetitem13)
         __qtablewidgetitem14 = QTableWidgetItem()
         self.KpTable.setHorizontalHeaderItem(14, __qtablewidgetitem14)
-        __qtablewidgetitem15 = QTableWidgetItem()
-        self.KpTable.setHorizontalHeaderItem(15, __qtablewidgetitem15)
         self.KpTable.setObjectName(u"KpTable")
         sizePolicy1.setHeightForWidth(self.KpTable.sizePolicy().hasHeightForWidth())
         self.KpTable.setSizePolicy(sizePolicy1)
@@ -1216,11 +1214,11 @@ class Ui_MainWindow(object):
 "    background-color: #1a252f;\n"
 "}")
 
-        self.funcButtons.addWidget(self.pushButton_2, 2, 3, 1, 1)
+        self.funcButtons.addWidget(self.pushButton_2, 2, 4, 1, 1)
 
         self.horizontalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.funcButtons.addItem(self.horizontalSpacer, 0, 5, 1, 1)
+        self.funcButtons.addItem(self.horizontalSpacer, 0, 6, 1, 1)
 
         self.openTableButton = QPushButton(self.centralwidget)
         self.openTableButton.setObjectName(u"openTableButton")
@@ -1246,7 +1244,7 @@ class Ui_MainWindow(object):
 "    background-color: #1a252f;\n"
 "}")
 
-        self.funcButtons.addWidget(self.openTableButton, 0, 2, 1, 1)
+        self.funcButtons.addWidget(self.openTableButton, 0, 3, 1, 1)
 
         self.label_5 = QLabel(self.centralwidget)
         self.label_5.setObjectName(u"label_5")
@@ -1266,10 +1264,10 @@ class Ui_MainWindow(object):
 
         self.funcButtons.addWidget(self.label_5, 0, 0, 1, 1)
 
-        self.pushButton = QPushButton(self.centralwidget)
-        self.pushButton.setObjectName(u"pushButton")
-        self.pushButton.setFont(font6)
-        self.pushButton.setStyleSheet(u"QPushButton {\n"
+        self.closeTableButton = QPushButton(self.centralwidget)
+        self.closeTableButton.setObjectName(u"closeTableButton")
+        self.closeTableButton.setFont(font6)
+        self.closeTableButton.setStyleSheet(u"QPushButton {\n"
 "    background-color: #2c3e50;\n"
 "    color: white;\n"
 "    border: none;\n"
@@ -1290,7 +1288,7 @@ class Ui_MainWindow(object):
 "    background-color: #1a252f;\n"
 "}")
 
-        self.funcButtons.addWidget(self.pushButton, 0, 3, 1, 1)
+        self.funcButtons.addWidget(self.closeTableButton, 0, 4, 1, 1)
 
         self.logisiticVar = QComboBox(self.centralwidget)
         self.logisiticVar.addItem("")
@@ -1405,7 +1403,7 @@ class Ui_MainWindow(object):
 "    background-color: #1a252f;\n"
 "}")
 
-        self.funcButtons.addWidget(self.createDocButton, 2, 2, 1, 1)
+        self.funcButtons.addWidget(self.createDocButton, 2, 3, 1, 1)
 
         self.customLine = QLineEdit(self.centralwidget)
         self.customLine.setObjectName(u"customLine")
@@ -1425,6 +1423,38 @@ class Ui_MainWindow(object):
 
         self.funcButtons.addWidget(self.customLine, 1, 1, 1, 1)
 
+        self.label_2 = QLabel(self.centralwidget)
+        self.label_2.setObjectName(u"label_2")
+        self.label_2.setStyleSheet(u"QLabel {\n"
+"	color:  #2c3e50;\n"
+"	font-weight: 600;\n"
+"	 font-size: 12px;\n"
+"}\n"
+"")
+        self.label_2.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.funcButtons.addWidget(self.label_2, 0, 2, 1, 1)
+
+        self.termDeliveryLine = QLineEdit(self.centralwidget)
+        self.termDeliveryLine.setObjectName(u"termDeliveryLine")
+        sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        sizePolicy5.setHorizontalStretch(0)
+        sizePolicy5.setVerticalStretch(0)
+        sizePolicy5.setHeightForWidth(self.termDeliveryLine.sizePolicy().hasHeightForWidth())
+        self.termDeliveryLine.setSizePolicy(sizePolicy5)
+        self.termDeliveryLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
+"    background-color: white;\n"
+"    border: 1px solid #dee2e6;\n"
+"    border-radius: 6px;\n"
+"    padding: 4px 8px;\n"
+"    font-size: 12px;\n"
+"    color: #2c3e50;\n"
+"    min-height: 8px;\n"
+"    selection-background-color: #e3f2fd;\n"
+"}")
+
+        self.funcButtons.addWidget(self.termDeliveryLine, 1, 2, 1, 1)
+
 
         self.verticalLayout.addLayout(self.funcButtons)
 
@@ -1432,11 +1462,11 @@ class Ui_MainWindow(object):
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
         self.menubar.setGeometry(QRect(0, 0, 1440, 31))
-        sizePolicy5 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum)
-        sizePolicy5.setHorizontalStretch(0)
-        sizePolicy5.setVerticalStretch(0)
-        sizePolicy5.setHeightForWidth(self.menubar.sizePolicy().hasHeightForWidth())
-        self.menubar.setSizePolicy(sizePolicy5)
+        sizePolicy6 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum)
+        sizePolicy6.setHorizontalStretch(0)
+        sizePolicy6.setVerticalStretch(0)
+        sizePolicy6.setHeightForWidth(self.menubar.sizePolicy().hasHeightForWidth())
+        self.menubar.setSizePolicy(sizePolicy6)
         font7 = QFont()
         font7.setFamilies([u"Inter"])
         font7.setPointSize(8)
@@ -1540,14 +1570,12 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem13.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0440\u043e\u043a \u043f\u043e\u0441\u0442\u0430\u0432\u043a\u0438", None));
         ___qtablewidgetitem14 = self.KpTable.horizontalHeaderItem(14)
         ___qtablewidgetitem14.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0440\u043e\u043a \u043f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0430", None));
-        ___qtablewidgetitem15 = self.KpTable.horizontalHeaderItem(15)
-        ___qtablewidgetitem15.setText(QCoreApplication.translate("MainWindow", u"\u041d\u043e\u0432\u044b\u0439 \u0441\u0442\u043e\u043b\u0431\u0435\u0446", None));
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043b\u043d\u0430\u044f \u0442\u0430\u0431\u043b\u0438\u0446\u0430", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"Tab 2", None))
         self.pushButton_2.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0444\u043e\u0440\u043c\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
         self.openTableButton.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
         self.label_5.setText(QCoreApplication.translate("MainWindow", u"\u041b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0430", None))
-        self.pushButton.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0440\u044b\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
+        self.closeTableButton.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0440\u044b\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
         self.logisiticVar.setItemText(0, QCoreApplication.translate("MainWindow", u"\u043a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442", None))
         self.logisiticVar.setItemText(1, QCoreApplication.translate("MainWindow", u"\u0440\u0430\u0441\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0438\u0435", None))
 
@@ -1557,6 +1585,9 @@ class Ui_MainWindow(object):
         self.createDocButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0432\u0435\u0441\u0442\u0438 \u041a\u041f", None))
         self.customLine.setText("")
         self.customLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u041a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442", None))
+        self.label_2.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0440\u043e\u043a \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0438", None))
+        self.termDeliveryLine.setText("")
+        self.termDeliveryLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u0427\u0438\u0441\u043b\u043e (\u0432 \u0441\u0443\u0442\u043a\u0430\u0445)", None))
         self.FileMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u0424\u0430\u0439\u043b", None))
         self.EditMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u0420\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c", None))
         self.SettingsMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438", None))
