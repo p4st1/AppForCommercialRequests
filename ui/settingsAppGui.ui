@@ -6,71 +6,18 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>747</width>
-    <height>568</height>
+    <width>800</width>
+    <height>600</height>
    </rect>
   </property>
-  <property name="font">
-   <font>
-    <family>Gadugi</family>
-   </font>
-  </property>
   <property name="windowTitle">
-   <string>Переменные</string>
+   <string>Настройки</string>
+  </property>
+  <property name="autoFillBackground">
+   <bool>false</bool>
   </property>
   <property name="styleSheet">
-   <string notr="true">QMainWindow {
-    background-color: #f5f7fa;
-}
-
-/* ===== ЦЕНТРАЛЬНЫЙ ВИДЖЕТ ===== */
-QWidget#centralWidget {
-    background-color: #f5f7fa;
-    padding: 15px;
-}
-
-QPushButton {
-    background-color: #2c3e50;
-    color: white;
-    border: none;
-    padding: 1px 1px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 10px;
-    min-height: 24px;
-    min-width: 100px;
-}
-
-QPushButton:hover {
-    background-color: #34495e;
-    border: 1px solid #2c3e50;
-}
-
-QPushButton:pressed {
-    background-color: #1a252f;
-}</string>
-  </property>
-  <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout">
-    <property name="spacing">
-     <number>0</number>
-    </property>
-    <property name="leftMargin">
-     <number>3</number>
-    </property>
-    <property name="topMargin">
-     <number>3</number>
-    </property>
-    <property name="rightMargin">
-     <number>3</number>
-    </property>
-    <property name="bottomMargin">
-     <number>3</number>
-    </property>
-    <item>
-     <widget class="QScrollArea" name="scrollArea">
-      <property name="styleSheet">
-       <string notr="true">QMainWindow {
+   <string notr="true">QQMainWindow {
     background-color: #f5f7fa;
 }
 
@@ -321,17 +268,7 @@ QLabel#totalLabel {
     border: 1px solid #c8e6c9;
 }
 
-/* ===== ПОЛЯ ВВОДА ===== */
-QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
-    background-color: white;
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-size: 12px;
-    color: #2c3e50;
-    min-height: 35px;
-    selection-background-color: #e3f2fd;
-}
+
 
 QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
     border: 1px solid #3498db;
@@ -348,7 +285,7 @@ QComboBox::drop-down {
 QComboBox::down-arrow {
     image: url(down_arrow.png);
     width: 12px;
-    height: 12px;
+    height: 6px;
 }
 
 /* ===== ПОЛОСЫ ПРОКРУТКИ ===== */
@@ -530,183 +467,123 @@ QDialog QLabel {
 QDialog QPushButton {
     min-width: 80px;
 }</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout_2">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
+    <item>
+     <widget class="QCheckBox" name="closeTableCheckBox">
+      <property name="font">
+       <font>
+        <pointsize>-1</pointsize>
+       </font>
       </property>
-      <property name="widgetResizable">
-       <bool>true</bool>
+      <property name="styleSheet">
+       <string notr="true">color: #2c3e50;
+font-size: 16px;
+padding: 2px;</string>
       </property>
-      <widget class="QWidget" name="scrollAreaItems">
-       <property name="geometry">
-        <rect>
-         <x>0</x>
-         <y>0</y>
-         <width>739</width>
-         <height>528</height>
-        </rect>
-       </property>
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <layout class="QVBoxLayout" name="verticalLayout_2">
-        <property name="spacing">
-         <number>0</number>
-        </property>
-        <property name="leftMargin">
-         <number>0</number>
-        </property>
-        <property name="topMargin">
-         <number>0</number>
-        </property>
-        <property name="rightMargin">
-         <number>0</number>
-        </property>
-        <property name="bottomMargin">
-         <number>0</number>
-        </property>
-        <item>
-         <layout class="QHBoxLayout" name="parametersItems">
-          <item>
-           <layout class="QVBoxLayout" name="parametersLabels"/>
-          </item>
-          <item>
-           <spacer name="horizontalSpacer_2">
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>40</width>
-              <height>20</height>
-             </size>
-            </property>
-           </spacer>
-          </item>
-          <item>
-           <layout class="QVBoxLayout" name="parametersValues"/>
-          </item>
-         </layout>
-        </item>
-        <item>
-         <spacer name="verticalSpacer">
-          <property name="orientation">
-           <enum>Qt::Vertical</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>20</width>
-            <height>40</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
-       </layout>
-      </widget>
+      <property name="text">
+       <string>Закрывать таблицу при сохранении КП</string>
+      </property>
      </widget>
     </item>
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout">
       <property name="topMargin">
-       <number>5</number>
+       <number>10</number>
       </property>
       <item>
-       <widget class="QPushButton" name="addNewButton">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
+       <widget class="QLabel" name="label">
         <property name="styleSheet">
-         <string notr="true"/>
+         <string notr="true">color: #2c3e50;
+font-size: 16px;
+padding: 2px;</string>
         </property>
         <property name="text">
-         <string>Добавить переменную</string>
+         <string>Директория сохранения КП</string>
         </property>
        </widget>
       </item>
       <item>
-       <spacer name="horizontalSpacer">
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-        <property name="sizeHint" stdset="0">
+       <widget class="QPushButton" name="dirOpenButton">
+        <property name="minimumSize">
          <size>
-          <width>40</width>
-          <height>20</height>
+          <width>108</width>
+          <height>32</height>
          </size>
         </property>
-       </spacer>
-      </item>
-      <item>
-       <widget class="QPushButton" name="saveButton">
-        <property name="enabled">
-         <bool>true</bool>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
         <property name="styleSheet">
-         <string notr="true"/>
+         <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 24px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
         </property>
         <property name="text">
-         <string>Сохранить</string>
-        </property>
-        <property name="checkable">
-         <bool>false</bool>
-        </property>
-        <property name="checked">
-         <bool>false</bool>
-        </property>
-        <property name="autoRepeat">
-         <bool>false</bool>
-        </property>
-        <property name="autoDefault">
-         <bool>false</bool>
-        </property>
-        <property name="default">
-         <bool>false</bool>
-        </property>
-        <property name="flat">
-         <bool>false</bool>
+         <string>Выбрать</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="QPushButton" name="saveAndCloseButton">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>Сохранить и закрыть</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="cancelButton">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>Отменить изменения</string>
+       <widget class="QLineEdit" name="CPdirLine">
+        <property name="styleSheet">
+         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #2c3e50;
+    min-height: 8px;
+    selection-background-color: #e3f2fd;
+}</string>
         </property>
        </widget>
       </item>
      </layout>
+    </item>
+    <item>
+     <spacer name="verticalSpacer">
+      <property name="orientation">
+       <enum>Qt::Orientation::Vertical</enum>
+      </property>
+      <property name="sizeHint" stdset="0">
+       <size>
+        <width>20</width>
+        <height>40</height>
+       </size>
+      </property>
+     </spacer>
     </item>
    </layout>
   </widget>

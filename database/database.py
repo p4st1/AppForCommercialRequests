@@ -11,30 +11,24 @@ class Database:
             """
         CREATE TABLE IF NOT EXISTS offers(
         id INTEGER PRIMARY KEY,
-         TEXT NOT NULL,
-        password TEXT NOT NULL,
-        email TEXT NOT NULL,
-        fullname TEXT NOT NULL
+        date TEXT NOT NULL,
         )
         """
         )
 
         self.cursor.execute(
             '''
-        CREATE TABLE IF NOT EXISTS suppliers(
+        CREATE TABLE IF NOT EXISTS customers(
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
-        email TEXT NOT NULL,
+        surname TEXT NOT NULL, 
+        patronymic TEXT NOT NULL,
         address TEXT NOT NULL,
-        city TEXT NOT NULL,
-        TIN INTEGER NOT NULL,
-        phoneNumber INTEGER NOT NULL,
-        website TEXT NOT NULL,
-        addresIndex INTEGER NOT NULL,
-        room INTEGER NOT NULL,
-        building INTEGER NOT NULL,
-        RRC INTEGER NOT NULL,
-        img TEXT NOT NULL
+        email TEXT NOT NULL,
+        phoneNumber TEXT NOT NULL,
+        companyName TEXT NOT NULL,
+        post TEXT NOT NULL,
+        conditions TEXT NOT NULL
         )
             '''
         )
@@ -54,56 +48,49 @@ class Database:
 
     def createOffer(self):
         self.cursor.execute("SELECT MAX(id) FROM offers")
-        offerName = f'{self.cursor.fetchone()[0]}/{datetime.now().strftime('%d.%m')}'
+        id = self.cursor.fetchone()[0]
+        offerName = f'{id}/{datetime.now().strftime('%d.%m')}'
         print(offerName)
-        self.cursor.execute('''INSERT INTO offers
-                        ''')
-        
-    def createSupplier(self, data):
-        self.cursor.execute('''INSERT INTO suppliers (
+        self.cursor.execute('''INSERT INTO offers (
+                            date
+                            ) VALUES (?)
+                        ''', (datetime.now().strftime('%d.%m'), ))
+        return id
+    
+    def createCustomer(self, data):
+        self.cursor.execute('''INSERT INTO customers (
                             name, 
+                            surname, 
+                            patronymic, 
+                            address,
                             email, 
-                            address, 
-                            city,
-                            TIN, 
                             phoneNumber, 
-                            website, 
-                            addresIndex, 
-                            room, 
-                            building, 
-                            RRC, 
-                            img
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            companyName,
+                            post,
+                            conditions
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', data)
     
-    def getAllSuppliers(self):
+    def getAllCustomers(self):
         try:
-            self.cursor.execute('SELECT * FROM suppliers')
-            suppliers = self.cursor.fetchall()
+            self.cursor.execute('SELECT * FROM customers')
+            customers = self.cursor.fetchall()
         except:
             return -1
         else:
-            return suppliers
+            return customers
         
-    def getSupplier(self, name):
+    def getCustomer(self, name):
         try:
-            self.cursor.execute(f'SELECT * FROM suppliers WHERE name = ?', (name, ))
-            suppliers =  self.cursor.fetchall()
+            self.cursor.execute(f'SELECT * FROM customers WHERE companyName = ?', (name, ))
+            customers =  self.cursor.fetchall()
         except:
             return -1
         else:
-            return suppliers
-
+            return customers
         
-test = ['ООО "АЛЬФА ИНЖИНИРИННГ', 
-        'admin@alphakappa.ru', 
-        'ул. рябиновая',
-        'г. Москва',
-        '3717342374',
-        '89334728200',
-        'alphakappa.ru',
-        '660028',
-        '26',
-        '1',
-        '485874395',
-        'None']
+    def delCustomer(self, name):
+        try:
+            self.cursor.execute(f'DELETE FROM customers WHERE companyName = ?', (name, ))
+        except:
+            return -1

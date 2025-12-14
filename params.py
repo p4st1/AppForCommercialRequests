@@ -1,6 +1,8 @@
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit
-from PyQt6 import uic
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit
+from ui_paramsGui import Ui_MainWindow
+from ui_createParamsGui import Ui_MainWindow as Ui_addNewParamWindow
+from utilities.tools import DatabaseTools as Tool
 import json
 from utilities.config import Config
 import sys
@@ -27,10 +29,11 @@ class Dialog:
 class addNewParamGUI(QMainWindow):
     def __init__(self, parent=None):
         super(addNewParamGUI, self).__init__(parent)
-        uic.loadUi(self.resourcePath("ui/createParams.ui"), self)
+        self.ui = Ui_addNewParamWindow()
+        self.ui.setupUi(self)
 
-        self.addButton.clicked.connect(self.addParam)
-        self.cancelButton.clicked.connect(self.cancelParam)
+        self.ui.addButton.clicked.connect(self.addParam)
+        self.ui.cancelButton.clicked.connect(self.cancelParam)
 
     def cancelParam(self):
         self.close()
@@ -42,8 +45,8 @@ class addNewParamGUI(QMainWindow):
         ) as f:
             self.paramsData = json.load(f)
             self.paramsData["parameters"][len(self.paramsData["parameters"]) + 1] = [
-                self.nameEdit.text(),
-                self.valueEdit.text(),
+                self.ui.nameEdit.text(),
+                self.ui.valueEdit.text(),
                 Config.types[self.typeEdit.currentText()],
             ]
         with open(
@@ -68,11 +71,12 @@ class addNewParamGUI(QMainWindow):
 
 
 class mainWindow(QMainWindow):
-    windowClosed = pyqtSignal()
+    windowClosed = Signal()
 
     def __init__(self, parent=None):
         super(mainWindow, self).__init__(parent)
-        uic.loadUi(self.resourcePath("ui/paramsGui.ui"), self)
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
 
         self.parameters = {}
         self.hasChanges = False
@@ -82,8 +86,8 @@ class mainWindow(QMainWindow):
         ) as f:
             self.paramsData = json.load(f)
 
-        self.saveButton.setDisabled(True)
-        self.saveAndCloseButton.setDisabled(True)
+        self.ui.saveButton.setDisabled(True)
+        self.ui.saveAndCloseButton.setDisabled(True)
 
         for key, item in self.paramsData["parameters"].items():
             label = QLabel()
@@ -94,16 +98,16 @@ class mainWindow(QMainWindow):
             self._name.setText(value)
             self._name.textEdited.connect(self.onTextValueChanged)
 
-            self.parametersLabels.addWidget(label)
-            self.parametersValues.addWidget(self._name)
+            self.ui.parametersLabels.addWidget(label)
+            self.ui.parametersValues.addWidget(self._name)
 
             if key not in self.parameters:
                 self.parameters[key] = self._name
 
-        self.addNewButton.clicked.connect(self.addNewParamGui)
-        self.saveButton.clicked.connect(self.saveChanges)
-        self.saveAndCloseButton.clicked.connect(self.saveChangesAndClose)
-        self.cancelButton.clicked.connect(self.cancelChanges)
+        self.ui.addNewButton.clicked.connect(self.addNewParamGui)
+        self.ui.saveButton.clicked.connect(self.saveChanges)
+        self.ui.saveAndCloseButton.clicked.connect(self.saveChangesAndClose)
+        self.ui.cancelButton.clicked.connect(self.cancelChanges)
 
     def saveChanges(self):
         for key, item in self.parameters.items():

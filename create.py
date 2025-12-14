@@ -3,26 +3,27 @@ from docx.shared import Inches
 from docx.shared import Inches, Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from utilities.tools import DatabaseTools as Tools
-from datetime import datetime
+from datetime import datetime, timedelta
+from utilities.config import Config
 
 class createTextFile:
     def __init__(self, data):
-        print(data)
-        self.rows = data[0]
-        self.table = data[1]
+        tableData = data[0]
+        self.rows = tableData[0]
+        self.table = tableData[1]
         self.headers = ['№',
                         'Наименование',
                         'Каталожный товар',
                         'Ед. изм',
                         'Кол-во',
-                        'Цена реализации за ед. без ндс',
-                        'Итого реализации без НДС',
-                        'Итого реализации c НДС',
+                        'Цена за ед. без ндс',
+                        'Итого без НДС',
+                        'Итого c НДС',
                         ]
         
+        self.customerData = data[1][0]
+        self.extraData = data[2]
         document = Document()
-        
-        print(data)
 
         section = document.sections[0]
         
@@ -33,17 +34,33 @@ class createTextFile:
         
         header = document.sections[0].header
         
-        header.paragraphs[0].text = f'''ООО "АЛЬФА КАППА ИНЖИНИРИНГ\nИНН 9731121825; КПП 772901001\n121471, Г.МОСКВА, УЛ., РЯБИНОВАЯ, Д.26 СТР.1, ПОМЕЩ.141\nalphakappa.ru, Тел: +7 (993) 338-47-22, admin@alphakappa.ru'''
-        header.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
-        header.paragraphs[0].paragraph_format.left_indent = Cm(6.5)
-        for run in header.paragraphs[0].runs:
-            run.font.size = Pt(8)
+        for paragraph in header.paragraphs:
+            paragraph.clear()
+        
+        headerTable = header.add_table(rows=1, cols=2, width=Cm(15))
+
+        left_cell = headerTable.cell(0, 0) 
+        left_paragraph = left_cell.paragraphs[0]
+        run = left_paragraph.add_run()
+        run.add_picture('logo.jpg', width=Cm(3))
+        
+
+        right_cell = headerTable.cell(0, 1) 
+        right_paragraph = right_cell.paragraphs[0]
+
+        run_text = right_paragraph.add_run(f'''ООО "АЛЬФА КАППА ИНЖИНИРИНГ\nИНН 9731121825; КПП 772901001\n121471, Г.МОСКВА, УЛ., РЯБИНОВАЯ, Д.26 СТР.1, ПОМЕЩ.141\nalphakappa.ru, Тел: +7 (993) 338-47-22, admin@alphakappa.ru''')
+        run_text.font.size = Pt(8)
+        
+        headerTable.style = 'Normal Table'
+    
         
         p = document.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        run = p.add_run(f"""\nИсх. №2/22.10 от {datetime.now().strftime('%d.%m.%Y')}""")
+        run = p.add_run(f"""\nИсх. №{data[3]}/{datetime.now().strftime('%d.%m')} от {datetime.now().strftime('%d.%m.%Y')}""")
         p.add_run('\t')
-        run = p.add_run(f'Должность ООО\n""\n')
+        run = p.add_run(f'{self.customerData[7]}\n')
+        p.add_run('\t')
+        run = p.add_run(f'{self.customerData[8]}\n')
         run.font.size = Pt(11)
         
         tab_stops = p.paragraph_format.tab_stops
@@ -52,12 +69,12 @@ class createTextFile:
         p = document.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        run = p.add_run(f"""Уважаемый (ая) Имя Отчество !""")
+        run = p.add_run(f"""Уважаемый (ая) {self.customerData[1]} {self.customerData[3]} !""")
         run.font.name = 'Times New Roman'
         run.font.size = Pt(11)
         
         p = document.add_paragraph(
-            f"""В ответ на заявку 105465-ТТ на поставку оборудования, высылаем Вам коммерческое предложение и готовы предложить продукцию в следующем ассортименте.
+            f"""В ответ на заявку {self.extraData[0]} на поставку оборудования, высылаем Вам коммерческое предложение и готовы предложить продукцию в следующем ассортименте.
 """
         )
         run.font.name = 'Times New Roman'
@@ -101,18 +118,19 @@ class createTextFile:
         run.font.size = Pt(12)
         
         items = [
-            ("Условия поставки: DDP", 
-            "Срок гарантии - 12 месяцев с момента отгрузки гарантия не распространяется на быстроизнашивающиеся части;"),
+            (f"Условия поставки: {self.customerData[9]}", ''),
+            
+            (f"Срок гарантии - {self.extraData[1]} с момента отгрузки гарантия не распространяется на быстроизнашивающиеся части;", ''),
             
             ("Сроки поставки - до 75 дней с момента подписания спецификации с возможностью досрочной поставки;", ""),
             
-            ("Производитель - CAT, OEM;", ""),
+            (f"Производитель - {self.extraData[3]};", ""),
             
-            ("Условия оплаты: посланная в течение 60 календарных дней с момента поставки;", ""),
+            (f"Условия оплаты: посланная в течение {self.extraData[2]} с момента поставки;", ""),
             
             ("Оплата осуществляется в Рублик РФ по курсу Центрального банка РФ на дату подписания спецификации Поставщиком;", ""),
             
-            ("Срок действия КП до 01.11.2025.", "")
+            (f"Срок действия КП до {(datetime.now() + timedelta(days=10)).strftime('%d.%m.%Y')}.", "")
         ]
         
         for main_text, sub_text in items:
@@ -141,6 +159,6 @@ class createTextFile:
         run.font.size = Pt(11)
 
         try:
-            document.save("kp1.docx")
+            document.save(f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_от_{datetime.now().strftime('%d.%m.%Y')}.docx")
         except Exception as e:
             print(e)

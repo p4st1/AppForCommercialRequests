@@ -12,16 +12,24 @@
   </property>
   <property name="font">
    <font>
-    <family>Gadugi</family>
+    <family>Inter</family>
    </font>
   </property>
   <property name="windowTitle">
-   <string>Поставщики</string>
+   <string notr="true">Заказчики</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
     <item>
      <widget class="QScrollArea" name="scrollArea">
+      <property name="font">
+       <font>
+        <family>Segoe UI</family>
+        <pointsize>9</pointsize>
+        <weight>50</weight>
+        <bold>false</bold>
+       </font>
+      </property>
       <property name="widgetResizable">
        <bool>true</bool>
       </property>
@@ -31,7 +39,7 @@
          <x>0</x>
          <y>0</y>
          <width>743</width>
-         <height>523</height>
+         <height>505</height>
         </rect>
        </property>
        <layout class="QVBoxLayout" name="verticalLayout_2">
@@ -52,6 +60,14 @@
         </property>
         <item>
          <widget class="QScrollArea" name="scrollArea_2">
+          <property name="font">
+           <font>
+            <family>Segoe UI</family>
+            <pointsize>9</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
           <property name="widgetResizable">
            <bool>true</bool>
           </property>
@@ -61,7 +77,7 @@
              <x>0</x>
              <y>0</y>
              <width>741</width>
-             <height>521</height>
+             <height>503</height>
             </rect>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout_4">
@@ -86,7 +102,16 @@
                <number>0</number>
               </property>
               <item>
-               <widget class="QListWidget" name="suppliersList"/>
+               <widget class="QListWidget" name="suppliersList">
+                <property name="font">
+                 <font>
+                  <family>Segoe UI</family>
+                  <pointsize>9</pointsize>
+                  <weight>50</weight>
+                  <bold>false</bold>
+                 </font>
+                </property>
+               </widget>
               </item>
              </layout>
             </item>
@@ -100,13 +125,51 @@
     </item>
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout">
+      <property name="leftMargin">
+       <number>5</number>
+      </property>
       <property name="topMargin">
        <number>0</number>
       </property>
+      <property name="rightMargin">
+       <number>5</number>
+      </property>
+      <property name="bottomMargin">
+       <number>10</number>
+      </property>
       <item>
        <widget class="QPushButton" name="addSupplierButton">
+        <property name="font">
+         <font>
+          <pointsize>-1</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 24px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+        </property>
         <property name="text">
-         <string>Добавить поставщика</string>
+         <string>Добавить заказчика</string>
         </property>
        </widget>
       </item>
@@ -114,6 +177,43 @@
        <widget class="QPushButton" name="deleteSupplierButton">
         <property name="enabled">
          <bool>false</bool>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>-1</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 24px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}
+QPushButton:disabled {
+    background-color: #cccccc;
+    color: #666666;
+}
+
+QPushButton:enabled {
+    background-color: #2c3e50;
+}</string>
         </property>
         <property name="text">
          <string>Удалить поставщика</string>
@@ -143,6 +243,43 @@
         <property name="enabled">
          <bool>false</bool>
         </property>
+        <property name="font">
+         <font>
+          <pointsize>-1</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 24px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}
+QPushButton:disabled {
+    background-color: #cccccc;
+    color: #666666;
+}
+
+QPushButton:enabled {
+    background-color: #2c3e50;
+}</string>
+        </property>
         <property name="text">
          <string>Изменить данные</string>
         </property>
@@ -156,6 +293,35 @@
       </item>
       <item>
        <widget class="QPushButton" name="closeButton">
+        <property name="font">
+         <font>
+          <pointsize>-1</pointsize>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 24px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+        </property>
         <property name="text">
          <string>Закрыть</string>
         </property>

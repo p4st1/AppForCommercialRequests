@@ -4,3 +4,13 @@ class Config:
             '*': 'multiply',
             '/': 'division'
         }
+    
+    isTableOpened = False
+    
+    settings = {
+        
+    }
+    
+    config = {
+        
+    }

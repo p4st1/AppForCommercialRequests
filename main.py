@@ -1,68 +1,76 @@
-from PyQt6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QTableWidgetItem
+from PySide6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QTableWidgetItem
 from createDocument import mainWindow as createDocWindow
-from suppliers import mainWindow as suppliersWindow
+from customers import mainWindow as customersWindow
+from settings import mainWindow as settingsWindow
+from utilities.tools import DatabaseTools as Tool
 from params import mainWindow as paramsWindow
 from database.database import Database
-from utilities.tools import DatabaseTools as Tool
-from PyQt6 import uic
+from utilities.config import Config
+from ui_mainGui import Ui_MainWindow
+
+
 import pandas as pd
 import json
 import sys
 import os
 
-
-class Dialog:
-    def myDialog(self):
-        dlg = QMessageBox(self)
-        dlg.setWindowTitle("Подтверждение")
-        dlg.setText("База данных не сохранена. Отменить изменения?")
-        dlg.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        dlg.setIcon(QMessageBox.Icon.Question)
-        button = dlg.exec()
-
-        if button == QMessageBox.StandardButton.Yes:
-            return True
-        else:
-            return False
-
-
 class mainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        uic.loadUi(self.resourcePath("ui/mainGui.ui"), self)
+        
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
 
         with open(
             self.resourcePath("utilities/config.json"), "r", encoding="utf-8"
         ) as f:
             self.configData = json.load(f)
-
+            for setting, value in self.configData['settings'].items():
+                Config.settings[setting] = bool(value)
+            for setting, value in self.configData['config'].items():
+                Config.config[setting] = value
+                
+        print(Config.settings)
+                
         self.db = Database()
 
-        self.logisticNum.setText(self.configData["config"]["logisticNum"])
+        self.ui.logisticNum.setText(self.configData["config"]["logisticNum"])
 
-        self.openTableButton.clicked.connect(self.openTable)
+        self.ui.openTableButton.clicked.connect(self.openTable)
 
         # edit menu buttons
-        self.editParamsButton.triggered.connect(self.openParamsWindow)
+        self.ui.editParamsButton.triggered.connect(self.openParamsWindow)
 
-        # settings menu buttons
-        self.suppliersMenuButton.triggered.connect(self.openSuppliersWindow)
+        # # settings menu buttons
+        self.ui.suppliersMenuButton.triggered.connect(self.openSuppliersWindow)
+        self.ui.settingsMenuButton.triggered.connect(self.openSettingsWindow)
         
         # func buttons 
-        self.createDocButton.clicked.connect(self.getTableData)
-        self.logisiticVar.currentIndexChanged.connect(self.logisticVarChanged)
+        self.ui.createDocButton.clicked.connect(self.getTableData)
+        self.ui.logisiticVar.currentIndexChanged.connect(self.logisticVarChanged)
+        self.ui.customLine.editingFinished.connect(self.processFormula)
+        self.ui.KpTable.resizeColumnsToContents()
         
-        self.KpTable.resizeColumnsToContents()   
+        print(1)
+        
+    def processFormula(self):
+        self.formulaCustom = str(Tool.evalWithVars(f'{self.ui.customLine.text()}'))
+        self.ui.customLine.setText(self.formulaCustom)
+        
+        if Config.isTableOpened:
+            self.calculating()
 
     def openTable(self):
-        self.KpTable.clearContents()
-        
+        self.ui.KpTable.clearContents()
+        Config.isTableOpened = True
         filename = QFileDialog.getOpenFileName(
             self, "Открыть файл", "", "csv (*.csv);; Excel Files (*.xls, *.xlsx)"
         )[0]
 
+        if not self.ui.customLine.text():
+            self.error('Ошибка', 'Заполните поле "Таможня"')
+            return
+        
         try:
             df = pd.read_csv(filename, header=None, sep=";")
             df.columns = [f"col{i}" for i in range(len(df.columns))]
@@ -76,12 +84,12 @@ class mainWindow(QMainWindow):
                 "unitPrice": [],
                 "totalPrice": [],
             }
-            self.KpTable.setRowCount(self.rows)
+            self.ui.KpTable.setRowCount(self.rows)
             for rowNum in range(1, self.rows):
                 colNum = 0
                 for col in df.columns:
                     if df[col][rowNum]:
-                        self.KpTable.setItem(
+                        self.ui.KpTable.setItem(
                             rowNum - 1, colNum, QTableWidgetItem(str(df[col][rowNum]))
                         )
                     colNum += 1
@@ -96,7 +104,7 @@ class mainWindow(QMainWindow):
                     * self.tableData["unitPrice"][rowNum - 1]
                 )
 
-                self.KpTable.setItem(
+                self.ui.KpTable.setItem(
                     rowNum - 1,
                     6,
                     QTableWidgetItem(
@@ -109,24 +117,29 @@ class mainWindow(QMainWindow):
             self.calculating()
 
         except Exception as e:
-            error = QMessageBox(self)
-            error.setWindowTitle("Ошибка")
-            error.setText(f"Невозможно прочитать таблицу\n{e}")
-            error.exec()
+            self.error('Ошибка', f"Невозможно прочитать таблицу\n{e}")
 
+    def error(self, title, text):
+        error = QMessageBox(self)
+        error.setWindowTitle(title)
+        error.setText(text)
+        error.exec()
+            
     def openCreateDocWindow(self, tableData):
         window = createDocWindow(self, tableData=tableData)
         window.show()
-        
+    
     def openParamsWindow(self):
         window = paramsWindow(self)
         window.show()
-        # window.windowClosed.connect(self.test)
+    
+    def openSettingsWindow(self):
+        window = settingsWindow(self)
+        window.show()
 
     def openSuppliersWindow(self):
-        window = suppliersWindow(self)
+        window = customersWindow(self)
         window.show()
-        # window.windowClosed.connect(self.test)
 
     def calculating(self):
         with open(
@@ -143,14 +156,14 @@ class mainWindow(QMainWindow):
             
             
             #Qline edit сделать работу с переменными
-            self.KpTable.setItem(
+            self.ui.KpTable.setItem(
                 rowNum,
                 8,
                 QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}{str(Tool.evalWithVars(f'{self.tableData['logistic'][rowNum]}{self.customLine.text()}')).replace('.', ',')}"
+                    f"{self.tableData['currency'][rowNum]}{str(Tool.evalWithVars(f'{self.tableData['logistic'][rowNum]}*{self.formulaCustom}')).replace('.', ',')}"
                 ),
             )
-            self.KpTable.setItem(
+            self.ui.KpTable.setItem(
                 rowNum, 9, QTableWidgetItem(f"{str(price).replace('.', ',')}")
             )
 
@@ -161,11 +174,11 @@ class mainWindow(QMainWindow):
                     realPrice = price * value
                     break
 
-            self.KpTable.setItem(
+            self.ui.KpTable.setItem(
                 rowNum, 10, QTableWidgetItem(f"{str(realPrice).replace('.', ',')}")
             )
 
-            self.KpTable.setItem(
+            self.ui.KpTable.setItem(
                 rowNum,
                 11,
                 QTableWidgetItem(
@@ -178,7 +191,7 @@ class mainWindow(QMainWindow):
                     if item[2]:
                         temp_var = 1 + int(item[1]) / 100
 
-            self.KpTable.setItem(
+            self.ui.KpTable.setItem(
                 rowNum,
                 12,
                 QTableWidgetItem(
@@ -191,7 +204,7 @@ class mainWindow(QMainWindow):
         self.calculating()
         
     def logisticCalculate(self):
-        logisticVarInd = self.logisiticVar.currentIndex()
+        logisticVarInd = self.ui.logisiticVar.currentIndex()
         self.tableData['logistic'] = []
         for rowNum in range(self.rows - 1):
             if logisticVarInd == 1:
@@ -201,10 +214,10 @@ class mainWindow(QMainWindow):
                     )
             else:
                 f = round(
-                        self.tableData["totalPrice"][rowNum] * float(self.logisticNum.text()),
+                        self.tableData["totalPrice"][rowNum] * float(self.ui.logisticNum.text()),
                         2
                 )
-            self.KpTable.setItem(
+            self.ui.KpTable.setItem(
             rowNum,
             7,
             QTableWidgetItem(
@@ -217,20 +230,20 @@ class mainWindow(QMainWindow):
     def getTableData(self):
         table_data = []
 
-        row_count = self.KpTable.rowCount()
-        col_count = self.KpTable.columnCount()
+        row_count = self.ui.KpTable.rowCount()
+        col_count = self.ui.KpTable.columnCount()
 
         for row in range(row_count):
             row_data = []
             for col in range(5):
-                item = self.KpTable.item(row, col)
+                item = self.ui.KpTable.item(row, col)
                 if item is not None:
                     row_data.append(item.text())
                 else:
                     row_data.append("")
                     
             for col in range(10, 13):
-                item = self.KpTable.item(row, col)
+                item = self.ui.KpTable.item(row, col)
                 if item is not None:
                     row_data.append(item.text())
                 else:

@@ -1,11 +1,12 @@
-from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit, QListWidgetItem, QTableWidgetItem
-from PyQt6 import uic
+from PySide6.QtCore import Signal, Qt
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit, QListWidgetItem, QTableWidgetItem
+from utilities.tools import DatabaseTools as Tool
 import json
 from utilities.config import Config
 from database.database import Database
-from addNewSupplier import mainWindow as newSupplierWindow
+from addNewCustomer import mainWindow as newSupplierWindow
 from create import createTextFile as exportTextFile
+from ui_createDocGui import Ui_MainWindow
 import sys
 import os
 
@@ -26,51 +27,59 @@ class Dialog:
             return False
 
 class mainWindow(QMainWindow):
-    windowClosed = pyqtSignal()
+    windowClosed = Signal()
 
     def __init__(self, parent=None, tableData=None):
         super(mainWindow, self).__init__(parent)
-        uic.loadUi(self.resourcePath("ui/createDocument.ui"), self)
         
-        self.createDocButton.clicked.connect(self.confirmDoc)
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
+        
+        self.ui.createDocButton.clicked.connect(self.confirmDoc)
         
         self.db = Database()
         self.db.open('database/database.db')
-        self.suppliers = self.db.getAllSuppliers()
+        self.suppliers = self.db.getAllCustomers()
         
         self.setupSuppliersItems()
         
         self.tableData = tableData
-        print(self.tableData)
         
-        self.summaryTable.setColumnCount(8)
-        self.summaryTable.setRowCount(self.tableData[0])
+        self.ui.summaryTable.setColumnCount(9)
+        self.ui.summaryTable.setRowCount(self.tableData[0])
         for row in range(self.tableData[0]):
             for col in range(8):
-                self.summaryTable.setItem(
+                self.ui.summaryTable.setItem(
                         row, col, QTableWidgetItem(str(self.tableData[1][row][col]))
                     )
                 
-        self.summaryTable.resizeColumnsToContents()     
+        self.ui.summaryTable.resizeColumnsToContents()     
            
     def confirmDoc(self):
         confirmedSuppliers = []
-        for i in range(self.suppliersList.count()):
-            item = self.suppliersList.item(i)
+        for i in range(self.ui.suppliersList.count()):
+            item = self.ui.suppliersList.item(i)
             if item and item.checkState() == Qt.CheckState.Checked:
-                for supplier in self.suppliers:
-                    if supplier[1] == item.text():
-                        confirmedSuppliers.append(supplier)
-        print(confirmedSuppliers)
-        exportTextFile(self.tableData)
-                
+                confirmedSuppliers.append(self.db.getCustomer(item.text())[0])
+        extraData = self.getExtraData()
+        id = self.db.createOffer() + 1
+        exportTextFile((self.tableData, confirmedSuppliers, extraData, str(id)))
+        
+    def getExtraData(self):
+        result = []
+        result.append(self.ui.numLine.text())
+        result.append(self.ui.warrantyPeriod.text())
+        result.append(self.ui.conditionLine.text())
+        result.append(self.ui.producerLine.text())
+        result.append(self.ui.deliveryTimeLine.text())
+        return result
     def setupSuppliersItems(self):
-        self.suppliersList.clear()
+        self.ui.suppliersList.clear()
         for supplier in self.suppliers:
-            item = QListWidgetItem(supplier[1])
+            item = QListWidgetItem(supplier[7])
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Unchecked)
-            self.suppliersList.addItem(item)
+            self.ui.suppliersList.addItem(item)
              
     
     def resourcePath(self, relativePath):

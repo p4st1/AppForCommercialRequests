@@ -1,5 +1,9 @@
 {
     "config": {
-        "logisticNum": "60000"     
+        "logisticNum": "60000",
+        "pathToSaveCP": "C:/Users/irina/OneDrive/Рабочий стол"
+    },
+    "settings": {
+        "closeTable": true
     }
 }

@@ -35,7 +35,7 @@ if __name__ == '__main__':
         write_log("=== ДИАГНОСТИКА ===")
         write_log(f"Текущая папка: {os.getcwd()}")
         write_log(f"MEIPASS: {getattr(sys, '_MEIPASS', 'NOT SET')}")
-        test_path = resourcePath("ui/gui.ui")
+        test_path = resourcePath("ui/mainGui.ui")
         write_log(f"Ожидаемый путь: {test_path}")
         write_log(f"Файл существует: {os.path.exists(test_path)}")
         ui_dir = resourcePath("ui")
@@ -50,10 +50,10 @@ if __name__ == '__main__':
             write_log("Папка utilities не найдена!")
         write_log("Testing imports...")
         try:
-            from PyQt6.QtWidgets import QApplication
-            write_log("✅ PyQt5 import successful")
+            from PySide6.QtWidgets import QApplication, QMainWindow
+            write_log("✅ PySide6 import successful")
         except ImportError as e:
-            write_log(f"❌ PyQt5 import failed: {e}")
+            write_log(f"❌ PySide6 import failed: {e}")
         write_log("Creating QApplication...")
         app = QApplication(sys.argv)
         ex = mainWindow()

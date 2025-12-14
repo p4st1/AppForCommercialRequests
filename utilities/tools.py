@@ -1,3 +1,5 @@
+from PySide6.QtUiTools import QUiLoader
+from PySide6.QtCore import QFile
 import decimal
 import json
 import sys
@@ -34,7 +36,10 @@ class DatabaseTools:
             else:
                 res += i
         
-        return eval(res)
+        if res[0] in '+*/':
+            res = res[1:]
+            
+        return round(eval(f'{res}'), 4)
     
     @staticmethod         
     def resourcePath(relativePath):
@@ -53,6 +58,42 @@ class DatabaseTools:
             return '*'
         if value == 'division':
             return '/'
+    
+    @staticmethod
+    def loadUi(uifile: str, baseinstance) -> None:
+        """
+        Загружает .ui файл в существующий экземпляр окна.
+        Использование: loadUi("ui/mainGui.ui", self)
+        """
+        # Загрузчик UI
+        loader = QUiLoader()
+        
+        # Открываем файл
+        file = QFile(uifile)
+        if not file.open(QFile.ReadOnly):
+            print(f"❌ Ошибка: не могу открыть файл {uifile}")
+            print(f"   Проверьте, что файл существует по этому пути")
+            return
+        
+        # Загружаем UI
+        ui_widget = loader.load(file, baseinstance)
+        file.close()
+        
+        if ui_widget is None:
+            print(f"❌ Ошибка загрузки UI файла")
+            return
+        
+        # Копируем виджеты в экземпляр
+        for widget in ui_widget.findChildren(("*")):
+            name = widget.objectName()
+            if name:
+                setattr(baseinstance, name, widget)
+        
+        # Если это QMainWindow, устанавливаем центральный виджет
+        if hasattr(baseinstance, 'setCentralWidget'):
+            baseinstance.setCentralWidget(ui_widget)
+        
+        print(f"✅ UI загружен успешно")
         
 class Tools:
     def __init__(self):

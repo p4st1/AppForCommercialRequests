@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1440</width>
-    <height>842</height>
+    <height>843</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -18,7 +18,7 @@
   </property>
   <property name="font">
    <font>
-    <family>Inter</family>
+    <family>Segoe UI</family>
    </font>
   </property>
   <property name="windowTitle">
@@ -30,6 +30,7 @@
   <property name="styleSheet">
    <string notr="true">QQMainWindow {
     background-color: #f5f7fa;
+	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 /* ===== ЦЕНТРАЛЬНЫЙ ВИДЖЕТ ===== */
@@ -491,7 +492,7 @@ QDialog QPushButton {
    </property>
    <property name="font">
     <font>
-     <family>Inter</family>
+     <family>Segoe UI</family>
     </font>
    </property>
    <property name="styleSheet">
@@ -958,7 +959,7 @@ QDialog QPushButton {
    </property>
    <layout class="QVBoxLayout" name="verticalLayout">
     <property name="spacing">
-     <number>0</number>
+     <number>10</number>
     </property>
     <property name="leftMargin">
      <number>0</number>
@@ -970,7 +971,7 @@ QDialog QPushButton {
      <number>0</number>
     </property>
     <property name="bottomMargin">
-     <number>0</number>
+     <number>5</number>
     </property>
     <item>
      <widget class="QTabWidget" name="tabWidget">
@@ -982,7 +983,9 @@ QDialog QPushButton {
       </property>
       <property name="font">
        <font>
-        <family>Inter</family>
+        <family>Segoe UI</family>
+        <pointsize>9</pointsize>
+        <bold>false</bold>
        </font>
       </property>
       <property name="currentIndex">
@@ -1009,7 +1012,14 @@ QDialog QPushButton {
          <number>0</number>
         </property>
         <item>
-         <widget class="QTableWidget" name="tableWidget_3"/>
+         <widget class="QTableWidget" name="tableWidget_3">
+          <property name="font">
+           <font>
+            <family>Inter</family>
+            <pointsize>-1</pointsize>
+           </font>
+          </property>
+         </widget>
         </item>
        </layout>
       </widget>
@@ -1055,7 +1065,7 @@ QDialog QPushButton {
           </property>
           <property name="font">
            <font>
-            <family>Inter,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif</family>
+            <family>Inter</family>
             <pointsize>-1</pointsize>
            </font>
           </property>
@@ -1119,10 +1129,10 @@ QTableWidget::item:selected {
 }</string>
           </property>
           <property name="frameShape">
-           <enum>QFrame::NoFrame</enum>
+           <enum>QFrame::Shape::NoFrame</enum>
           </property>
           <property name="sizeAdjustPolicy">
-           <enum>QAbstractScrollArea::AdjustIgnored</enum>
+           <enum>QAbstractScrollArea::SizeAdjustPolicy::AdjustIgnored</enum>
           </property>
           <property name="tabKeyNavigation">
            <bool>true</bool>
@@ -1134,7 +1144,7 @@ QTableWidget::item:selected {
            <bool>true</bool>
           </property>
           <property name="gridStyle">
-           <enum>Qt::SolidLine</enum>
+           <enum>Qt::PenStyle::SolidLine</enum>
           </property>
           <property name="sortingEnabled">
            <bool>false</bool>
@@ -1169,7 +1179,6 @@ QTableWidget::item:selected {
            <property name="font">
             <font>
              <family>SF Pro Text</family>
-             <weight>50</weight>
              <bold>false</bold>
             </font>
            </property>
@@ -1181,7 +1190,6 @@ QTableWidget::item:selected {
            <property name="font">
             <font>
              <family>SF Pro Text</family>
-             <weight>50</weight>
              <bold>false</bold>
             </font>
            </property>
@@ -1311,13 +1319,67 @@ QTableWidget::item:selected {
       <property name="horizontalSpacing">
        <number>12</number>
       </property>
+      <item row="2" column="3">
+       <widget class="QPushButton" name="pushButton_2">
+        <property name="font">
+         <font>
+          <pointsize>-1</pointsize>
+          <fontweight>DemiBold</fontweight>
+         </font>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+        </property>
+        <property name="text">
+         <string>Сформировать таблицу</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="5">
+       <spacer name="horizontalSpacer">
+        <property name="font">
+         <font>
+          <family>Segoe UI</family>
+          <pointsize>9</pointsize>
+          <bold>false</bold>
+         </font>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
       <item row="0" column="2">
        <widget class="QPushButton" name="openTableButton">
         <property name="font">
          <font>
           <pointsize>-1</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
+          <fontweight>DemiBold</fontweight>
          </font>
         </property>
         <property name="styleSheet">
@@ -1347,35 +1409,18 @@ QPushButton:pressed {
         </property>
        </widget>
       </item>
-      <item row="2" column="0">
-       <widget class="QLabel" name="label_6">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QLabel {
-	color:  #2c3e50;
-	font-weight: 600;
-	 font-size: 12px;
-}
-</string>
-        </property>
-        <property name="text">
-         <string>Сумма Итого без НДС</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="0">
+      <item row="0" column="0">
        <widget class="QLabel" name="label_5">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <property name="font">
          <font>
           <pointsize>-1</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
+          <fontweight>DemiBold</fontweight>
          </font>
         </property>
         <property name="styleSheet">
@@ -1389,9 +1434,118 @@ QPushButton:pressed {
         <property name="text">
          <string>Логистика</string>
         </property>
+        <property name="alignment">
+         <set>Qt::AlignmentFlag::AlignCenter</set>
+        </property>
        </widget>
       </item>
-      <item row="1" column="2">
+      <item row="0" column="3">
+       <widget class="QPushButton" name="pushButton">
+        <property name="font">
+         <font>
+          <pointsize>-1</pointsize>
+          <fontweight>DemiBold</fontweight>
+         </font>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+        </property>
+        <property name="text">
+         <string>Закрыть таблицу</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QComboBox" name="logisiticVar">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>30</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>-1</pointsize>
+         </font>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QLabel {
+    color: #2c3e50;
+    font-size: 12px;
+}
+
+QLabel#titleLabel {
+    font-size: 16px;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+QLabel#totalLabel {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2c3e50;
+    background-color: #e8f5e9;
+    border-radius: 6px;
+    border: 1px solid #c8e6c9;
+}
+
+
+
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
+    border: 1px solid #3498db;
+    background-color: #f8fdff;
+}
+
+QComboBox::drop-down {
+    border: none;
+    background-color: #2c3e50;
+    border-radius: 0 5px 5px 0;
+    width: 25px;
+}
+
+QComboBox::down-arrow {
+    image: url(down_arrow.png);
+    width: 12px;
+}</string>
+        </property>
+        <item>
+         <property name="text">
+          <string>коэффициент</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>распределение</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="2" column="0">
        <widget class="QLineEdit" name="logisticNum">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
@@ -1426,7 +1580,7 @@ QPushButton:pressed {
 }</string>
         </property>
         <property name="text">
-         <string>0</string>
+         <string/>
         </property>
         <property name="placeholderText">
          <string>Число</string>
@@ -1436,43 +1590,17 @@ QPushButton:pressed {
         </property>
        </widget>
       </item>
-      <item row="0" column="5">
-       <spacer name="horizontalSpacer">
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-        <property name="sizeHint" stdset="0">
-         <size>
-          <width>20</width>
-          <height>40</height>
-         </size>
-        </property>
-       </spacer>
-      </item>
-      <item row="2" column="2">
-       <widget class="QLabel" name="label_7">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>0.0</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="3">
+      <item row="0" column="1">
        <widget class="QLabel" name="label">
         <property name="font">
          <font>
           <pointsize>-1</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
+          <fontweight>DemiBold</fontweight>
          </font>
         </property>
         <property name="styleSheet">
          <string notr="true">QLabel {
-	color: #2c3e50;
+	color:  #2c3e50;
 	font-weight: 600;
 	 font-size: 12px;
 }
@@ -1481,34 +1609,17 @@ QPushButton:pressed {
         <property name="text">
          <string>Таможня</string>
         </property>
-       </widget>
-      </item>
-      <item row="1" column="4">
-       <widget class="QLineEdit" name="customLine">
-        <property name="styleSheet">
-         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
-    background-color: white;
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
-    padding: 4px 8px;
-    font-size: 12px;
-    color: #2c3e50;
-    min-height: 8px;
-    selection-background-color: #e3f2fd;
-}</string>
-        </property>
-        <property name="text">
-         <string>$Таможня$</string>
+        <property name="alignment">
+         <set>Qt::AlignmentFlag::AlignCenter</set>
         </property>
        </widget>
       </item>
-      <item row="0" column="0">
+      <item row="2" column="2">
        <widget class="QPushButton" name="createDocButton">
         <property name="font">
          <font>
           <pointsize>-1</pointsize>
-          <weight>75</weight>
-          <bold>true</bold>
+          <fontweight>DemiBold</fontweight>
          </font>
         </property>
         <property name="styleSheet">
@@ -1539,66 +1650,36 @@ QPushButton:pressed {
        </widget>
       </item>
       <item row="1" column="1">
-       <widget class="QComboBox" name="logisiticVar">
+       <widget class="QLineEdit" name="customLine">
         <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+         <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
           <horstretch>0</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
         </property>
+        <property name="font">
+         <font>
+          <pointsize>-1</pointsize>
+         </font>
+        </property>
         <property name="styleSheet">
-         <string notr="true">QLabel {
-    color: #2c3e50;
-    font-size: 12px;
-    padding: 2px;
-}
-
-QLabel#titleLabel {
-    font-size: 16px;
-    font-weight: 700;
-    color: #2c3e50;
-}
-
-QLabel#totalLabel {
-    font-size: 14px;
-    font-weight: 600;
-    color: #2c3e50;
-    padding: 4px;
-    background-color: #e8f5e9;
+         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+    background-color: white;
+    border: 1px solid #dee2e6;
     border-radius: 6px;
-    border: 1px solid #c8e6c9;
-}
-
-
-
-QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
-    border: 1px solid #3498db;
-    background-color: #f8fdff;
-}
-
-QComboBox::drop-down {
-    border: none;
-    background-color: #2c3e50;
-    border-radius: 0 5px 5px 0;
-    width: 25px;
-}
-
-QComboBox::down-arrow {
-    image: url(down_arrow.png);
-    width: 12px;
-    height: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #2c3e50;
+    min-height: 8px;
+    selection-background-color: #e3f2fd;
 }</string>
         </property>
-        <item>
-         <property name="text">
-          <string>коэффициент</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>распределение</string>
-         </property>
-        </item>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="placeholderText">
+         <string>Коэффициент</string>
+        </property>
        </widget>
       </item>
      </layout>
@@ -1611,7 +1692,7 @@ QComboBox::down-arrow {
      <x>0</x>
      <y>0</y>
      <width>1440</width>
-     <height>32</height>
+     <height>31</height>
     </rect>
    </property>
    <property name="sizePolicy">
@@ -1623,12 +1704,18 @@ QComboBox::down-arrow {
    <property name="font">
     <font>
      <family>Inter</family>
+     <pointsize>8</pointsize>
     </font>
    </property>
    <property name="defaultUp">
     <bool>false</bool>
    </property>
    <widget class="QMenu" name="FileMenu">
+    <property name="font">
+     <font>
+      <pointsize>8</pointsize>
+     </font>
+    </property>
     <property name="tearOffEnabled">
      <bool>false</bool>
     </property>
@@ -1639,8 +1726,14 @@ QComboBox::down-arrow {
     <addaction name="action"/>
     <addaction name="separator"/>
     <addaction name="action_3"/>
+    <addaction name="separator"/>
    </widget>
    <widget class="QMenu" name="EditMenu">
+    <property name="font">
+     <font>
+      <pointsize>8</pointsize>
+     </font>
+    </property>
     <property name="title">
      <string>Редактировать</string>
     </property>
@@ -1649,12 +1742,26 @@ QComboBox::down-arrow {
     <addaction name="separator"/>
    </widget>
    <widget class="QMenu" name="SettingsMenu">
+    <property name="font">
+     <font>
+      <pointsize>8</pointsize>
+     </font>
+    </property>
     <property name="title">
      <string>Настройки</string>
     </property>
     <addaction name="suppliersMenuButton"/>
+    <addaction name="settingsMenuButton"/>
+    <addaction name="separator"/>
+    <addaction name="action_6"/>
+    <addaction name="action_7"/>
    </widget>
    <widget class="QMenu" name="WindowMenu">
+    <property name="font">
+     <font>
+      <pointsize>8</pointsize>
+     </font>
+    </property>
     <property name="title">
      <string>Окно</string>
     </property>
@@ -1663,6 +1770,7 @@ QComboBox::down-arrow {
     <property name="font">
      <font>
       <family>Inter</family>
+      <pointsize>8</pointsize>
      </font>
     </property>
     <property name="title">
@@ -1703,9 +1811,7 @@ QComboBox::down-arrow {
     <string>Редактировать в таблице</string>
    </property>
    <property name="font">
-    <font>
-     <family>Inter</family>
-    </font>
+    <font/>
    </property>
   </action>
   <action name="editParamsButton">
@@ -1725,7 +1831,23 @@ QComboBox::down-arrow {
   </action>
   <action name="suppliersMenuButton">
    <property name="text">
-    <string>Поставщики</string>
+    <string>Заказчики</string>
+   </property>
+   <property name="font">
+    <font/>
+   </property>
+  </action>
+  <action name="action_2">
+   <property name="text">
+    <string>Справка</string>
+   </property>
+   <property name="font">
+    <font/>
+   </property>
+  </action>
+  <action name="settingsMenuButton">
+   <property name="text">
+    <string>Настройки</string>
    </property>
    <property name="font">
     <font>
@@ -1733,9 +1855,14 @@ QComboBox::down-arrow {
     </font>
    </property>
   </action>
-  <action name="action_2">
+  <action name="action_6">
    <property name="text">
-    <string>Справка</string>
+    <string>Экспортировать БД...</string>
+   </property>
+  </action>
+  <action name="action_7">
+   <property name="text">
+    <string>Импортировать БД...</string>
    </property>
   </action>
  </widget>
