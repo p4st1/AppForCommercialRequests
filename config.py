@@ -1,0 +1,20 @@
+class Config:
+    types = {
+            '%': 'percents',
+            '*': 'multiply',
+            '/': 'division'
+        }
+    
+    isTableOpened = False
+    
+    settings = {
+        
+    }
+    
+    config = {
+        
+    }
+    
+    cfg_path = ''
+    db_path = ''
+    vars_path = ''

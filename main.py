@@ -4,10 +4,10 @@ from PySide6.QtCore import Qt, QUrl
 from createDocument import mainWindow as createDocWindow
 from customers import mainWindow as customersWindow
 from settings import mainWindow as settingsWindow
-from utilities.tools import DatabaseTools as Tool
+from tools import DatabaseTools as Tool
 from params import mainWindow as paramsWindow
-from database.database import Database
-from utilities.config import Config
+from database import Database
+from config import Config
 from ui_mainGui import Ui_MainWindow
 from datetime import datetime
 
@@ -26,14 +26,11 @@ class mainWindow(QMainWindow):
         
         self.setWindowIcon(QIcon(self.resourcePath("logo.ico")))
 
-        with open(
-            self.resourcePath("utilities/config.json"), "r", encoding="utf-8"
-        ) as f:
-            self.configData = json.load(f)
-            for setting, value in self.configData['settings'].items():
-                Config.settings[setting] = bool(value)
-            for setting, value in self.configData['config'].items():
-                Config.config[setting] = value
+        self.configData = Tool.load_json(Config.cfg_path)
+        for setting, value in self.configData['settings'].items():
+            Config.settings[setting] = bool(value)
+        for setting, value in self.configData['config'].items():
+            Config.config[setting] = value
                 
         print(Config.settings)
                 
@@ -143,7 +140,7 @@ class mainWindow(QMainWindow):
             f"database_{datetime.now().strftime('%d.%m.%Y')}.db",
             "База данных (*.db);;Все файлы (*)"
         )
-        self.db.export(self.resourcePath('database/database.db'), file_path)
+        self.db.export(Config.db_path, file_path)
         
     def importDatabase(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -153,7 +150,7 @@ class mainWindow(QMainWindow):
             "База данных (*.db);;Все файлы (*)"
         )
         print(file_path)
-        self.db.import_(file_path, self.resourcePath('database/database.db'))
+        self.db.import_(file_path, Config.db_path)
         
     def processFormula(self):
         self.formulaCustom = str(Tool.evalWithVars(f'{self.ui.customLine.text()}'))
@@ -271,11 +268,8 @@ class mainWindow(QMainWindow):
         self.ui.KpTable.setRowCount(0)
         
     def calculating(self):
-        with open(
-            self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
-        ) as f:
-            self.paramsData = json.load(f)
-        
+        self.paramsData = Tool.load_json(Config.vars_path)
+            
         for rowNum in range(self.rows - 1):
             print(f'tableData:{self.tableData}')
             price =  self.tableData['logistic'][rowNum] / self.tableData["amount"][rowNum]
@@ -383,7 +377,7 @@ class mainWindow(QMainWindow):
                     row_data.append("")
             table_data.append(row_data)
 
-        self.db.open(self.resourcePath('database/database.db'))
+        self.db.open(Config.db_path)
         
         self.openCreateDocWindow((
             len(table_data),

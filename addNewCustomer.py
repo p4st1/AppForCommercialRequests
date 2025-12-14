@@ -1,10 +1,8 @@
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit
-from utilities.tools import DatabaseTools as Tool
-import json
-from utilities.config import Config
-from database.database import Database
+from PySide6.QtWidgets import QMainWindow, QMessageBox
+from database import Database
 from ui_addCustomerGui import Ui_MainWindow
+from config import Config
 import sys
 import os
 
@@ -49,7 +47,7 @@ class mainWindow(QMainWindow):
 
     def addNewSupplier(self):
         db = Database()
-        db.open(self.resourcePath('database/database.db'))
+        db.open(Config.db_path)
         
         if self.ui.nameLine.text():
             surname, name, patronymic = self.ui.nameLine.text().split()

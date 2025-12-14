@@ -1,4 +1,6 @@
 from main import mainWindow
+from tools import DatabaseTools as Tool
+from config import Config
 from pathlib import Path
 import time
 import sys
@@ -17,9 +19,15 @@ def resourcePath(relativePath):
             base_path = os.path.abspath(".")
 
         return os.path.join(base_path, relativePath)
-
+    
 if __name__ == '__main__':
     try:
+        Config.cfg_path = Tool.ensure_user_file('MyApp', 'utilities/config.json', 'config.json')
+        Config.db_path = Tool.ensure_user_file('MyApp', 'database/database.db', 'database.db')
+        Config.vars_path = Tool.ensure_user_file('MyApp', 'utilities/variables.json', 'variables.json')
+        print('cfg path: ', Config.cfg_path)
+        print('db path: ', Config.db_path)
+        print('vars path: ', Config.vars_path)
         write_log("=" * 50)
         write_log("🚀 APPLICATION STARTING")
         write_log(f"Current working directory: {os.getcwd()}")

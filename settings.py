@@ -1,9 +1,9 @@
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import QMainWindow, QFileDialog
-from utilities.tools import DatabaseTools as Tool
+from tools import DatabaseTools as Tool
 from ui_settingsAppGui import Ui_MainWindow
 import json
-from utilities.config import Config
+from config import Config
 import sys
 import os
 
@@ -57,8 +57,7 @@ class mainWindow(QMainWindow):
     def closeEvent(self, event):
         data = {'config' : Config.config,
                 'settings' : Config.settings}
-        with open('utilities/config.json', 'w', encoding='utf-8') as file:
-            json.dump(data, file, ensure_ascii=False, indent=4)
+        Tool.save_json_atomic(Config.cfg_path, data)
         self.windowClosed.emit()
         super().closeEvent(event)
         self.close()

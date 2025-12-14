@@ -1,10 +1,7 @@
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit, QListWidgetItem, QTableWidgetItem
-from utilities.tools import DatabaseTools as Tool
-import json
-from utilities.config import Config
-from database.database import Database
-from addNewCustomer import mainWindow as newSupplierWindow
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QListWidgetItem, QTableWidgetItem
+from database import Database
+from config import Config
 from create import createTextFile as exportTextFile
 from ui_createDocGui import Ui_MainWindow
 import sys
@@ -38,7 +35,7 @@ class mainWindow(QMainWindow):
         self.ui.createDocButton.clicked.connect(self.confirmDoc)
         
         self.db = Database()
-        self.db.open('database/database.db')
+        self.db.open(Config.db_path)
         self.suppliers = self.db.getAllCustomers()
         
         self.setupSuppliersItems()

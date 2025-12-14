@@ -1,9 +1,9 @@
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit
-from utilities.tools import DatabaseTools as Tool
+from tools import DatabaseTools as Tool
 import json
-from utilities.config import Config
-from database.database import Database
+from config import Config
+from database import Database
 from addNewCustomer import mainWindow as newSupplierWindow
 from ui_customersGui import Ui_MainWindow
 import sys
@@ -35,7 +35,7 @@ class mainWindow(QMainWindow):
         self.ui.setupUi(self)
         
         self.db = Database()
-        self.db.open(self.resourcePath("database/database.db"))
+        self.db.open(Config.db_path)
         
         self.ui.suppliersList.itemClicked.connect(self.customerSelected)
         self.ui.closeButton.clicked.connect(self.close)

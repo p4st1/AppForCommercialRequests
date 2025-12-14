@@ -2,9 +2,9 @@ from docx import Document
 from docx.shared import Inches
 from docx.shared import Inches, Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from utilities.tools import DatabaseTools as Tools
+from tools import DatabaseTools as Tools
 from datetime import datetime, timedelta
-from utilities.config import Config
+from config import Config
 
 class createTextFile:
     def __init__(self, data):

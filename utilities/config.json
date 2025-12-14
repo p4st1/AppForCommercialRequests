@@ -3,7 +3,8 @@
         "logisticNum": "60000",
         "customNum": "1.2",
         "termDelivery": "20",
-        "pathToSaveCP": "C:/Users/irina/OneDrive/Рабочий стол"
+        "pathToSaveCP": "C:/Users/irina/OneDrive/Рабочий стол",
+        "pathToDB": ""
     },
     "settings": {
         "closeTable": true,

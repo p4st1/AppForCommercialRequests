@@ -2,9 +2,9 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit
 from ui_paramsGui import Ui_MainWindow
 from ui_createParamsGui import Ui_MainWindow as Ui_addNewParamWindow
-from utilities.tools import DatabaseTools as Tool
+from tools import DatabaseTools as Tool
 import json
-from utilities.config import Config
+from config import Config
 import sys
 import os
 
