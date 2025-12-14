@@ -1723,10 +1723,10 @@ QPushButton:pressed {
      <string>Файл</string>
     </property>
     <addaction name="action_1"/>
+    <addaction name="action_9"/>
+    <addaction name="separator"/>
     <addaction name="action"/>
-    <addaction name="separator"/>
-    <addaction name="action_3"/>
-    <addaction name="separator"/>
+    <addaction name="action_10"/>
    </widget>
    <widget class="QMenu" name="EditMenu">
     <property name="font">
@@ -1737,7 +1737,6 @@ QPushButton:pressed {
     <property name="title">
      <string>Редактировать</string>
     </property>
-    <addaction name="editTableButton"/>
     <addaction name="editParamsButton"/>
     <addaction name="separator"/>
    </widget>
@@ -1751,10 +1750,11 @@ QPushButton:pressed {
      <string>Настройки</string>
     </property>
     <addaction name="suppliersMenuButton"/>
-    <addaction name="settingsMenuButton"/>
     <addaction name="separator"/>
     <addaction name="action_6"/>
     <addaction name="action_7"/>
+    <addaction name="separator"/>
+    <addaction name="settingsMenuButton"/>
    </widget>
    <widget class="QMenu" name="WindowMenu">
     <property name="font">
@@ -1793,7 +1793,7 @@ QPushButton:pressed {
   </widget>
   <action name="action_1">
    <property name="text">
-    <string>Окрыть КП1</string>
+    <string>Окрыть таблицу</string>
    </property>
    <property name="font">
     <font>
@@ -1803,7 +1803,7 @@ QPushButton:pressed {
   </action>
   <action name="action">
    <property name="text">
-    <string>Сформировать</string>
+    <string>Сформировать КП</string>
    </property>
   </action>
   <action name="editTableButton">
@@ -1847,7 +1847,7 @@ QPushButton:pressed {
   </action>
   <action name="settingsMenuButton">
    <property name="text">
-    <string>Настройки</string>
+    <string>Настройки...</string>
    </property>
    <property name="font">
     <font>
@@ -1863,6 +1863,16 @@ QPushButton:pressed {
   <action name="action_7">
    <property name="text">
     <string>Импортировать БД...</string>
+   </property>
+  </action>
+  <action name="action_9">
+   <property name="text">
+    <string>Закрыть таблицу</string>
+   </property>
+  </action>
+  <action name="action_10">
+   <property name="text">
+    <string>Сформировать таблицу</string>
    </property>
   </action>
  </widget>
