@@ -11,7 +11,7 @@ class Database:
             """
         CREATE TABLE IF NOT EXISTS offers(
         id INTEGER PRIMARY KEY,
-        date TEXT NOT NULL,
+        date TEXT NOT NULL
         )
         """
         )
@@ -28,7 +28,8 @@ class Database:
         phoneNumber TEXT NOT NULL,
         companyName TEXT NOT NULL,
         post TEXT NOT NULL,
-        conditions TEXT NOT NULL
+        conditions TEXT NOT NULL,
+        sex TEXT NOT NULL
         )
             '''
         )
@@ -67,8 +68,9 @@ class Database:
                             phoneNumber, 
                             companyName,
                             post,
-                            conditions
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            conditions,
+                            sex
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', data)
     
     def getAllCustomers(self):

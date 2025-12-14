@@ -1792,8 +1792,8 @@ QPushButton:pressed {
     </property>
     <addaction name="suppliersMenuButton"/>
     <addaction name="separator"/>
-    <addaction name="action_6"/>
-    <addaction name="action_7"/>
+    <addaction name="exportMenuButton"/>
+    <addaction name="importMenuButton"/>
     <addaction name="separator"/>
     <addaction name="settingsMenuButton"/>
    </widget>
@@ -1896,12 +1896,12 @@ QPushButton:pressed {
     </font>
    </property>
   </action>
-  <action name="action_6">
+  <action name="exportMenuButton">
    <property name="text">
     <string>Экспортировать БД...</string>
    </property>
   </action>
-  <action name="action_7">
+  <action name="importMenuButton">
    <property name="text">
     <string>Импортировать БД...</string>
    </property>

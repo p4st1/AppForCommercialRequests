@@ -279,7 +279,7 @@ class mainWindow(QMainWindow):
                 else:
                     row_data.append("")
                     
-            for col in range(10, 13):
+            for col in range(10, 15):
                 item = self.ui.KpTable.item(row, col)
                 if item is not None:
                     row_data.append(item.text())

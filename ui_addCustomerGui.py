@@ -15,9 +15,10 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout,
-    QLabel, QLineEdit, QMainWindow, QPushButton,
-    QSizePolicy, QSpacerItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QComboBox, QFrame, QGridLayout,
+    QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+    QPushButton, QSizePolicy, QSpacerItem, QVBoxLayout,
+    QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -733,48 +734,6 @@ class Ui_MainWindow(object):
         self.gridLayout_2 = QGridLayout()
         self.gridLayout_2.setObjectName(u"gridLayout_2")
         self.gridLayout_2.setContentsMargins(-1, 10, -1, -1)
-        self.phoneNumLine = QLineEdit(self.centralwidget)
-        self.phoneNumLine.setObjectName(u"phoneNumLine")
-        self.phoneNumLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
-"    background-color: white;\n"
-"    border: 1px solid #dee2e6;\n"
-"    border-radius: 6px;\n"
-"    padding: 4px 8px;\n"
-"    font-size: 12px;\n"
-"    color: #2c3e50;\n"
-"    min-height: 8px;\n"
-"    selection-background-color: #e3f2fd;\n"
-"}")
-
-        self.gridLayout_2.addWidget(self.phoneNumLine, 1, 1, 1, 1)
-
-        self.label_13 = QLabel(self.centralwidget)
-        self.label_13.setObjectName(u"label_13")
-
-        self.gridLayout_2.addWidget(self.label_13, 0, 1, 1, 1)
-
-        self.label_12 = QLabel(self.centralwidget)
-        self.label_12.setObjectName(u"label_12")
-        self.label_12.setFont(font1)
-
-        self.gridLayout_2.addWidget(self.label_12, 0, 0, 1, 1)
-
-        self.companyNameLine = QLineEdit(self.centralwidget)
-        self.companyNameLine.setObjectName(u"companyNameLine")
-        self.companyNameLine.setFont(font1)
-        self.companyNameLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
-"    background-color: white;\n"
-"    border: 1px solid #dee2e6;\n"
-"    border-radius: 6px;\n"
-"    padding: 4px 8px;\n"
-"    font-size: 12px;\n"
-"    color: #2c3e50;\n"
-"    min-height: 8px;\n"
-"    selection-background-color: #e3f2fd;\n"
-"}")
-
-        self.gridLayout_2.addWidget(self.companyNameLine, 1, 0, 1, 1)
-
         self.label_14 = QLabel(self.centralwidget)
         self.label_14.setObjectName(u"label_14")
 
@@ -794,6 +753,60 @@ class Ui_MainWindow(object):
 "}")
 
         self.gridLayout_2.addWidget(self.condLine, 1, 2, 1, 1)
+
+        self.label_15 = QLabel(self.centralwidget)
+        self.label_15.setObjectName(u"label_15")
+
+        self.gridLayout_2.addWidget(self.label_15, 2, 0, 1, 1)
+
+        self.phoneNumLine = QLineEdit(self.centralwidget)
+        self.phoneNumLine.setObjectName(u"phoneNumLine")
+        self.phoneNumLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
+"    background-color: white;\n"
+"    border: 1px solid #dee2e6;\n"
+"    border-radius: 6px;\n"
+"    padding: 4px 8px;\n"
+"    font-size: 12px;\n"
+"    color: #2c3e50;\n"
+"    min-height: 8px;\n"
+"    selection-background-color: #e3f2fd;\n"
+"}")
+
+        self.gridLayout_2.addWidget(self.phoneNumLine, 1, 1, 1, 1)
+
+        self.companyNameLine = QLineEdit(self.centralwidget)
+        self.companyNameLine.setObjectName(u"companyNameLine")
+        self.companyNameLine.setFont(font1)
+        self.companyNameLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
+"    background-color: white;\n"
+"    border: 1px solid #dee2e6;\n"
+"    border-radius: 6px;\n"
+"    padding: 4px 8px;\n"
+"    font-size: 12px;\n"
+"    color: #2c3e50;\n"
+"    min-height: 8px;\n"
+"    selection-background-color: #e3f2fd;\n"
+"}")
+
+        self.gridLayout_2.addWidget(self.companyNameLine, 1, 0, 1, 1)
+
+        self.label_13 = QLabel(self.centralwidget)
+        self.label_13.setObjectName(u"label_13")
+
+        self.gridLayout_2.addWidget(self.label_13, 0, 1, 1, 1)
+
+        self.label_12 = QLabel(self.centralwidget)
+        self.label_12.setObjectName(u"label_12")
+        self.label_12.setFont(font1)
+
+        self.gridLayout_2.addWidget(self.label_12, 0, 0, 1, 1)
+
+        self.sexComboBox = QComboBox(self.centralwidget)
+        self.sexComboBox.addItem("")
+        self.sexComboBox.addItem("")
+        self.sexComboBox.setObjectName(u"sexComboBox")
+
+        self.gridLayout_2.addWidget(self.sexComboBox, 3, 0, 1, 1)
 
 
         self.verticalLayout.addLayout(self.gridLayout_2)
@@ -899,14 +912,18 @@ class Ui_MainWindow(object):
         self.mailIndexLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"00000", None))
         self.roomLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"1", None))
         self.label_11.setText(QCoreApplication.translate("MainWindow", u"\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435", None))
-        self.phoneNumLine.setText("")
-        self.phoneNumLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"788834451212", None))
-        self.label_13.setText(QCoreApplication.translate("MainWindow", u"\u041d\u043e\u043c\u0435\u0440 \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0430", None))
-        self.label_12.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438", None))
-        self.companyNameLine.setText("")
-        self.companyNameLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u041e\u041e\u041e \"\u0418\u0432\u0430\u043d\u0417\u043e\u043b\u043e\u0442\u043e\"", None))
         self.label_14.setText(QCoreApplication.translate("MainWindow", u"\u0423\u0441\u043b\u043e\u0432\u0438\u044f \u043f\u043e\u0441\u0442\u0430\u0432\u043a\u0438", None))
         self.condLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"DDP", None))
+        self.label_15.setText(QCoreApplication.translate("MainWindow", u"\u0420\u043e\u0434", None))
+        self.phoneNumLine.setText("")
+        self.phoneNumLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"788834451212", None))
+        self.companyNameLine.setText("")
+        self.companyNameLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u041e\u041e\u041e \"\u0418\u0432\u0430\u043d\u0417\u043e\u043b\u043e\u0442\u043e\"", None))
+        self.label_13.setText(QCoreApplication.translate("MainWindow", u"\u041d\u043e\u043c\u0435\u0440 \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0430", None))
+        self.label_12.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438", None))
+        self.sexComboBox.setItemText(0, QCoreApplication.translate("MainWindow", u"\u043c\u0443\u0436\u0441\u043a\u043e\u0439", None))
+        self.sexComboBox.setItemText(1, QCoreApplication.translate("MainWindow", u"\u0436\u0435\u043d\u0441\u043a\u0438\u0439", None))
+
         self.acceptButton.setText(QCoreApplication.translate("MainWindow", u"\u0413\u043e\u0442\u043e\u0432\u043e", None))
         self.cancellButton.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c", None))
     # retranslateUi

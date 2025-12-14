@@ -8,9 +8,11 @@ from utilities.config import Config
 
 class createTextFile:
     def __init__(self, data):
+        print(data)
         tableData = data[0]
         self.rows = tableData[0]
         self.table = tableData[1]
+        
         self.headers = ['№',
                         'Наименование',
                         'Каталожный товар',
@@ -21,12 +23,14 @@ class createTextFile:
                         'Итого c НДС',
                         ]
         
+        if data[4]:
+            self.headers.append('Срок доставки')
+        
         self.customerData = data[1][0]
         self.extraData = data[2]
         document = Document()
 
         section = document.sections[0]
-        
         section.left_margin = Cm(3)
         section.right_margin = Cm(1.5)
         section.top_margin = Cm(2)
@@ -69,7 +73,12 @@ class createTextFile:
         p = document.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        run = p.add_run(f"""Уважаемый (ая) {self.customerData[1]} {self.customerData[3]} !""")
+        if self.customerData[10] == 'женский':
+            sex = 'Уважаемая'
+        else:
+            sex = 'Уважаемый'
+            
+        run = p.add_run(f"""{sex} {self.customerData[1]} {self.customerData[3]} !""")
         run.font.name = 'Times New Roman'
         run.font.size = Pt(11)
         
@@ -122,7 +131,7 @@ class createTextFile:
             
             (f"Срок гарантии - {self.extraData[1]} с момента отгрузки гарантия не распространяется на быстроизнашивающиеся части;", ''),
             
-            ("Сроки поставки - до 75 дней с момента подписания спецификации с возможностью досрочной поставки;", ""),
+            (f"Сроки поставки - до {self.extraData[4]} дней с момента подписания спецификации с возможностью досрочной поставки;", ""),
             
             (f"Производитель - {self.extraData[3]};", ""),
             
@@ -159,6 +168,6 @@ class createTextFile:
         run.font.size = Pt(11)
 
         try:
-            document.save(f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_от_{datetime.now().strftime('%d.%m.%Y')}.docx")
+            document.save(f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_от_{datetime.now().strftime('%d.%m.%Y')}_{data[3]}.docx")
         except Exception as e:
             print(e)

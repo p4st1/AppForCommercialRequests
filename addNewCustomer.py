@@ -96,6 +96,11 @@ class mainWindow(QMainWindow):
             conditions = self.ui.condLine.text()
         else:
             conditions = ''
+            
+        if self.ui.sexComboBox.currentIndex == 0:
+            sex = 'мужской'
+        else:
+            sex = 'женский'
 
         data = (
             name,
@@ -106,7 +111,8 @@ class mainWindow(QMainWindow):
             phone,
             companyName,
             post,
-            conditions
+            conditions,
+            sex
                 )
         
         print(data)

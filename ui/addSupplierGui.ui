@@ -879,6 +879,39 @@ QDialog QPushButton {
       <property name="topMargin">
        <number>10</number>
       </property>
+      <item row="0" column="2">
+       <widget class="QLabel" name="label_14">
+        <property name="text">
+         <string>Условия поставки</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="2">
+       <widget class="QLineEdit" name="condLine">
+        <property name="styleSheet">
+         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #2c3e50;
+    min-height: 8px;
+    selection-background-color: #e3f2fd;
+}</string>
+        </property>
+        <property name="placeholderText">
+         <string>DDP</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_15">
+        <property name="text">
+         <string>Род</string>
+        </property>
+       </widget>
+      </item>
       <item row="1" column="1">
        <widget class="QLineEdit" name="phoneNumLine">
         <property name="styleSheet">
@@ -898,25 +931,6 @@ QDialog QPushButton {
         </property>
         <property name="placeholderText">
          <string>788834451212</string>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="1">
-       <widget class="QLabel" name="label_13">
-        <property name="text">
-         <string>Номер телефона</string>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="0">
-       <widget class="QLabel" name="label_12">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>Название компании</string>
         </property>
        </widget>
       </item>
@@ -947,30 +961,37 @@ QDialog QPushButton {
         </property>
        </widget>
       </item>
-      <item row="0" column="2">
-       <widget class="QLabel" name="label_14">
+      <item row="0" column="1">
+       <widget class="QLabel" name="label_13">
         <property name="text">
-         <string>Условия поставки</string>
+         <string>Номер телефона</string>
         </property>
        </widget>
       </item>
-      <item row="1" column="2">
-       <widget class="QLineEdit" name="condLine">
-        <property name="styleSheet">
-         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
-    background-color: white;
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
-    padding: 4px 8px;
-    font-size: 12px;
-    color: #2c3e50;
-    min-height: 8px;
-    selection-background-color: #e3f2fd;
-}</string>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_12">
+        <property name="font">
+         <font>
+          <pointsize>-1</pointsize>
+         </font>
         </property>
-        <property name="placeholderText">
-         <string>DDP</string>
+        <property name="text">
+         <string>Название компании</string>
         </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QComboBox" name="sexComboBox">
+        <item>
+         <property name="text">
+          <string>мужской</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>женский</string>
+         </property>
+        </item>
        </widget>
       </item>
      </layout>
