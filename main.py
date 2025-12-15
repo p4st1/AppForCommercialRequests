@@ -279,7 +279,7 @@ class mainWindow(QMainWindow):
                 rowNum,
                 8,
                 QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}{str(Tool.evalWithVars(f'{self.tableData['logistic'][rowNum]}*{self.formulaCustom}')).replace('.', ',')}"
+                    f"{self.tableData['currency'][rowNum]}" + str(Tool.evalWithVars(f"{self.tableData['logistic'][rowNum]}*{self.formulaCustom}")).replace('.', ',')
                 ),
             )
             self.ui.KpTable.setItem(
