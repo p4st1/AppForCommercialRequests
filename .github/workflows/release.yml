@@ -31,13 +31,13 @@ jobs:
       - name: Build (Windows)
         if: runner.os == 'Windows'
         run: |
-          pyinstaller --noconfirm --clean --windowed --name MyApp --collect-all PySide6 --add-data "utilities;utilities" --add-data "database;database" run.py
+          pyinstaller --noconfirm --clean --console --name MyApp --paths "." --hidden-import main --add-data "utilities;utilities" --add-data "database;database" run.py
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
         run: |
           set -eux
-          pyinstaller --noconfirm --clean --windowed --name MyApp --hidden-import main --add-data "utilities:utilities" --add-data "database:database" run.py
+          pyinstaller --noconfirm --clean --console --name MyApp --paths "." --hidden-import main --add-data "utilities;utilities" --add-data "database;database" run.py
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
