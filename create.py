@@ -66,7 +66,7 @@ class createTextFile:
         p.add_run('\t')
         run = p.add_run(f'{self.customerData[7]}\n')
         p.add_run('\t')
-        run = p.add_run(f'{self.customerData[2]} {self.customerData[3][0]}. {self.customerData[4][0]}.\n')
+        run = p.add_run(f'{self.customerData[2]} {self.customerData[1][0]}. {self.customerData[3][0]}.\n')
         run.font.size = Pt(11)
         
         tab_stops = p.paragraph_format.tab_stops
