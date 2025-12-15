@@ -51,7 +51,6 @@ class Database:
     def createOffer(self):
         self.cursor.execute("SELECT MAX(id) FROM offers")
         id = self.cursor.fetchone()[0]
-        offerName = f'{id}/{datetime.now().strftime('%d.%m')}'
         self.cursor.execute('''INSERT INTO offers (
                             date
                             ) VALUES (?)
