@@ -59,8 +59,11 @@ class mainWindow(QMainWindow):
             if item and item.checkState() == Qt.CheckState.Checked:
                 confirmedSuppliers.append(self.db.getCustomer(item.text())[0])
         extraData = self.getExtraData()
-        id = self.db.createOffer() + 1
-        exportTextFile((self.tableData, confirmedSuppliers, extraData, str(id), self.ui.radioButton.isChecked()))
+        if confirmedSuppliers:
+            id = self.db.createOffer() + 1
+            self.db.save()
+            exportTextFile((self.tableData, confirmedSuppliers, extraData, str(id), self.ui.radioButton.isChecked()))
+            self.close()
         
     def getExtraData(self):
         result = []

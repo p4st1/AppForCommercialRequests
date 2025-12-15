@@ -195,7 +195,7 @@ class mainWindow(QMainWindow):
                 "totalPrice": [],
                 'termDelivery': []
             }
-            self.ui.KpTable.setRowCount(self.rows)
+            self.ui.KpTable.setRowCount(self.rows - 1)
             for rowNum in range(1, self.rows):
                 colNum = 0
                 for col in df.columns:
