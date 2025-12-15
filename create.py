@@ -62,9 +62,11 @@ class createTextFile:
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         run = p.add_run(f"""\nИсх. №{data[3]}/{datetime.now().strftime('%d.%m')} от {datetime.now().strftime('%d.%m.%Y')}""")
         p.add_run('\t')
+        run = p.add_run(f'{self.customerData[8]}\n')
+        p.add_run('\t')
         run = p.add_run(f'{self.customerData[7]}\n')
         p.add_run('\t')
-        run = p.add_run(f'{self.customerData[8]}\n')
+        run = p.add_run(f'{self.customerData[2]} {self.customerData[3][0]}. {self.customerData[4][0]}.\n')
         run.font.size = Pt(11)
         
         tab_stops = p.paragraph_format.tab_stops
