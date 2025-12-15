@@ -74,7 +74,7 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --name MyApp \
             --paths . \
             --hidden-import=main \
-            --icon logo.icns `
+            --icon logo.icns \
             --add-data=utilities:utilities \
             --add-data=database:database \
             run.py
