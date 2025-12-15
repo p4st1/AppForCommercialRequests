@@ -228,7 +228,7 @@ class mainWindow(QMainWindow):
                     rowNum - 1,
                     14,
                     QTableWidgetItem(
-                        f"{df["col6"][rowNum].split()[0]} суток"
+                        f"{df['col6'][rowNum].split()[0]} суток"
                     ),
                 )
                                 
