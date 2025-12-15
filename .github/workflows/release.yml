@@ -10,52 +10,119 @@ permissions:
 
 jobs:
   build:
+    name: Build (${{ matrix.os }})
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
+
+      - name: Sanity check project files
+        shell: bash
+        run: |
+          set -eux
+          ls -la
+          test -f run.py
+          test -f main.py
+          test -f requirements.txt
+          test -d utilities
+          test -d database
 
       - name: Install deps
+        shell: bash
         run: |
+          set -eux
           python -m pip install -U pip
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller PySide6
+
+      - name: Verify import main
+        shell: bash
+        run: |
+          set -eux
+          python -c "import main; print('main imported from:', getattr(main, '__file__', None))"
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --console --name MyApp --paths "." --hidden-import main --add-data "utilities:utilities" --add-data "database:database" run.py
+          pyinstaller --noconfirm --clean --windowed --name MyApp `
+            --paths . `
+            --hidden-import=main `
+            --add-data=utilities:utilities `
+            --add-data=database:database `
+            run.py
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
+        shell: bash
         run: |
           set -eux
-          pyinstaller --noconfirm --clean --console --name MyApp --paths "." --hidden-import main --add-data "utilities:utilities" --add-data "database:database" run.py
+          pyinstaller --noconfirm --clean --windowed --name MyApp \
+            --paths . \
+            --hidden-import=main \
+            --add-data=utilities:utilities \
+            --add-data=database:database \
+            run.py
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          powershell Compress-Archive -Path dist\MyApp\* -DestinationPath MyApp-windows.zip
+          Compress-Archive -Path dist\MyApp\* -DestinationPath MyApp-windows.zip
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
+        shell: bash
         run: |
           set -eux
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" MyApp-macos.zip
 
-      - name: Release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ runner.os }}
+          path: |
+            MyApp-windows.zip
+            MyApp-macos.zip
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect zips
+        shell: bash
+        run: |
+          set -eux
+          find artifacts -type f -name "*.zip" -print
+          cp artifacts/**/MyApp-windows.zip . || true
+          cp artifacts/**/MyApp-macos.zip . || true
+          ls -la
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             MyApp-windows.zip
             MyApp-macos.zip
-
