@@ -47,8 +47,10 @@ jobs:
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
-          cd dist
-          ditto -c -k --sequesterRsrc --keepParent MyApp.app ../MyApp-macos.zip
+          set -eux
+          APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
+          test -n "$APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" MyApp-macos.zip
 
       - name: Release
         uses: softprops/action-gh-release@v2
