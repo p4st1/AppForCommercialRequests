@@ -52,8 +52,8 @@ jobs:
           test -d templates
           test -f templates/template.xlsx
           test -f templates/logs.log
-          test -f assets/logo.ico
-          test -f assets/logo.icns
+          test -f logo.ico
+          test -f logo.icns
 
       - name: Install deps
         shell: bash
