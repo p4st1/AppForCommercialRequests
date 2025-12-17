@@ -346,7 +346,7 @@ class mainWindow(QMainWindow):
         for rowNum in range(self.rows - 1):
             if logisticVarInd == 1:
                 f = round(
-                        self.tableData["totalPrice"][rowNum] + 60000/sum(self.tableData["totalPrice"]) * self.tableData["totalPrice"][rowNum],
+                        self.tableData["totalPrice"][rowNum] + int(self.ui.logisticNum.text())/sum(self.tableData["totalPrice"]) * self.tableData["totalPrice"][rowNum],
                         2,
                     )
             else:
