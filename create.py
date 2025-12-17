@@ -172,8 +172,11 @@ class createTextFile:
         run.font.size = Pt(11)
 
         try:
+            Tools.write_log("creating docx File...")
+            Tools.write_log(f"Docx path to save: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
             document.save(f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_от_{datetime.now().strftime('%d.%m.%Y')}_{data[3]}.docx")
         except Exception as e:
+            Tools.write_log(f"Unnable to save Excel: {e}")
             print(e)
 
 class createExcelFile:
@@ -239,8 +242,11 @@ class createExcelFile:
                     cell.border = border
         
         try:
+            Tools.write_log("creating Excel File...")
+            Tools.write_log(f"Excel path to save: {newFilePath}")
             wb.save(newFilePath)
         except Exception as e:
+            Tools.write_log(f"Unnable to save Excel: {e}")
             print(e)
         
     def cell_has_data(self, cell):

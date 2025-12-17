@@ -428,6 +428,7 @@ class mainWindow(QMainWindow):
                 else:
                     row_data.append("")
             tableData.append(row_data)
+            
         
         exportExcelFile((tableData, 
                          (self.ui.logisiticVar.currentIndex(), self.ui.logisticNum.text()),
