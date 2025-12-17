@@ -21,9 +21,9 @@ jobs:
           - name: windows
             os: windows-latest
           - name: macos-arm64
-            os: macos-14
+            os: macos-15
           - name: macos-x86_64
-            os: macos-13
+            os: macos-15-intel
 
     runs-on: ${{ matrix.os }}
 
@@ -39,7 +39,7 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Sanity check project files
+      - name: Sanity check files
         shell: bash
         run: |
           set -eux
@@ -49,8 +49,11 @@ jobs:
           test -f requirements.txt
           test -d utilities
           test -d database
-          test -f assets/app.ico
-          test -f assets/app.icns
+          test -d templates
+          test -f templates/template.xlsx
+          test -f templates/logs.log
+          test -f assets/logo.ico
+          test -f assets/logo.icns
 
       - name: Install deps
         shell: bash
@@ -76,19 +79,28 @@ jobs:
             --icon logo.ico `
             --add-data=utilities:utilities `
             --add-data=database:database `
+            --add-data=templates/template.xlsx:templates `
+            --add-data=templates/logs.log:templates `
             run.py
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\$env:APP_NAME\*" -DestinationPath "$env:APP_NAME-windows.zip"
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           set -eux
-          if [ "$(uname -m)" = "arm64" ]; then
-            TARCH="arm64"
+          ARCH="$(uname -m)"
+          if [ "$ARCH" = "arm64" ]; then
             OUT="${APP_NAME}-macos-arm64.zip"
+            TARCH="arm64"
           else
-            TARCH="x86_64"
             OUT="${APP_NAME}-macos-x86_64.zip"
+            TARCH="x86_64"
           fi
 
           pyinstaller --noconfirm --clean --windowed --name "${APP_NAME}" \
@@ -98,17 +110,13 @@ jobs:
             --icon logo.icns \
             --add-data=utilities:utilities \
             --add-data=database:database \
+            --add-data=templates/template.xlsx:templates \
+            --add-data=templates/logs.log:templates \
             run.py
 
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "dist\$env:APP_NAME\*" -DestinationPath "$env:APP_NAME-windows.zip"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -137,7 +145,6 @@ jobs:
           find artifacts -type f -name "*.zip" -print
           cp artifacts/**/**.zip . || true
           ls -la *.zip
-
           test -f "MyApp-windows.zip"
           test -f "MyApp-macos-arm64.zip"
           test -f "MyApp-macos-x86_64.zip"
