@@ -15,6 +15,8 @@ class createTextFile:
         Tools.write_log('INIT DOCX...')
         Tools.write_log(f"Docx path to save: {Config.config['pathToSaveCP']}")
         tableData = data[0]
+        
+        print(tableData)
         self.rows = tableData[0]
         self.table = tableData[1]
         
@@ -116,7 +118,7 @@ class createTextFile:
             run.font.name = run.font.name = 'Calibri'
             run.font.bold = True
             
-            
+           
         for row in range(self.rows):
             for col in range(len(self.headers)):
                 cell = table.cell(row + 1, col)
