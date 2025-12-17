@@ -63,6 +63,8 @@ class mainWindow(QMainWindow):
         self.ui.createExcelButton.clicked.connect(self.exportExcel)
         
         self.ui.logisiticVar.currentIndexChanged.connect(self.logisticVarChanged)
+        self.ui.logisticNum.editingFinished.connect(self.checkLine)
+        
         self.ui.customLine.editingFinished.connect(self.processFormula)
         self.ui.termDeliveryLine.editingFinished.connect(self.processFormula)
         self.ui.closeTableButton.clicked.connect(self.closeTable)
@@ -156,6 +158,9 @@ class mainWindow(QMainWindow):
             "База данных (*.db);;Все файлы (*)"
         )
         self.db.import_(file_path, Config.db_path)
+    
+    def checkLine(self):
+        self.ui.logisticNum.setText(self.ui.logisticNum.text().replace(',', '.'))
         
     def processFormula(self):
         self.formulaCustom = str(Tool.evalWithVars(f"{self.ui.customLine.text().replace(',', '.')}"))
