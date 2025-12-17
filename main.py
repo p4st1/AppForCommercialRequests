@@ -158,7 +158,7 @@ class mainWindow(QMainWindow):
         self.db.import_(file_path, Config.db_path)
         
     def processFormula(self):
-        self.formulaCustom = str(Tool.evalWithVars(f'{self.ui.customLine.text().replace(',', '.')}'))
+        self.formulaCustom = str(Tool.evalWithVars(f"{self.ui.customLine.text().replace(',', '.')}"))
         self.ui.customLine.setText(self.formulaCustom)
         
         if Config.isTableOpened:
