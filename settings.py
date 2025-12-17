@@ -27,6 +27,9 @@ class mainWindow(QMainWindow):
         
         self.ui.CPdirLine.setText(self.resourcePath(Config.config['pathToSaveCP']))
         self.ui.dirOpenButton.clicked.connect(self.selectDirectory)
+        
+        self.ui.ExcelDirLine.setText(self.resourcePath(Config.config['pathToSaveExcel']))
+        self.ui.dirOpenButton_2.clicked.connect(self.selectDirectory2)
     
     def autoFillChange(self, signal):
         Config.settings['autoFill'] = signal
@@ -45,6 +48,18 @@ class mainWindow(QMainWindow):
         if directory:
             Config.config['pathToSaveCP'] = directory
             self.ui.CPdirLine.setText(directory)
+    
+    def selectDirectory2(self):
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Выберите директорию",
+            "",
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if directory:
+            Config.config['pathToSaveExcel'] = directory
+            self.ui.ExcelDirLine.setText(directory)
             
     def resourcePath(self, relativePath):
         try:

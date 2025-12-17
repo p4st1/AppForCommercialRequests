@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'mainGui.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.8.0
+## Created by: Qt User Interface Compiler version 6.10.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -477,16 +477,9 @@ class Ui_MainWindow(object):
 "    background-color: rgba(44, 62, 80, 0.1);\n"
 "}\n"
 "\n"
-"/* ===== \u0420\u0410"
-                        "\u0417\u0414\u0415\u041b\u0418\u0422\u0415\u041b\u0418 ===== */\n"
-"QFrame#line {\n"
-"    background-color: #dee2e6;\n"
-"    border: none;\n"
-"    min-height: 1px;\n"
-"    max-height: 1px;\n"
-"}\n"
 "\n"
-"/* ===== \u0414\u0418\u0410\u041b\u041e\u0413\u041e\u0412\u042b\u0415 \u041e\u041a\u041d\u0410 ===== */\n"
+"/* ===== \u0414"
+                        "\u0418\u0410\u041b\u041e\u0413\u041e\u0412\u042b\u0415 \u041e\u041a\u041d\u0410 ===== */\n"
 "QDialog {\n"
 "    background-color: #f5f7fa;\n"
 "}\n"
@@ -531,8 +524,8 @@ class Ui_MainWindow(object):
         self.importMenuButton.setObjectName(u"importMenuButton")
         self.closeTableMenuButton = QAction(MainWindow)
         self.closeTableMenuButton.setObjectName(u"closeTableMenuButton")
-        self.action_10 = QAction(MainWindow)
-        self.action_10.setObjectName(u"action_10")
+        self.createExcelMenuButton = QAction(MainWindow)
+        self.createExcelMenuButton.setObjectName(u"createExcelMenuButton")
         self.GitHubMenuButton = QAction(MainWindow)
         self.GitHubMenuButton.setObjectName(u"GitHubMenuButton")
         self.supportMenuButton = QAction(MainWindow)
@@ -1023,6 +1016,7 @@ class Ui_MainWindow(object):
         self.tabWidget.setObjectName(u"tabWidget")
         sizePolicy.setHeightForWidth(self.tabWidget.sizePolicy().hasHeightForWidth())
         self.tabWidget.setSizePolicy(sizePolicy)
+        self.tabWidget.setMinimumSize(QSize(0, 200))
         font3 = QFont()
         font3.setFamilies([u"Segoe UI"])
         font3.setPointSize(9)
@@ -1030,6 +1024,11 @@ class Ui_MainWindow(object):
         self.tabWidget.setFont(font3)
         self.tab_3 = QWidget()
         self.tab_3.setObjectName(u"tab_3")
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        sizePolicy1.setHorizontalStretch(0)
+        sizePolicy1.setVerticalStretch(0)
+        sizePolicy1.setHeightForWidth(self.tab_3.sizePolicy().hasHeightForWidth())
+        self.tab_3.setSizePolicy(sizePolicy1)
         self.verticalLayout_4 = QVBoxLayout(self.tab_3)
         self.verticalLayout_4.setSpacing(0)
         self.verticalLayout_4.setObjectName(u"verticalLayout_4")
@@ -1043,9 +1042,6 @@ class Ui_MainWindow(object):
         self.tabWidget.addTab(self.tab_3, "")
         self.tab = QWidget()
         self.tab.setObjectName(u"tab")
-        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        sizePolicy1.setHorizontalStretch(0)
-        sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(self.tab.sizePolicy().hasHeightForWidth())
         self.tab.setSizePolicy(sizePolicy1)
         self.tab.setMaximumSize(QSize(16777215, 493))
@@ -1097,8 +1093,11 @@ class Ui_MainWindow(object):
         __qtablewidgetitem14 = QTableWidgetItem()
         self.KpTable.setHorizontalHeaderItem(14, __qtablewidgetitem14)
         self.KpTable.setObjectName(u"KpTable")
-        sizePolicy1.setHeightForWidth(self.KpTable.sizePolicy().hasHeightForWidth())
-        self.KpTable.setSizePolicy(sizePolicy1)
+        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        sizePolicy2.setHorizontalStretch(0)
+        sizePolicy2.setVerticalStretch(0)
+        sizePolicy2.setHeightForWidth(self.KpTable.sizePolicy().hasHeightForWidth())
+        self.KpTable.setSizePolicy(sizePolicy2)
         self.KpTable.setFont(font1)
         self.KpTable.setStyleSheet(u"QTableWidget {\n"
 "    background-color: #ffffff;\n"
@@ -1177,6 +1176,8 @@ class Ui_MainWindow(object):
         self.tabWidget.addTab(self.tab, "")
         self.tab_2 = QWidget()
         self.tab_2.setObjectName(u"tab_2")
+        sizePolicy1.setHeightForWidth(self.tab_2.sizePolicy().hasHeightForWidth())
+        self.tab_2.setSizePolicy(sizePolicy1)
         self.verticalLayout_3 = QVBoxLayout(self.tab_2)
         self.verticalLayout_3.setSpacing(0)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
@@ -1194,40 +1195,44 @@ class Ui_MainWindow(object):
         self.funcButtons.setObjectName(u"funcButtons")
         self.funcButtons.setHorizontalSpacing(12)
         self.funcButtons.setContentsMargins(5, 5, 5, 5)
-        self.pushButton_2 = QPushButton(self.centralwidget)
-        self.pushButton_2.setObjectName(u"pushButton_2")
-        font6 = QFont()
-        font6.setWeight(QFont.DemiBold)
-        self.pushButton_2.setFont(font6)
-        self.pushButton_2.setStyleSheet(u"QPushButton {\n"
-"    background-color: #2c3e50;\n"
-"    color: white;\n"
+        self.line_7 = QFrame(self.centralwidget)
+        self.line_7.setObjectName(u"line_7")
+        self.line_7.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
 "    border: none;\n"
-"    padding: 4px 4px;\n"
-"    border-radius: 6px;\n"
-"    font-weight: 600;\n"
-"    font-size: 12px;\n"
-"    min-height: 35px;\n"
-"    min-width: 100px;\n"
-"}\n"
-"\n"
-"QPushButton:hover {\n"
-"    background-color: #34495e;\n"
-"    border: 1px solid #2c3e50;\n"
-"}\n"
-"\n"
-"QPushButton:pressed {\n"
-"    background-color: #1a252f;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
 "}")
+        self.line_7.setFrameShape(QFrame.Shape.VLine)
+        self.line_7.setFrameShadow(QFrame.Shadow.Sunken)
 
-        self.funcButtons.addWidget(self.pushButton_2, 2, 4, 1, 1)
+        self.funcButtons.addWidget(self.line_7, 0, 5, 1, 1)
 
         self.horizontalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.funcButtons.addItem(self.horizontalSpacer, 0, 6, 1, 1)
+        self.funcButtons.addItem(self.horizontalSpacer, 0, 11, 1, 1)
 
+        self.line_6 = QFrame(self.centralwidget)
+        self.line_6.setObjectName(u"line_6")
+        self.line_6.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_6.setFrameShape(QFrame.Shape.VLine)
+        self.line_6.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_6, 2, 5, 1, 1)
+
+        self.verticalLayout_9 = QVBoxLayout()
+        self.verticalLayout_9.setSpacing(6)
+        self.verticalLayout_9.setObjectName(u"verticalLayout_9")
+        self.verticalLayout_9.setContentsMargins(-1, -1, 0, -1)
         self.openTableButton = QPushButton(self.centralwidget)
         self.openTableButton.setObjectName(u"openTableButton")
+        font6 = QFont()
+        font6.setWeight(QFont.DemiBold)
         self.openTableButton.setFont(font6)
         self.openTableButton.setStyleSheet(u"QPushButton {\n"
 "    background-color: #2c3e50;\n"
@@ -1250,25 +1255,7 @@ class Ui_MainWindow(object):
 "    background-color: #1a252f;\n"
 "}")
 
-        self.funcButtons.addWidget(self.openTableButton, 0, 3, 1, 1)
-
-        self.label_5 = QLabel(self.centralwidget)
-        self.label_5.setObjectName(u"label_5")
-        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
-        sizePolicy2.setHorizontalStretch(0)
-        sizePolicy2.setVerticalStretch(0)
-        sizePolicy2.setHeightForWidth(self.label_5.sizePolicy().hasHeightForWidth())
-        self.label_5.setSizePolicy(sizePolicy2)
-        self.label_5.setFont(font6)
-        self.label_5.setStyleSheet(u"QLabel {\n"
-"	color:  #2c3e50;\n"
-"	font-weight: 600;\n"
-"	 font-size: 12px;\n"
-"}\n"
-"")
-        self.label_5.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.funcButtons.addWidget(self.label_5, 0, 0, 1, 1)
+        self.verticalLayout_9.addWidget(self.openTableButton)
 
         self.closeTableButton = QPushButton(self.centralwidget)
         self.closeTableButton.setObjectName(u"closeTableButton")
@@ -1294,17 +1281,138 @@ class Ui_MainWindow(object):
 "    background-color: #1a252f;\n"
 "}")
 
-        self.funcButtons.addWidget(self.closeTableButton, 0, 4, 1, 1)
+        self.verticalLayout_9.addWidget(self.closeTableButton)
+
+
+        self.funcButtons.addLayout(self.verticalLayout_9, 0, 8, 1, 1)
+
+        self.line1 = QFrame(self.centralwidget)
+        self.line1.setObjectName(u"line1")
+        self.line1.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line1.setFrameShape(QFrame.Shape.VLine)
+        self.line1.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line1, 0, 1, 1, 1)
+
+        self.verticalLayout_8 = QVBoxLayout()
+        self.verticalLayout_8.setSpacing(6)
+        self.verticalLayout_8.setObjectName(u"verticalLayout_8")
+        self.verticalLayout_8.setContentsMargins(-1, -1, 0, -1)
+        self.createDocButton = QPushButton(self.centralwidget)
+        self.createDocButton.setObjectName(u"createDocButton")
+        self.createDocButton.setFont(font6)
+        self.createDocButton.setStyleSheet(u"QPushButton {\n"
+"    background-color: #2c3e50;\n"
+"    color: white;\n"
+"    border: none;\n"
+"    padding: 4px 4px;\n"
+"    border-radius: 6px;\n"
+"    font-weight: 600;\n"
+"    font-size: 12px;\n"
+"    min-height: 35px;\n"
+"    min-width: 32px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    background-color: #34495e;\n"
+"    border: 1px solid #2c3e50;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: #1a252f;\n"
+"}")
+
+        self.verticalLayout_8.addWidget(self.createDocButton)
+
+        self.createExcelButton = QPushButton(self.centralwidget)
+        self.createExcelButton.setObjectName(u"createExcelButton")
+        self.createExcelButton.setFont(font6)
+        self.createExcelButton.setStyleSheet(u"QPushButton {\n"
+"    background-color: #2c3e50;\n"
+"    color: white;\n"
+"    border: none;\n"
+"    padding: 4px 4px;\n"
+"    border-radius: 6px;\n"
+"    font-weight: 600;\n"
+"    font-size: 12px;\n"
+"    min-height: 35px;\n"
+"    min-width: 100px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    background-color: #34495e;\n"
+"    border: 1px solid #2c3e50;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: #1a252f;\n"
+"}")
+
+        self.verticalLayout_8.addWidget(self.createExcelButton)
+
+
+        self.funcButtons.addLayout(self.verticalLayout_8, 0, 6, 1, 1)
+
+        self.line_2 = QFrame(self.centralwidget)
+        self.line_2.setObjectName(u"line_2")
+        self.line_2.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_2.setFrameShape(QFrame.Shape.VLine)
+        self.line_2.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_2, 0, 7, 1, 1)
+
+        self.line = QFrame(self.centralwidget)
+        self.line.setObjectName(u"line")
+        self.line.setStyleSheet(u"/* ===== \u0420\u0410\u0417\u0414\u0415\u041b\u0418\u0422\u0415\u041b\u0418 ===== */\n"
+"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line.setFrameShape(QFrame.Shape.VLine)
+        self.line.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line, 1, 2, 1, 1)
+
+        self.verticalLayout_5 = QVBoxLayout()
+        self.verticalLayout_5.setSpacing(6)
+        self.verticalLayout_5.setObjectName(u"verticalLayout_5")
+        self.verticalLayout_5.setContentsMargins(-1, 0, 0, -1)
+        self.label_5 = QLabel(self.centralwidget)
+        self.label_5.setObjectName(u"label_5")
+        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+        sizePolicy3.setHorizontalStretch(0)
+        sizePolicy3.setVerticalStretch(0)
+        sizePolicy3.setHeightForWidth(self.label_5.sizePolicy().hasHeightForWidth())
+        self.label_5.setSizePolicy(sizePolicy3)
+        self.label_5.setFont(font6)
+        self.label_5.setStyleSheet(u"QLabel {\n"
+"	color:  #2c3e50;\n"
+"	font-weight: 600;\n"
+"	 font-size: 12px;\n"
+"}\n"
+"")
+        self.label_5.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.verticalLayout_5.addWidget(self.label_5)
 
         self.logisiticVar = QComboBox(self.centralwidget)
         self.logisiticVar.addItem("")
         self.logisiticVar.addItem("")
         self.logisiticVar.setObjectName(u"logisiticVar")
-        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        sizePolicy3.setHorizontalStretch(0)
-        sizePolicy3.setVerticalStretch(0)
-        sizePolicy3.setHeightForWidth(self.logisiticVar.sizePolicy().hasHeightForWidth())
-        self.logisiticVar.setSizePolicy(sizePolicy3)
+        sizePolicy2.setHeightForWidth(self.logisiticVar.sizePolicy().hasHeightForWidth())
+        self.logisiticVar.setSizePolicy(sizePolicy2)
         self.logisiticVar.setMinimumSize(QSize(0, 30))
         self.logisiticVar.setFont(font2)
         self.logisiticVar.setStyleSheet(u"QLabel {\n"
@@ -1346,7 +1454,7 @@ class Ui_MainWindow(object):
 "    width: 12px;\n"
 "}")
 
-        self.funcButtons.addWidget(self.logisiticVar, 1, 0, 1, 1)
+        self.verticalLayout_5.addWidget(self.logisiticVar)
 
         self.logisticNum = QLineEdit(self.centralwidget)
         self.logisticNum.setObjectName(u"logisticNum")
@@ -1370,10 +1478,34 @@ class Ui_MainWindow(object):
 "}")
         self.logisticNum.setClearButtonEnabled(False)
 
-        self.funcButtons.addWidget(self.logisticNum, 2, 0, 1, 1)
+        self.verticalLayout_5.addWidget(self.logisticNum)
 
+
+        self.funcButtons.addLayout(self.verticalLayout_5, 0, 0, 1, 1)
+
+        self.line_3 = QFrame(self.centralwidget)
+        self.line_3.setObjectName(u"line_3")
+        self.line_3.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_3.setFrameShape(QFrame.Shape.VLine)
+        self.line_3.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_3, 2, 2, 1, 1)
+
+        self.verticalLayout_7 = QVBoxLayout()
+        self.verticalLayout_7.setObjectName(u"verticalLayout_7")
+        self.verticalLayout_7.setContentsMargins(-1, 0, 0, -1)
         self.label = QLabel(self.centralwidget)
         self.label.setObjectName(u"label")
+        sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        sizePolicy5.setHorizontalStretch(0)
+        sizePolicy5.setVerticalStretch(0)
+        sizePolicy5.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
+        self.label.setSizePolicy(sizePolicy5)
         self.label.setFont(font6)
         self.label.setStyleSheet(u"QLabel {\n"
 "	color:  #2c3e50;\n"
@@ -1383,38 +1515,15 @@ class Ui_MainWindow(object):
 "")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.funcButtons.addWidget(self.label, 0, 1, 1, 1)
-
-        self.createDocButton = QPushButton(self.centralwidget)
-        self.createDocButton.setObjectName(u"createDocButton")
-        self.createDocButton.setFont(font6)
-        self.createDocButton.setStyleSheet(u"QPushButton {\n"
-"    background-color: #2c3e50;\n"
-"    color: white;\n"
-"    border: none;\n"
-"    padding: 4px 4px;\n"
-"    border-radius: 6px;\n"
-"    font-weight: 600;\n"
-"    font-size: 12px;\n"
-"    min-height: 35px;\n"
-"    min-width: 32px;\n"
-"}\n"
-"\n"
-"QPushButton:hover {\n"
-"    background-color: #34495e;\n"
-"    border: 1px solid #2c3e50;\n"
-"}\n"
-"\n"
-"QPushButton:pressed {\n"
-"    background-color: #1a252f;\n"
-"}")
-
-        self.funcButtons.addWidget(self.createDocButton, 2, 3, 1, 1)
+        self.verticalLayout_7.addWidget(self.label)
 
         self.customLine = QLineEdit(self.centralwidget)
         self.customLine.setObjectName(u"customLine")
-        sizePolicy2.setHeightForWidth(self.customLine.sizePolicy().hasHeightForWidth())
-        self.customLine.setSizePolicy(sizePolicy2)
+        sizePolicy6 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
+        sizePolicy6.setHorizontalStretch(0)
+        sizePolicy6.setVerticalStretch(0)
+        sizePolicy6.setHeightForWidth(self.customLine.sizePolicy().hasHeightForWidth())
+        self.customLine.setSizePolicy(sizePolicy6)
         self.customLine.setFont(font2)
         self.customLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
 "    background-color: white;\n"
@@ -1426,11 +1535,24 @@ class Ui_MainWindow(object):
 "    min-height: 8px;\n"
 "    selection-background-color: #e3f2fd;\n"
 "}")
+        self.customLine.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
 
-        self.funcButtons.addWidget(self.customLine, 1, 1, 1, 1)
+        self.verticalLayout_7.addWidget(self.customLine)
 
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        self.verticalLayout_7.addItem(self.verticalSpacer_2)
+
+
+        self.funcButtons.addLayout(self.verticalLayout_7, 0, 4, 1, 1)
+
+        self.verticalLayout_6 = QVBoxLayout()
+        self.verticalLayout_6.setObjectName(u"verticalLayout_6")
+        self.verticalLayout_6.setContentsMargins(-1, 0, 0, -1)
         self.label_2 = QLabel(self.centralwidget)
         self.label_2.setObjectName(u"label_2")
+        sizePolicy5.setHeightForWidth(self.label_2.sizePolicy().hasHeightForWidth())
+        self.label_2.setSizePolicy(sizePolicy5)
         self.label_2.setStyleSheet(u"QLabel {\n"
 "	color:  #2c3e50;\n"
 "	font-weight: 600;\n"
@@ -1439,15 +1561,12 @@ class Ui_MainWindow(object):
 "")
         self.label_2.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.funcButtons.addWidget(self.label_2, 0, 2, 1, 1)
+        self.verticalLayout_6.addWidget(self.label_2)
 
         self.termDeliveryLine = QLineEdit(self.centralwidget)
         self.termDeliveryLine.setObjectName(u"termDeliveryLine")
-        sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        sizePolicy5.setHorizontalStretch(0)
-        sizePolicy5.setVerticalStretch(0)
-        sizePolicy5.setHeightForWidth(self.termDeliveryLine.sizePolicy().hasHeightForWidth())
-        self.termDeliveryLine.setSizePolicy(sizePolicy5)
+        sizePolicy6.setHeightForWidth(self.termDeliveryLine.sizePolicy().hasHeightForWidth())
+        self.termDeliveryLine.setSizePolicy(sizePolicy6)
         self.termDeliveryLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
 "    background-color: white;\n"
 "    border: 1px solid #dee2e6;\n"
@@ -1459,7 +1578,66 @@ class Ui_MainWindow(object):
 "    selection-background-color: #e3f2fd;\n"
 "}")
 
-        self.funcButtons.addWidget(self.termDeliveryLine, 1, 2, 1, 1)
+        self.verticalLayout_6.addWidget(self.termDeliveryLine)
+
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        self.verticalLayout_6.addItem(self.verticalSpacer)
+
+
+        self.funcButtons.addLayout(self.verticalLayout_6, 0, 2, 1, 1)
+
+        self.line_9 = QFrame(self.centralwidget)
+        self.line_9.setObjectName(u"line_9")
+        self.line_9.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_9.setFrameShape(QFrame.Shape.VLine)
+        self.line_9.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_9, 2, 7, 1, 1)
+
+        self.line_5 = QFrame(self.centralwidget)
+        self.line_5.setObjectName(u"line_5")
+        self.line_5.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_5.setFrameShape(QFrame.Shape.VLine)
+        self.line_5.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_5, 1, 5, 1, 1)
+
+        self.line_4 = QFrame(self.centralwidget)
+        self.line_4.setObjectName(u"line_4")
+        self.line_4.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_4.setFrameShape(QFrame.Shape.VLine)
+        self.line_4.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_4, 0, 3, 1, 1)
+
+        self.line_8 = QFrame(self.centralwidget)
+        self.line_8.setObjectName(u"line_8")
+        self.line_8.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_8.setFrameShape(QFrame.Shape.VLine)
+        self.line_8.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_8, 1, 7, 1, 1)
 
 
         self.verticalLayout.addLayout(self.funcButtons)
@@ -1468,11 +1646,11 @@ class Ui_MainWindow(object):
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
         self.menubar.setGeometry(QRect(0, 0, 1440, 31))
-        sizePolicy6 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum)
-        sizePolicy6.setHorizontalStretch(0)
-        sizePolicy6.setVerticalStretch(0)
-        sizePolicy6.setHeightForWidth(self.menubar.sizePolicy().hasHeightForWidth())
-        self.menubar.setSizePolicy(sizePolicy6)
+        sizePolicy7 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum)
+        sizePolicy7.setHorizontalStretch(0)
+        sizePolicy7.setVerticalStretch(0)
+        sizePolicy7.setHeightForWidth(self.menubar.sizePolicy().hasHeightForWidth())
+        self.menubar.setSizePolicy(sizePolicy7)
         font7 = QFont()
         font7.setFamilies([u"Inter"])
         font7.setPointSize(8)
@@ -1511,7 +1689,7 @@ class Ui_MainWindow(object):
         self.FileMenu.addAction(self.closeTableMenuButton)
         self.FileMenu.addSeparator()
         self.FileMenu.addAction(self.createDocMenuButton)
-        self.FileMenu.addAction(self.action_10)
+        self.FileMenu.addAction(self.createExcelMenuButton)
         self.EditMenu.addAction(self.editParamsButton)
         self.EditMenu.addSeparator()
         self.SettingsMenu.addAction(self.suppliersMenuButton)
@@ -1527,7 +1705,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.tabWidget.setCurrentIndex(0)
+        self.tabWidget.setCurrentIndex(1)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -1547,7 +1725,7 @@ class Ui_MainWindow(object):
         self.exportMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0411\u0414...", None))
         self.importMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u0418\u043c\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0411\u0414...", None))
         self.closeTableMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0440\u044b\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
-        self.action_10.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0444\u043e\u0440\u043c\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
+        self.createExcelMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0444\u043e\u0440\u043c\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443 (Excel)", None))
         self.GitHubMenuButton.setText(QCoreApplication.translate("MainWindow", u"GitHub", None))
         self.supportMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u0430", None))
         self.aboutMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u041e \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435", None))
@@ -1584,17 +1762,17 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem14.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0440\u043e\u043a \u043f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0430", None));
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043b\u043d\u0430\u044f \u0442\u0430\u0431\u043b\u0438\u0446\u0430", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"Tab 2", None))
-        self.pushButton_2.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0444\u043e\u0440\u043c\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
         self.openTableButton.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
-        self.label_5.setText(QCoreApplication.translate("MainWindow", u"\u041b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0430", None))
         self.closeTableButton.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0440\u044b\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
+        self.createDocButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u041a\u041f", None))
+        self.createExcelButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c Excel", None))
+        self.label_5.setText(QCoreApplication.translate("MainWindow", u"\u041b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0430", None))
         self.logisiticVar.setItemText(0, QCoreApplication.translate("MainWindow", u"\u043a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442", None))
         self.logisiticVar.setItemText(1, QCoreApplication.translate("MainWindow", u"\u0440\u0430\u0441\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0438\u0435", None))
 
         self.logisticNum.setText("")
         self.logisticNum.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u0427\u0438\u0441\u043b\u043e", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"\u0422\u0430\u043c\u043e\u0436\u043d\u044f", None))
-        self.createDocButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0432\u0435\u0441\u0442\u0438 \u041a\u041f", None))
         self.customLine.setText("")
         self.customLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u041a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442", None))
         self.label_2.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0440\u043e\u043a \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0438", None))

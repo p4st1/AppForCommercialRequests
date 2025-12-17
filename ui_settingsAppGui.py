@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'settingsAppGui.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.8.0
+## Created by: Qt User Interface Compiler version 6.10.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -504,6 +504,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
         self.verticalLayout_3.setContentsMargins(5, 0, 5, 0)
         self.verticalLayout = QVBoxLayout()
+        self.verticalLayout.setSpacing(8)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.autoFillCheckBox = QCheckBox(self.scrollAreaWidgetContents)
         self.autoFillCheckBox.setObjectName(u"autoFillCheckBox")
@@ -579,6 +580,60 @@ class Ui_MainWindow(object):
 
         self.verticalLayout.addLayout(self.horizontalLayout)
 
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalLayout_2.setContentsMargins(-1, 0, -1, -1)
+        self.label_2 = QLabel(self.scrollAreaWidgetContents)
+        self.label_2.setObjectName(u"label_2")
+        self.label_2.setStyleSheet(u"color: #2c3e50;\n"
+"font-size: 16px;\n"
+"padding: 2px;")
+
+        self.horizontalLayout_2.addWidget(self.label_2)
+
+        self.dirOpenButton_2 = QPushButton(self.scrollAreaWidgetContents)
+        self.dirOpenButton_2.setObjectName(u"dirOpenButton_2")
+        self.dirOpenButton_2.setStyleSheet(u"QPushButton {\n"
+"    background-color: #2c3e50;\n"
+"    color: white;\n"
+"    border: none;\n"
+"    padding: 4px 4px;\n"
+"    border-radius: 6px;\n"
+"    font-weight: 600;\n"
+"    font-size: 12px;\n"
+"    min-height: 24px;\n"
+"    min-width: 100px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    background-color: #34495e;\n"
+"    border: 1px solid #2c3e50;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: #1a252f;\n"
+"}")
+
+        self.horizontalLayout_2.addWidget(self.dirOpenButton_2)
+
+        self.ExcelDirLine = QLineEdit(self.scrollAreaWidgetContents)
+        self.ExcelDirLine.setObjectName(u"ExcelDirLine")
+        self.ExcelDirLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
+"    background-color: white;\n"
+"    border: 1px solid #dee2e6;\n"
+"    border-radius: 6px;\n"
+"    padding: 4px 8px;\n"
+"    font-size: 12px;\n"
+"    color: #2c3e50;\n"
+"    min-height: 8px;\n"
+"    selection-background-color: #e3f2fd;\n"
+"}")
+
+        self.horizontalLayout_2.addWidget(self.ExcelDirLine)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout_2)
+
         self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout.addItem(self.verticalSpacer)
@@ -603,5 +658,7 @@ class Ui_MainWindow(object):
         self.closeTableCheckBox.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443 \u043f\u0440\u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0438 \u041a\u041f", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"\u0414\u0438\u0440\u0435\u043a\u0442\u043e\u0440\u0438\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f \u041a\u041f", None))
         self.dirOpenButton.setText(QCoreApplication.translate("MainWindow", u"\u0412\u044b\u0431\u0440\u0430\u0442\u044c", None))
+        self.label_2.setText(QCoreApplication.translate("MainWindow", u"\u0414\u0438\u0440\u0435\u043a\u0442\u043e\u0440\u0438\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f \u0442\u0430\u0431\u043b\u0438\u0446 Excel", None))
+        self.dirOpenButton_2.setText(QCoreApplication.translate("MainWindow", u"\u0412\u044b\u0431\u0440\u0430\u0442\u044c", None))
     # retranslateUi
 

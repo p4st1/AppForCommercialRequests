@@ -2,6 +2,7 @@ import shutil
 import json
 from pathlib import Path
 from config import Config
+import time
 import decimal
 import json
 import sys
@@ -97,6 +98,12 @@ class DatabaseTools:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         tmp.replace(path)
+        
+    @staticmethod
+    def write_log(message):
+        with open(Config.log_path, 'a', encoding='utf-8') as f:
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+            f.write(f"[{timestamp}] {message}\n")
         
 class Tools:
     def __init__(self):

@@ -4,11 +4,13 @@ from docx.shared import Inches, Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from tools import DatabaseTools as Tools
 from datetime import datetime, timedelta
+from openpyxl import load_workbook
+from openpyxl.styles import Border, Side  
 from config import Config
+import shutil
 
 class createTextFile:
     def __init__(self, data):
-        print(data)
         tableData = data[0]
         self.rows = tableData[0]
         self.table = tableData[1]
@@ -46,14 +48,14 @@ class createTextFile:
         left_cell = headerTable.cell(0, 0) 
         left_paragraph = left_cell.paragraphs[0]
         run = left_paragraph.add_run()
-        run.add_picture('logo.jpg', width=Cm(3))
+        run.add_picture('logo.jpg', width=Cm(2))
         
 
         right_cell = headerTable.cell(0, 1) 
         right_paragraph = right_cell.paragraphs[0]
 
         run_text = right_paragraph.add_run(f'''ООО "АЛЬФА КАППА ИНЖИНИРИНГ\nИНН 9731121825; КПП 772901001\n121471, Г.МОСКВА, УЛ., РЯБИНОВАЯ, Д.26 СТР.1, ПОМЕЩ.141\nalphakappa.ru, Тел: +7 (993) 338-47-22, admin@alphakappa.ru''')
-        run_text.font.size = Pt(8)
+        run_text.font.size = Pt(7)
         
         headerTable.style = 'Normal Table'
     
@@ -173,3 +175,77 @@ class createTextFile:
             document.save(f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_от_{datetime.now().strftime('%d.%m.%Y')}_{data[3]}.docx")
         except Exception as e:
             print(e)
+
+class createExcelFile:
+    def __init__(self, data):
+        newFilePath = f"{Tools.resourcePath(Config.config['pathToSaveExcel'])}/таблица_от_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
+        print(newFilePath)
+        shutil.copy2('template.xlsx', newFilePath)
+        wb = load_workbook(newFilePath)
+        workSheet = wb.active
+        
+        dataTable = data[0]
+        for row in range(len(dataTable)):
+            currency = dataTable[row][5][0]
+            workSheet[f'A{row + 2}'] = int(dataTable[row][0])
+            workSheet[f'B{row + 2}'] = dataTable[row][1]
+            workSheet[f'C{row + 2}'] = int(dataTable[row][2])
+            workSheet[f'D{row + 2}'] = dataTable[row][3]
+            workSheet[f'E{row + 2}'] = int(dataTable[row][4])
+            workSheet[f'F{row + 2}'] = float(dataTable[row][5][1:].replace(',', '.'))
+            workSheet[f'F{row + 2}'].number_format = f'"{currency}"#,##0.00'
+            workSheet[f'G{row + 2}'] = f'=F{row + 2}*E{row + 2}'
+            workSheet[f'G{row + 2}'].number_format = f'"{currency}"#,##0.00'
+        
+        workSheet[f'G{len(dataTable) + 2}'] = f'=SUM(G2:G{len(dataTable) + 1})'
+        workSheet[f'G{len(dataTable) + 2}'].number_format = f'"{currency}"#,##0.00' 
+        
+        for row in range(len(dataTable)):
+            if data[1][0] == 0:
+                workSheet[f'H{row + 2}'] = f'=G{row + 2}*{data[1][1]}'
+            if data[1][0] == 1:
+                workSheet[f'H{row + 2}'] = f'=G{row + 2}+{int(data[1][1])}/G{len(dataTable) + 2}*G{row + 2}'
+            workSheet[f'H{row + 2}'].number_format = f'"{currency}"#,##0.00' 
+            
+        workSheet[f'H{len(dataTable) + 2}'] = f'=SUM(H2:H{len(dataTable) + 1})'
+        workSheet[f'H{len(dataTable) + 2}'].number_format = f'"{currency}"#,##0.00' 
+        workSheet[f'H{len(dataTable) + 3}'] = f'=H{len(dataTable) + 2}-G{len(dataTable) + 2}'
+        workSheet[f'H{len(dataTable) + 3}'].number_format = f'"{currency}"#,##0.00' 
+        
+        for row in range(len(dataTable)):
+            workSheet[f'I{row + 2}'] = f'=H{row + 2}*{data[2]}'
+            workSheet[f'I{row + 2}'].number_format = f'"{currency}"#,##0.00'
+            workSheet[f'J{row + 2}'] = f'=I{row + 2}/E{row + 2}'
+            workSheet[f'J{row + 2}'].number_format = f'"{currency}"#,##0.00'
+            workSheet[f'K{row + 2}'] = f'=ROUND(J{row + 2}*1.25, 2)'
+            workSheet[f'K{row + 2}'].number_format = f'"{currency}"#,##0.00'
+            workSheet[f'L{row + 2}'] = f'=K{row + 2}*E{row + 2}'
+            workSheet[f'L{row + 2}'].number_format = f'"{currency}"#,##0.00'
+            workSheet[f'M{row + 2}'] = f'=L{row + 2}*1.2'
+            workSheet[f'M{row + 2}'].number_format = f'"{currency}"#,##0.00'
+            workSheet[f'N{row + 2}'] = dataTable[row][6]
+            workSheet[f'O{row + 2}'] = dataTable[row][7]
+            
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        for row in workSheet.iter_rows():
+            for cell in row:
+                if self.cell_has_data(cell):
+                    cell.border = border
+        
+        try:
+            wb.save(newFilePath)
+        except Exception as e:
+            print(e)
+        
+    def cell_has_data(self, cell):
+        if cell.value is not None and cell.value != "":
+                return True
+        return False
+
+        

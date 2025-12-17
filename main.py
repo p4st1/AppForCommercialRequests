@@ -2,6 +2,7 @@ from PySide6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QTableWidge
 from PySide6.QtGui import QIcon, QDesktopServices
 from PySide6.QtCore import Qt, QUrl
 from createDocument import mainWindow as createDocWindow
+from create import createExcelFile as exportExcelFile
 from customers import mainWindow as customersWindow
 from settings import mainWindow as settingsWindow
 from tools import DatabaseTools as Tool
@@ -43,6 +44,11 @@ class mainWindow(QMainWindow):
 
         self.ui.openTableButton.clicked.connect(self.openTable)
 
+        self.ui.openTableMenuButton.triggered.connect(self.openTable)
+        self.ui.closeTableMenuButton.triggered.connect(self.closeTable)
+        self.ui.createDocMenuButton.triggered.connect(self.exportDocs)
+        self.ui.createExcelMenuButton.triggered.connect(self.exportExcel)
+        
         self.ui.editParamsButton.triggered.connect(self.openParamsWindow)
         
         self.ui.suppliersMenuButton.triggered.connect(self.openSuppliersWindow)
@@ -55,7 +61,9 @@ class mainWindow(QMainWindow):
         self.ui.GitHubMenuButton.triggered.connect(lambda: self.open_url("https://github.com/p4st1/AppForCommercialRequests"))
         self.ui.supportMenuButton.triggered.connect(self.show_help)
         
-        self.ui.createDocButton.clicked.connect(self.getTableData)
+        self.ui.createDocButton.clicked.connect(self.exportDocs)
+        self.ui.createExcelButton.clicked.connect(self.exportExcel)
+        
         self.ui.logisiticVar.currentIndexChanged.connect(self.logisticVarChanged)
         self.ui.customLine.editingFinished.connect(self.processFormula)
         self.ui.termDeliveryLine.editingFinished.connect(self.processFormula)
@@ -234,7 +242,9 @@ class mainWindow(QMainWindow):
                                 
             self.logisticCalculate()
             self.calculating()
-
+        
+            self.ui.tabWidget.setCurrentIndex(1)
+            
         except Exception as e:
             self.error('Ошибка', f"Невозможно прочитать таблицу\n{e}")
 
@@ -362,7 +372,7 @@ class mainWindow(QMainWindow):
 
         for row in range(row_count):
             row_data = []
-            for col in range(5):
+            for col in range(6):
                 item = self.ui.KpTable.item(row, col)
                 if item is not None:
                     row_data.append(item.text())
@@ -379,10 +389,48 @@ class mainWindow(QMainWindow):
 
         self.db.open(Config.db_path)
         
+        return table_data
+    
+    def exportDocs(self):
+        tableData = self.getTableData()
         self.openCreateDocWindow((
-            len(table_data),
-            table_data))
+            len(tableData),
+            tableData))
+     
+    def exportExcel(self):
+        tableData = []
 
+        row_count = self.ui.KpTable.rowCount()
+        col_count = self.ui.KpTable.columnCount()
+        
+        for row in range(row_count):
+            row_data = []
+            for col in range(6):
+                item = self.ui.KpTable.item(row, col)
+                if item is not None:
+                    row_data.append(item.text())
+                else:
+                    row_data.append("")
+            
+            for col in range(13, 15):
+                item = self.ui.KpTable.item(row, col)
+                if item is not None:
+                    row_data.append(item.text())
+                else:
+                    row_data.append("")
+            tableData.append(row_data)
+
+        print(f'logistic var: {self.ui.logisiticVar.currentIndex()}')
+        print(f'logistic num: {self.ui.logisticNum.text()}')
+        print(f'custom num: {self.ui.customLine.text()}')
+        
+        for row in tableData:
+            print(' | '.join(list(map(str, row))))
+        exportExcelFile((tableData, 
+                         (self.ui.logisiticVar.currentIndex(), self.ui.logisticNum.text()),
+                         self.ui.customLine.text(),
+                         sum(self.tableData['totalPrice'])))
+        
     def resourcePath(self, relativePath):
         try:
             base_path = sys._MEIPASS

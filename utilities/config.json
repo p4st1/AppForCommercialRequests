@@ -4,6 +4,7 @@
         "customNum": "1.2",
         "termDelivery": "20",
         "pathToSaveCP": "C:/Users/irina/OneDrive/Рабочий стол",
+        "pathToSaveExcel" : "",
         "pathToDB": ""
     },
     "settings": {

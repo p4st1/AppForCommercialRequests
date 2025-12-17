@@ -459,13 +459,6 @@ QToolButton[iconOnly=&quot;true&quot;]:hover {
     background-color: rgba(44, 62, 80, 0.1);
 }
 
-/* ===== РАЗДЕЛИТЕЛИ ===== */
-QFrame#line {
-    background-color: #dee2e6;
-    border: none;
-    min-height: 1px;
-    max-height: 1px;
-}
 
 /* ===== ДИАЛОГОВЫЕ ОКНА ===== */
 QDialog {
@@ -981,6 +974,12 @@ QDialog QPushButton {
         <verstretch>0</verstretch>
        </sizepolicy>
       </property>
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>200</height>
+       </size>
+      </property>
       <property name="font">
        <font>
         <family>Segoe UI</family>
@@ -989,9 +988,15 @@ QDialog QPushButton {
        </font>
       </property>
       <property name="currentIndex">
-       <number>0</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="tab_3">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
        <attribute name="title">
         <string>Итого</string>
        </attribute>
@@ -1025,7 +1030,7 @@ QDialog QPushButton {
       </widget>
       <widget class="QWidget" name="tab">
        <property name="sizePolicy">
-        <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+        <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
          <horstretch>0</horstretch>
          <verstretch>0</verstretch>
         </sizepolicy>
@@ -1058,7 +1063,7 @@ QDialog QPushButton {
         <item>
          <widget class="QTableWidget" name="KpTable">
           <property name="sizePolicy">
-           <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+           <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
             <horstretch>0</horstretch>
             <verstretch>0</verstretch>
            </sizepolicy>
@@ -1271,6 +1276,12 @@ QTableWidget::item:selected {
        </layout>
       </widget>
       <widget class="QWidget" name="tab_2">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
        <attribute name="title">
         <string>Tab 2</string>
        </attribute>
@@ -1298,7 +1309,7 @@ QTableWidget::item:selected {
      </widget>
     </item>
     <item>
-     <layout class="QGridLayout" name="funcButtons">
+     <layout class="QGridLayout" name="funcButtons" rowstretch="0,0,0" rowminimumheight="0,0,0">
       <property name="leftMargin">
        <number>5</number>
       </property>
@@ -1314,42 +1325,22 @@ QTableWidget::item:selected {
       <property name="horizontalSpacing">
        <number>12</number>
       </property>
-      <item row="2" column="4">
-       <widget class="QPushButton" name="pushButton_2">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <fontweight>DemiBold</fontweight>
-         </font>
-        </property>
+      <item row="0" column="5">
+       <widget class="Line" name="line_7">
         <property name="styleSheet">
-         <string notr="true">QPushButton {
-    background-color: #2c3e50;
-    color: white;
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
     border: none;
-    padding: 4px 4px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 12px;
-    min-height: 35px;
-    min-width: 100px;
-}
-
-QPushButton:hover {
-    background-color: #34495e;
-    border: 1px solid #2c3e50;
-}
-
-QPushButton:pressed {
-    background-color: #1a252f;
+    min-height: 1px;
+    max-height: 100px;
 }</string>
         </property>
-        <property name="text">
-         <string>Сформировать таблицу</string>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
         </property>
        </widget>
       </item>
-      <item row="0" column="6">
+      <item row="0" column="11">
        <spacer name="horizontalSpacer">
         <property name="font">
          <font>
@@ -1369,16 +1360,39 @@ QPushButton:pressed {
         </property>
        </spacer>
       </item>
-      <item row="0" column="3">
-       <widget class="QPushButton" name="openTableButton">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <fontweight>DemiBold</fontweight>
-         </font>
-        </property>
+      <item row="2" column="5">
+       <widget class="Line" name="line_6">
         <property name="styleSheet">
-         <string notr="true">QPushButton {
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="8">
+       <layout class="QVBoxLayout" name="verticalLayout_9">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QPushButton" name="openTableButton">
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton {
     background-color: #2c3e50;
     color: white;
     border: none;
@@ -1398,98 +1412,237 @@ QPushButton:hover {
 QPushButton:pressed {
     background-color: #1a252f;
 }</string>
+          </property>
+          <property name="text">
+           <string>Открыть таблицу</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="closeTableButton">
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+          </property>
+          <property name="text">
+           <string>Закрыть таблицу</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="0" column="1">
+       <widget class="Line" name="line1">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
         </property>
-        <property name="text">
-         <string>Открыть таблицу</string>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="6">
+       <layout class="QVBoxLayout" name="verticalLayout_8">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QPushButton" name="createDocButton">
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 32px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+          </property>
+          <property name="text">
+           <string>Скачать КП</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="createExcelButton">
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+          </property>
+          <property name="text">
+           <string>Скачать Excel</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="0" column="7">
+       <widget class="Line" name="line_2">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="2">
+       <widget class="Line" name="line">
+        <property name="styleSheet">
+         <string notr="true">/* ===== РАЗДЕЛИТЕЛИ ===== */
+QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
         </property>
        </widget>
       </item>
       <item row="0" column="0">
-       <widget class="QLabel" name="label_5">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
+       <layout class="QVBoxLayout" name="verticalLayout_5">
+        <property name="spacing">
+         <number>6</number>
         </property>
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <fontweight>DemiBold</fontweight>
-         </font>
+        <property name="topMargin">
+         <number>0</number>
         </property>
-        <property name="styleSheet">
-         <string notr="true">QLabel {
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="label_5">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QLabel {
 	color:  #2c3e50;
 	font-weight: 600;
 	 font-size: 12px;
 }
 </string>
-        </property>
-        <property name="text">
-         <string>Логистика</string>
-        </property>
-        <property name="alignment">
-         <set>Qt::AlignmentFlag::AlignCenter</set>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="4">
-       <widget class="QPushButton" name="closeTableButton">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <fontweight>DemiBold</fontweight>
-         </font>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QPushButton {
-    background-color: #2c3e50;
-    color: white;
-    border: none;
-    padding: 4px 4px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 12px;
-    min-height: 35px;
-    min-width: 100px;
-}
-
-QPushButton:hover {
-    background-color: #34495e;
-    border: 1px solid #2c3e50;
-}
-
-QPushButton:pressed {
-    background-color: #1a252f;
-}</string>
-        </property>
-        <property name="text">
-         <string>Закрыть таблицу</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="0">
-       <widget class="QComboBox" name="logisiticVar">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="minimumSize">
-         <size>
-          <width>0</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-         </font>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QLabel {
+          </property>
+          <property name="text">
+           <string>Логистика</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignmentFlag::AlignCenter</set>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="logisiticVar">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QLabel {
     color: #2c3e50;
     font-size: 12px;
 }
@@ -1527,43 +1680,43 @@ QComboBox::down-arrow {
     image: url(down_arrow.png);
     width: 12px;
 }</string>
-        </property>
-        <item>
-         <property name="text">
-          <string>коэффициент</string>
-         </property>
+          </property>
+          <item>
+           <property name="text">
+            <string>коэффициент</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>распределение</string>
+           </property>
+          </item>
+         </widget>
         </item>
         <item>
-         <property name="text">
-          <string>распределение</string>
-         </property>
-        </item>
-       </widget>
-      </item>
-      <item row="2" column="0">
-       <widget class="QLineEdit" name="logisticNum">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="minimumSize">
-         <size>
-          <width>120</width>
-          <height>18</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-         </font>
-        </property>
-        <property name="autoFillBackground">
-         <bool>false</bool>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+         <widget class="QLineEdit" name="logisticNum">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>120</width>
+            <height>18</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+           </font>
+          </property>
+          <property name="autoFillBackground">
+           <bool>false</bool>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
     background-color: white;
     border: 1px solid #dee2e6;
     border-radius: 6px;
@@ -1573,92 +1726,88 @@ QComboBox::down-arrow {
     min-height: 8px;
     selection-background-color: #e3f2fd;
 }</string>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="placeholderText">
+           <string>Число</string>
+          </property>
+          <property name="clearButtonEnabled">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="2" column="2">
+       <widget class="Line" name="line_3">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
         </property>
-        <property name="text">
-         <string/>
-        </property>
-        <property name="placeholderText">
-         <string>Число</string>
-        </property>
-        <property name="clearButtonEnabled">
-         <bool>false</bool>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
         </property>
        </widget>
       </item>
-      <item row="0" column="1">
-       <widget class="QLabel" name="label">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <fontweight>DemiBold</fontweight>
-         </font>
+      <item row="0" column="4">
+       <layout class="QVBoxLayout" name="verticalLayout_7">
+        <property name="topMargin">
+         <number>0</number>
         </property>
-        <property name="styleSheet">
-         <string notr="true">QLabel {
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="label">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QLabel {
 	color:  #2c3e50;
 	font-weight: 600;
 	 font-size: 12px;
 }
 </string>
-        </property>
-        <property name="text">
-         <string>Таможня</string>
-        </property>
-        <property name="alignment">
-         <set>Qt::AlignmentFlag::AlignCenter</set>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="3">
-       <widget class="QPushButton" name="createDocButton">
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-          <fontweight>DemiBold</fontweight>
-         </font>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QPushButton {
-    background-color: #2c3e50;
-    color: white;
-    border: none;
-    padding: 4px 4px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 12px;
-    min-height: 35px;
-    min-width: 32px;
-}
-
-QPushButton:hover {
-    background-color: #34495e;
-    border: 1px solid #2c3e50;
-}
-
-QPushButton:pressed {
-    background-color: #1a252f;
-}</string>
-        </property>
-        <property name="text">
-         <string>Свести КП</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="1">
-       <widget class="QLineEdit" name="customLine">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>-1</pointsize>
-         </font>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+          </property>
+          <property name="text">
+           <string>Таможня</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignmentFlag::AlignCenter</set>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="customLine">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Maximum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
     background-color: white;
     border: 1px solid #dee2e6;
     border-radius: 6px;
@@ -1668,43 +1817,78 @@ QPushButton:pressed {
     min-height: 8px;
     selection-background-color: #e3f2fd;
 }</string>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-        <property name="placeholderText">
-         <string>Коэффициент</string>
-        </property>
-       </widget>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set>
+          </property>
+          <property name="placeholderText">
+           <string>Коэффициент</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacer_2">
+          <property name="orientation">
+           <enum>Qt::Orientation::Vertical</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Policy::Minimum</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
       </item>
       <item row="0" column="2">
-       <widget class="QLabel" name="label_2">
-        <property name="styleSheet">
-         <string notr="true">QLabel {
+       <layout class="QVBoxLayout" name="verticalLayout_6">
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="label_2">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QLabel {
 	color:  #2c3e50;
 	font-weight: 600;
 	 font-size: 12px;
 }
 </string>
-        </property>
-        <property name="text">
-         <string>Срок доставки</string>
-        </property>
-        <property name="alignment">
-         <set>Qt::AlignmentFlag::AlignCenter</set>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="2">
-       <widget class="QLineEdit" name="termDeliveryLine">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+          </property>
+          <property name="text">
+           <string>Срок доставки</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignmentFlag::AlignCenter</set>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="termDeliveryLine">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Maximum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
     background-color: white;
     border: 1px solid #dee2e6;
     border-radius: 6px;
@@ -1714,12 +1898,90 @@ QPushButton:pressed {
     min-height: 8px;
     selection-background-color: #e3f2fd;
 }</string>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="placeholderText">
+           <string>Число (в сутках)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Vertical</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Policy::Minimum</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item row="2" column="7">
+       <widget class="Line" name="line_9">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
         </property>
-        <property name="text">
-         <string/>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
         </property>
-        <property name="placeholderText">
-         <string>Число (в сутках)</string>
+       </widget>
+      </item>
+      <item row="1" column="5">
+       <widget class="Line" name="line_5">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="3">
+       <widget class="Line" name="line_4">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="7">
+       <widget class="Line" name="line_8">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
         </property>
        </widget>
       </item>
@@ -1767,7 +2029,7 @@ QPushButton:pressed {
     <addaction name="closeTableMenuButton"/>
     <addaction name="separator"/>
     <addaction name="createDocMenuButton"/>
-    <addaction name="action_10"/>
+    <addaction name="createExcelMenuButton"/>
    </widget>
    <widget class="QMenu" name="EditMenu">
     <property name="font">
@@ -1914,9 +2176,9 @@ QPushButton:pressed {
     <string>Закрыть таблицу</string>
    </property>
   </action>
-  <action name="action_10">
+  <action name="createExcelMenuButton">
    <property name="text">
-    <string>Сформировать таблицу</string>
+    <string>Сформировать таблицу (Excel)</string>
    </property>
   </action>
   <action name="GitHubMenuButton">

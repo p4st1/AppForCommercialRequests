@@ -18,3 +18,5 @@ class Config:
     cfg_path = ''
     db_path = ''
     vars_path = ''
+    template_path = ''
+    log_path = ''
