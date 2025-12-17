@@ -118,14 +118,19 @@ jobs:
           test -n "$APP_PATH"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
 
-      - name: Upload artifacts
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-windows
+          path: MyApp-windows.zip
+
+      - name: Upload artifact (macOS)
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.name }}
-          path: |
-            MyApp-windows.zip
-            MyApp-macos-arm64.zip
-            MyApp-macos-x86_64.zip
+          path: MyApp-macos-*.zip
 
   release:
     name: Create GitHub Release
