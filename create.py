@@ -11,6 +11,7 @@ import shutil
 
 class createTextFile:
     def __init__(self, data):
+        Tools.write_log('INIT DOCX...')
         tableData = data[0]
         self.rows = tableData[0]
         self.table = tableData[1]

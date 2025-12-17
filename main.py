@@ -397,10 +397,12 @@ class mainWindow(QMainWindow):
         return table_data
     
     def exportDocs(self):
+        Tool.write_log('CREATING DOCX')
         tableData = self.getTableData()
         self.openCreateDocWindow((
             len(tableData),
             tableData))
+        Tool.write_log('CREATING DOCX...')
      
     def exportExcel(self):
         if Config.isTableOpened is False:

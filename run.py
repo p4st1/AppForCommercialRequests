@@ -61,10 +61,14 @@ if __name__ == '__main__':
         ex = mainWindow()
         ex.show()
         sys.exit(app.exec())
+        
         Tool.write_log("✅ QApplication created")      
         Tool.write_log("✅ Window shown - application running")
+        
         success_file = Path.home() / 'myapp_success.txt'
         success_file.write_text("Application started successfully!")
+        
+        Tool.write_log(f"{Tools.resourcePath(Config.config['pathToSaveCP'])}")
     
         app.exec_()
         
