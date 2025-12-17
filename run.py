@@ -2,7 +2,6 @@ from main import mainWindow
 from tools import DatabaseTools as Tool
 from config import Config
 from pathlib import Path
-import time
 import sys
 import os
 

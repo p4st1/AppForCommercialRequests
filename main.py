@@ -33,8 +33,6 @@ class mainWindow(QMainWindow):
         for setting, value in self.configData['config'].items():
             Config.config[setting] = value
                 
-        print(Config.settings)
-                
         self.db = Database()
         
         if Config.settings['autoFill']:
@@ -157,11 +155,10 @@ class mainWindow(QMainWindow):
             "",
             "База данных (*.db);;Все файлы (*)"
         )
-        print(file_path)
         self.db.import_(file_path, Config.db_path)
         
     def processFormula(self):
-        self.formulaCustom = str(Tool.evalWithVars(f'{self.ui.customLine.text()}'))
+        self.formulaCustom = str(Tool.evalWithVars(f'{self.ui.customLine.text().replace(',', '.')}'))
         self.ui.customLine.setText(self.formulaCustom)
         
         if Config.isTableOpened:
@@ -170,84 +167,87 @@ class mainWindow(QMainWindow):
     def openTable(self):
         self.ui.KpTable.clearContents()
         self.processFormula()
-        
-        Config.isTableOpened = True
+                
         filename = QFileDialog.getOpenFileName(
             self, "Открыть файл", "", "csv (*.csv);; Excel Files (*.xls, *.xlsx)"
         )[0]
-
-        if not self.ui.customLine.text():
-            self.error('Ошибка', 'Заполните поле "Таможня"')
-            return
         
-        if not self.ui.termDeliveryLine.text():
-            self.error('Ошибка', 'Заполните поле "Срок поставки"')
-            return
-        
-        if not Tool.validNum(self.ui.termDeliveryLine.text()):
-            self.error('Ошибка', '"Срок поставки" - не является числом')
-            return
-        
-        try:
-            df = pd.read_csv(filename, header=None, sep=";")
-            df.columns = [f"col{i}" for i in range(len(df.columns))]
-            print(df)
-            df = df.fillna("")
-            self.rows = len(df["col0"])
-            totalPrices = []
-
-            self.tableData = {
-                "amount": [],
-                "currency": [],
-                "unitPrice": [],
-                "totalPrice": [],
-                'termDelivery': []
-            }
-            self.ui.KpTable.setRowCount(self.rows - 1)
-            for rowNum in range(1, self.rows):
-                colNum = 0
-                for col in df.columns:
-                    if df[col][rowNum]:
-                        self.ui.KpTable.setItem(
-                            rowNum - 1, colNum, QTableWidgetItem(str(df[col][rowNum]))
-                        )
-                    colNum += 1
-
-                self.tableData["amount"].append(int(df["col4"][rowNum][0]))
-                self.tableData["currency"].append(str(df["col5"][rowNum][0]))
-                self.tableData["unitPrice"].append(
-                    float(df["col5"][rowNum][1:].replace(",", "."))
-                )
-                self.tableData["totalPrice"].append(
-                    self.tableData["amount"][rowNum - 1]
-                    * self.tableData["unitPrice"][rowNum - 1]
-                )
-                self.tableData['termDelivery'].append(int(df['col6'][rowNum].split()[0]))
-
-                self.ui.KpTable.setItem(
-                    rowNum - 1,
-                    6,
-                    QTableWidgetItem(
-                        f"{self.tableData['currency'][rowNum - 1]}{str(self.tableData['totalPrice'][rowNum - 1]).replace('.', ',')}"
-                    ),
-                )
-                
-                self.ui.KpTable.setItem(
-                    rowNum - 1,
-                    14,
-                    QTableWidgetItem(
-                        f"{df['col6'][rowNum].split()[0]} суток"
-                    ),
-                )
-                                
-            self.logisticCalculate()
-            self.calculating()
-        
-            self.ui.tabWidget.setCurrentIndex(1)
+        if filename:
+            if not self.ui.customLine.text():
+                self.error('Ошибка', 'Заполните поле "Таможня"')
+                return
             
-        except Exception as e:
-            self.error('Ошибка', f"Невозможно прочитать таблицу\n{e}")
+            if not self.ui.termDeliveryLine.text():
+                self.error('Ошибка', 'Заполните поле "Срок поставки"')
+                return
+            
+            if not Tool.validNum(self.ui.termDeliveryLine.text()):
+                self.error('Ошибка', '"Срок поставки" - не является числом')
+                return
+            
+            try:
+                df = pd.read_csv(filename, header=None, sep=";")
+                df.columns = [f"col{i}" for i in range(len(df.columns))]
+                df = df.fillna("")
+                self.rows = len(df["col0"])
+                totalPrices = []
 
+                self.tableData = {
+                    "amount": [],
+                    "currency": [],
+                    "unitPrice": [],
+                    "totalPrice": [],
+                    'termDelivery': []
+                }
+                self.ui.KpTable.setRowCount(self.rows - 1)
+                for rowNum in range(1, self.rows):
+                    colNum = 0
+                    for col in df.columns:
+                        if df[col][rowNum]:
+                            self.ui.KpTable.setItem(
+                                rowNum - 1, colNum, QTableWidgetItem(str(df[col][rowNum]))
+                            )
+                        colNum += 1
+
+                    self.tableData["amount"].append(int(df["col4"][rowNum][0]))
+                    self.tableData["currency"].append(str(df["col5"][rowNum][0]))
+                    self.tableData["unitPrice"].append(
+                        float(df["col5"][rowNum][1:].replace(",", "."))
+                    )
+                    self.tableData["totalPrice"].append(
+                        self.tableData["amount"][rowNum - 1]
+                        * self.tableData["unitPrice"][rowNum - 1]
+                    )
+                    self.tableData['termDelivery'].append(int(df['col6'][rowNum].split()[0]))
+
+                    self.ui.KpTable.setItem(
+                        rowNum - 1,
+                        6,
+                        QTableWidgetItem(
+                            f"{self.tableData['currency'][rowNum - 1]}{str(self.tableData['totalPrice'][rowNum - 1]).replace('.', ',')}"
+                        ),
+                    )
+                    
+                    self.ui.KpTable.setItem(
+                        rowNum - 1,
+                        14,
+                        QTableWidgetItem(
+                            f"{df['col6'][rowNum].split()[0]} суток"
+                        ),
+                    )
+                                    
+                self.logisticCalculate()
+                self.calculating()
+            
+                
+                
+            except Exception as e:
+                self.error('Ошибка', f"Невозможно прочитать таблицу\n{e}")
+
+            else:
+                Config.isTableOpened = True
+                self.ui.tabWidget.setCurrentIndex(1)
+                
     def error(self, title, text):
         error = QMessageBox(self)
         error.setWindowTitle(title)
@@ -281,7 +281,6 @@ class mainWindow(QMainWindow):
         self.paramsData = Tool.load_json(Config.vars_path)
             
         for rowNum in range(self.rows - 1):
-            print(f'tableData:{self.tableData}')
             price =  self.tableData['logistic'][rowNum] / self.tableData["amount"][rowNum]
             realPrice = 0
                          
@@ -337,9 +336,10 @@ class mainWindow(QMainWindow):
                 )
         
     def logisticVarChanged(self, ind):
-        self.logisticCalculate()
-        self.calculating()
-        
+        if Config.isTableOpened:
+            self.logisticCalculate()
+            self.calculating()
+            
     def logisticCalculate(self):
         logisticVarInd = self.ui.logisiticVar.currentIndex()
         self.tableData['logistic'] = []
@@ -398,6 +398,10 @@ class mainWindow(QMainWindow):
             tableData))
      
     def exportExcel(self):
+        if Config.isTableOpened is False:
+            self.error('Ошибка', 'Загрузите КП поставщика')
+            return
+        
         tableData = []
 
         row_count = self.ui.KpTable.rowCount()
@@ -419,13 +423,7 @@ class mainWindow(QMainWindow):
                 else:
                     row_data.append("")
             tableData.append(row_data)
-
-        print(f'logistic var: {self.ui.logisiticVar.currentIndex()}')
-        print(f'logistic num: {self.ui.logisticNum.text()}')
-        print(f'custom num: {self.ui.customLine.text()}')
         
-        for row in tableData:
-            print(' | '.join(list(map(str, row))))
         exportExcelFile((tableData, 
                          (self.ui.logisiticVar.currentIndex(), self.ui.logisticNum.text()),
                          self.ui.customLine.text(),

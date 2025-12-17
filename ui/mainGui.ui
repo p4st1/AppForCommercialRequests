@@ -1414,7 +1414,7 @@ QPushButton:pressed {
 }</string>
           </property>
           <property name="text">
-           <string>Открыть таблицу</string>
+           <string>Загрузить КП поставщика</string>
           </property>
          </widget>
         </item>
