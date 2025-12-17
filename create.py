@@ -11,7 +11,9 @@ import shutil
 
 class createTextFile:
     def __init__(self, data):
+        Tools.write_log(f"Docx path to save: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
         Tools.write_log('INIT DOCX...')
+        Tools.write_log(f"Docx path to save: {Config.config['pathToSaveCP']}")
         tableData = data[0]
         self.rows = tableData[0]
         self.table = tableData[1]
