@@ -8,13 +8,23 @@ on:
 permissions:
   contents: write
 
+env:
+  APP_NAME: MyApp
+
 jobs:
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - name: windows
+            os: windows-latest
+          - name: macos-arm64
+            os: macos-14
+          - name: macos-x86_64
+            os: macos-13
+
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -39,6 +49,8 @@ jobs:
           test -f requirements.txt
           test -d utilities
           test -d database
+          test -f assets/app.ico
+          test -f assets/app.icns
 
       - name: Install deps
         shell: bash
@@ -46,7 +58,7 @@ jobs:
           set -eux
           python -m pip install -U pip
           pip install -r requirements.txt
-          pip install pyinstaller PySide6
+          pip install -U pyinstaller PySide6
 
       - name: Verify import main
         shell: bash
@@ -58,7 +70,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --name MyApp `
+          pyinstaller --noconfirm --clean --windowed --name $env:APP_NAME `
             --paths . `
             --hidden-import=main `
             --icon logo.ico `
@@ -71,36 +83,41 @@ jobs:
         shell: bash
         run: |
           set -eux
-          pyinstaller --noconfirm --clean --windowed --name MyApp \
+          if [ "$(uname -m)" = "arm64" ]; then
+            TARCH="arm64"
+            OUT="${APP_NAME}-macos-arm64.zip"
+          else
+            TARCH="x86_64"
+            OUT="${APP_NAME}-macos-x86_64.zip"
+          fi
+
+          pyinstaller --noconfirm --clean --windowed --name "${APP_NAME}" \
             --paths . \
             --hidden-import=main \
+            --target-arch "${TARCH}" \
             --icon logo.icns \
             --add-data=utilities:utilities \
             --add-data=database:database \
             run.py
 
+          APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
+          test -n "$APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path dist\MyApp\* -DestinationPath MyApp-windows.zip
+          Compress-Archive -Path "dist\$env:APP_NAME\*" -DestinationPath "$env:APP_NAME-windows.zip"
 
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -eux
-          APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
-          test -n "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" MyApp-macos.zip
-
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ runner.os }}
+          name: build-${{ matrix.name }}
           path: |
             MyApp-windows.zip
-            MyApp-macos.zip
+            MyApp-macos-arm64.zip
+            MyApp-macos-x86_64.zip
 
   release:
     name: Create GitHub Release
@@ -118,13 +135,17 @@ jobs:
         run: |
           set -eux
           find artifacts -type f -name "*.zip" -print
-          cp artifacts/**/MyApp-windows.zip . || true
-          cp artifacts/**/MyApp-macos.zip . || true
-          ls -la
+          cp artifacts/**/**.zip . || true
+          ls -la *.zip
+
+          test -f "MyApp-windows.zip"
+          test -f "MyApp-macos-arm64.zip"
+          test -f "MyApp-macos-x86_64.zip"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             MyApp-windows.zip
-            MyApp-macos.zip
+            MyApp-macos-arm64.zip
+            MyApp-macos-x86_64.zip
