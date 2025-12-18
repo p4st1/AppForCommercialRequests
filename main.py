@@ -26,7 +26,7 @@ class mainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         
-        self.setWindowIcon(QIcon(self.resourcePath("logo.ico")))
+        self.setWindowIcon(QIcon(self.resourcePath("assets/app.ico")))
 
         self.configData = Tool.load_json(Config.cfg_path)
         for setting, value in self.configData['settings'].items():

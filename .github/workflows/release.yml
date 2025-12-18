@@ -43,7 +43,6 @@ jobs:
         shell: bash
         run: |
           set -eux
-          ls -la
           test -f run.py
           test -f main.py
           test -f requirements.txt
@@ -52,8 +51,9 @@ jobs:
           test -d templates
           test -f templates/template.xlsx
           test -f templates/logs.log
-          test -f logo.ico
-          test -f logo.icns
+          test -d assets
+          test -f assets/app.ico
+          test -f assets/app.icns
 
       - name: Install deps
         shell: bash
@@ -61,27 +61,35 @@ jobs:
           set -eux
           python -m pip install -U pip
           pip install -r requirements.txt
-          pip install -U pyinstaller PySide6
+          pip install -U pyinstaller PySide6 python-docx
 
       - name: Verify import main
         shell: bash
         run: |
           set -eux
-          python -c "import main; print('main imported from:', getattr(main, '__file__', None))"
+          python -c "import main; print('main:', getattr(main, '__file__', None))"
+
+      - name: Find docx templates path
+        shell: bash
+        run: |
+          set -eux
+          python -c "import docx, os; print(os.path.join(os.path.dirname(docx.__file__), 'templates'))"
+          echo "DOCX_TPL=$(python -c "import docx, os; print(os.path.join(os.path.dirname(docx.__file__), 'templates'))")" >> $GITHUB_ENV
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # На Windows у source-пути будет C:\..., поэтому разделитель для add-data должен быть ';'
           pyinstaller --noconfirm --clean --windowed --name $env:APP_NAME `
             --paths . `
             --hidden-import=main `
-            --collect-data docx `
-            --icon logo.ico `
+            --icon assets/app.ico `
             --add-data=utilities:utilities `
             --add-data=database:database `
             --add-data=templates/template.xlsx:templates `
             --add-data=templates/logs.log:templates `
+            --add-data "$env:DOCX_TPL;docx/templates" `
             run.py
 
       - name: Package (Windows)
@@ -114,13 +122,13 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --name "${APP_NAME}" \
             --paths . \
             --hidden-import=main \
-            --collect-data docx \
             --target-arch "${TARCH}" \
-            --icon logo.icns \
+            --icon assets/app.icns \
             --add-data=utilities:utilities \
             --add-data=database:database \
             --add-data=templates/template.xlsx:templates \
             --add-data=templates/logs.log:templates \
+            --add-data "${DOCX_TPL}:docx/templates" \
             run.py
 
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
