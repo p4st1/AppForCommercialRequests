@@ -69,18 +69,19 @@ jobs:
           set -eux
           python -c "import main; print('main:', getattr(main, '__file__', None))"
 
-      - name: Find docx templates path
+      - name: Resolve python-docx templates path
         shell: bash
         run: |
           set -eux
-          python -c "import docx, os; print(os.path.join(os.path.dirname(docx.__file__), 'templates'))"
-          echo "DOCX_TPL=$(python -c "import docx, os; print(os.path.join(os.path.dirname(docx.__file__), 'templates'))")" >> $GITHUB_ENV
+          DOCX_TPL="$(python -c "import docx, os; print(os.path.join(os.path.dirname(docx.__file__), 'templates'))")"
+          echo "DOCX_TPL=$DOCX_TPL" >> $GITHUB_ENV
+          test -d "$DOCX_TPL"
+          ls -la "$DOCX_TPL" | head -n 20
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # На Windows у source-пути будет C:\..., поэтому разделитель для add-data должен быть ';'
           pyinstaller --noconfirm --clean --windowed --name $env:APP_NAME `
             --paths . `
             --hidden-import=main `
@@ -89,8 +90,28 @@ jobs:
             --add-data=database:database `
             --add-data=templates/template.xlsx:templates `
             --add-data=templates/logs.log:templates `
-            --add-data "$env:DOCX_TPL;docx/templates" `
             run.py
+
+      - name: Fix python-docx templates (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $root = "dist\$env:APP_NAME"
+          $docxInit = Get-ChildItem -Path $root -Recurse -Filter "__init__.py" |
+            Where-Object { $_.FullName -match "\\docx\\__init__\.py$" } |
+            Select-Object -First 1
+
+          if (-not $docxInit) {
+            throw "docx package not found inside dist (no docx\__init__.py)"
+          }
+
+          $docxDir = Split-Path $docxInit.FullName -Parent
+          $dst = Join-Path $docxDir "templates"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dst
+
+          Write-Host "docx templates copied to: $dst"
+          Get-ChildItem $dst | Select-Object -First 20 | Format-Table -AutoSize
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -128,11 +149,23 @@ jobs:
             --add-data=database:database \
             --add-data=templates/template.xlsx:templates \
             --add-data=templates/logs.log:templates \
-            --add-data "${DOCX_TPL}:docx/templates" \
             run.py
 
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
+          echo "APP_PATH=$APP_PATH"
+
+          # Найдём реальную папку пакета docx внутри .app (там, где лежит docx/__init__.py)
+          DOCX_DIR="$(find "$APP_PATH" -type f -path "*/docx/__init__.py" | head -n 1 | sed 's|/__init__.py$||')"
+          test -n "$DOCX_DIR"
+          echo "DOCX_DIR=$DOCX_DIR"
+
+          mkdir -p "$DOCX_DIR/templates"
+          cp -R "$DOCX_TPL/"* "$DOCX_DIR/templates/"
+
+          echo "Templates in bundle:"
+          ls -la "$DOCX_DIR/templates" | head -n 30
+
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
 
       - name: Upload artifact (macOS)
