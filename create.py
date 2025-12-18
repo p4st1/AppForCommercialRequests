@@ -188,7 +188,7 @@ class createExcelFile:
     def __init__(self, data):
         newFilePath = f"{Tools.resourcePath(Config.config['pathToSaveExcel'])}/таблица_от_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
         print(newFilePath)
-        shutil.copy2('template.xlsx', newFilePath)
+        shutil.copy2(Config.template_path, newFilePath)
         wb = load_workbook(newFilePath)
         workSheet = wb.active
         

@@ -100,19 +100,26 @@ jobs:
         run: |
           $root = "dist\$env:APP_NAME"
 
-          # Вариант 1: docx рядом с бинарником (редко, но бывает)
-          $dst1 = Join-Path $root "docx\templates"
-          New-Item -ItemType Directory -Force -Path $dst1 | Out-Null
-          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dst1
+          # 1) Место рядом с exe
+          $dstTpl1 = Join-Path $root "docx\templates"
+          Remove-Item -Recurse -Force $dstTpl1 -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $dstTpl1 | Out-Null
+          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dstTpl1
 
-          # Вариант 2: PyInstaller кладёт либы в _internal
-          $dst2 = Join-Path $root "_internal\docx\templates"
-          New-Item -ItemType Directory -Force -Path $dst2 | Out-Null
-          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dst2
+          # чтобы docx/parts/../templates резолвилось
+          New-Item -ItemType Directory -Force -Path (Join-Path $root "docx\parts") | Out-Null
 
-          Write-Host "Copied docx templates to:"
-          Write-Host $dst1
-          Write-Host $dst2
+          # 2) Место внутри _internal (часто актуально для onefolder)
+          $dstTpl2 = Join-Path $root "_internal\docx\templates"
+          Remove-Item -Recurse -Force $dstTpl2 -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $dstTpl2 | Out-Null
+          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dstTpl2
+
+          New-Item -ItemType Directory -Force -Path (Join-Path $root "_internal\docx\parts") | Out-Null
+
+          Write-Host "Docx templates copied:"
+          Write-Host $dstTpl1
+          Write-Host $dstTpl2
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -157,14 +164,18 @@ jobs:
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
 
-          # КЛЮЧЕВОЙ ФИКС: кладём templates туда, где python-docx их ищет в frozen app
-          DST="$APP_PATH/Contents/Frameworks/docx/templates"
-          mkdir -p "$DST"
-          cp -R "$DOCX_TPL/"* "$DST/"
+          # КЛЮЧЕВОЙ ФИКС ДЛЯ python-docx:
+          # python-docx строит путь как docx/parts/../templates/...
+          # поэтому нужно, чтобы docx/parts существовал физически на диске.
+          DOCX_BASE="$APP_PATH/Contents/Frameworks/docx"
+          mkdir -p "$DOCX_BASE/templates"
+          mkdir -p "$DOCX_BASE/parts"
 
-          # проверка, что файл реально появился
-          test -f "$DST/default-header.xml"
-          ls -la "$DST" | head -n 30
+          cp -R "$DOCX_TPL/"* "$DOCX_BASE/templates/"
+
+          test -d "$DOCX_BASE/parts"
+          test -f "$DOCX_BASE/templates/default-header.xml"
+          ls -la "$DOCX_BASE/templates" | head -n 20
 
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
 
