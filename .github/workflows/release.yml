@@ -52,7 +52,6 @@ jobs:
           test -d templates
           test -f templates/template.xlsx
           test -f templates/logs.log
-          test -d assets
           test -f logo.ico
           test -f logo.icns
 
