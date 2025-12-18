@@ -52,6 +52,7 @@ jobs:
           test -d templates
           test -f templates/template.xlsx
           test -f templates/logs.log
+          test -d assets
           test -f logo.ico
           test -f logo.icns
 
@@ -76,6 +77,7 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --name $env:APP_NAME `
             --paths . `
             --hidden-import=main `
+            --collect-data docx `
             --icon logo.ico `
             --add-data=utilities:utilities `
             --add-data=database:database `
@@ -88,6 +90,13 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path "dist\$env:APP_NAME\*" -DestinationPath "$env:APP_NAME-windows.zip"
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-windows
+          path: MyApp-windows.zip
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
@@ -106,6 +115,7 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --name "${APP_NAME}" \
             --paths . \
             --hidden-import=main \
+            --collect-data docx \
             --target-arch "${TARCH}" \
             --icon logo.icns \
             --add-data=utilities:utilities \
@@ -117,13 +127,6 @@ jobs:
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
-
-      - name: Upload artifact (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-windows
-          path: MyApp-windows.zip
 
       - name: Upload artifact (macOS)
         if: runner.os == 'macOS'
