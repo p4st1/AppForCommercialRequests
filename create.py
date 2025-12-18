@@ -53,7 +53,7 @@ class createTextFile:
         left_cell = headerTable.cell(0, 0) 
         left_paragraph = left_cell.paragraphs[0]
         run = left_paragraph.add_run()
-        run.add_picture('logo.jpg', width=Cm(2))
+        run.add_picture(Config.logo_path, width=Cm(2))
         
 
         right_cell = headerTable.cell(0, 1) 

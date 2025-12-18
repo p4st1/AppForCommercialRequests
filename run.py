@@ -22,6 +22,7 @@ if __name__ == '__main__':
         Config.vars_path = Tool.ensure_user_file('MyApp', 'utilities/variables.json', 'variables.json')
         Config.template_path = Tool.ensure_user_file('MyApp', 'templates/template.xlsx', 'template.xlsx')
         Config.log_path = Tool.ensure_user_file('MyApp', 'templates/logs.log', 'logs.log')
+        Config.logo_path = Tool.ensure_user_file('MyApp', 'assets/app.jpg', 'app.jpg')
         Tool.write_log("=" * 50)
         Tool.write_log("🚀 APPLICATION STARTING")
         Tool.write_log(f"Current working directory: {os.getcwd()}")

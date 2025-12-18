@@ -20,3 +20,4 @@ class Config:
     vars_path = ''
     template_path = ''
     log_path = ''
+    logo_path = ''
