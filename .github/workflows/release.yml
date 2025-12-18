@@ -69,7 +69,7 @@ jobs:
           set -eux
           python -c "import main; print('main:', getattr(main, '__file__', None))"
 
-      - name: Resolve python-docx templates path
+      - name: Resolve python-docx templates path (site-packages)
         shell: bash
         run: |
           set -eux
@@ -77,6 +77,8 @@ jobs:
           echo "DOCX_TPL=$DOCX_TPL" >> $GITHUB_ENV
           test -d "$DOCX_TPL"
           ls -la "$DOCX_TPL" | head -n 20
+
+      # ---------------- WINDOWS ----------------
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
@@ -97,21 +99,20 @@ jobs:
         shell: pwsh
         run: |
           $root = "dist\$env:APP_NAME"
-          $docxInit = Get-ChildItem -Path $root -Recurse -Filter "__init__.py" |
-            Where-Object { $_.FullName -match "\\docx\\__init__\.py$" } |
-            Select-Object -First 1
 
-          if (-not $docxInit) {
-            throw "docx package not found inside dist (no docx\__init__.py)"
-          }
+          # Вариант 1: docx рядом с бинарником (редко, но бывает)
+          $dst1 = Join-Path $root "docx\templates"
+          New-Item -ItemType Directory -Force -Path $dst1 | Out-Null
+          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dst1
 
-          $docxDir = Split-Path $docxInit.FullName -Parent
-          $dst = Join-Path $docxDir "templates"
-          New-Item -ItemType Directory -Force -Path $dst | Out-Null
-          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dst
+          # Вариант 2: PyInstaller кладёт либы в _internal
+          $dst2 = Join-Path $root "_internal\docx\templates"
+          New-Item -ItemType Directory -Force -Path $dst2 | Out-Null
+          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dst2
 
-          Write-Host "docx templates copied to: $dst"
-          Get-ChildItem $dst | Select-Object -First 20 | Format-Table -AutoSize
+          Write-Host "Copied docx templates to:"
+          Write-Host $dst1
+          Write-Host $dst2
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -126,7 +127,9 @@ jobs:
           name: build-windows
           path: MyApp-windows.zip
 
-      - name: Build (macOS)
+      # ---------------- macOS ----------------
+
+      - name: Build + Fix python-docx templates + Package (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
@@ -153,18 +156,15 @@ jobs:
 
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
-          echo "APP_PATH=$APP_PATH"
 
-          # Найдём реальную папку пакета docx внутри .app (там, где лежит docx/__init__.py)
-          DOCX_DIR="$(find "$APP_PATH" -type f -path "*/docx/__init__.py" | head -n 1 | sed 's|/__init__.py$||')"
-          test -n "$DOCX_DIR"
-          echo "DOCX_DIR=$DOCX_DIR"
+          # КЛЮЧЕВОЙ ФИКС: кладём templates туда, где python-docx их ищет в frozen app
+          DST="$APP_PATH/Contents/Frameworks/docx/templates"
+          mkdir -p "$DST"
+          cp -R "$DOCX_TPL/"* "$DST/"
 
-          mkdir -p "$DOCX_DIR/templates"
-          cp -R "$DOCX_TPL/"* "$DOCX_DIR/templates/"
-
-          echo "Templates in bundle:"
-          ls -la "$DOCX_DIR/templates" | head -n 30
+          # проверка, что файл реально появился
+          test -f "$DST/default-header.xml"
+          ls -la "$DST" | head -n 30
 
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
 
