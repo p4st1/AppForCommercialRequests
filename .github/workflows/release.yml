@@ -54,6 +54,7 @@ jobs:
           test -d assets
           test -f assets/app.ico
           test -f assets/app.icns
+          test -f assets/app.jpg
 
       - name: Install deps
         shell: bash
@@ -90,6 +91,7 @@ jobs:
             --icon assets/app.ico `
             --add-data=utilities:utilities `
             --add-data=database:database `
+            --add-data=assets/app.jpg:assets `
             --add-data=templates/template.xlsx:templates `
             --add-data=templates/logs.log:templates `
             run.py
@@ -155,6 +157,7 @@ jobs:
             --hidden-import=main \
             --target-arch "${TARCH}" \
             --icon assets/app.icns \
+            --add-data=assets/app.jpg:assets \
             --add-data=utilities:utilities \
             --add-data=database:database \
             --add-data=templates/template.xlsx:templates \
