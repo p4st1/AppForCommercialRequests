@@ -11,6 +11,7 @@ from database import Database
 from config import Config
 from ui_mainGui import Ui_MainWindow
 from datetime import datetime
+import shutil
 import create
 
 
@@ -35,11 +36,12 @@ class mainWindow(QMainWindow):
             Config.config[setting] = value
                 
         self.db = Database()
-        
         if Config.settings['autoFill']:
             self.ui.logisticNum.setText(Config.config["logisticNum"])
             self.ui.customLine.setText(Config.config["customNum"])
             self.ui.termDeliveryLine.setText(Config.config["termDelivery"])
+            self.ui.markupLine.setText(Config.config["markup"])
+            self.ui.logisticVar.setCurrentIndex(int(Config.config["logisticVar"]))
 
         self.ui.openTableButton.clicked.connect(self.openTable)
 
@@ -54,6 +56,7 @@ class mainWindow(QMainWindow):
         self.ui.settingsMenuButton.triggered.connect(self.openSettingsWindow)
         self.ui.exportMenuButton.triggered.connect(self.exportDatabase)
         self.ui.importMenuButton.triggered.connect(self.importDatabase)
+        self.ui.clearCacheMenuButton.triggered.connect(self.clear_cache)
         
         self.ui.helpMenuButton.triggered.connect(self.show_help)
         self.ui.aboutMenuButton.triggered.connect(self.show_about)
@@ -63,14 +66,40 @@ class mainWindow(QMainWindow):
         self.ui.createDocButton.clicked.connect(self.exportDocs)
         self.ui.createExcelButton.clicked.connect(self.exportExcel)
         
-        self.ui.logisiticVar.currentIndexChanged.connect(self.logisticVarChanged)
-        self.ui.logisticNum.editingFinished.connect(self.checkLine)
+        self.ui.logisticVar.currentIndexChanged.connect(self.logisticVarChanged)
         
+        self.ui.logisticNum.editingFinished.connect(self.processFormula)
+        self.ui.markupLine.editingFinished.connect(self.processFormula)
         self.ui.customLine.editingFinished.connect(self.processFormula)
         self.ui.termDeliveryLine.editingFinished.connect(self.processFormula)
         self.ui.closeTableButton.clicked.connect(self.closeTable)
         self.ui.KpTable.resizeColumnsToContents()
+        
+        if Config.settings['openLastTab']:
+            if Config.config['lastTable'] != "":
+                self.openTable(file=Config.config['lastTable'])
+                Config.isTableOpened = True
+            
+        if Config.settings['openUpdateTab']:
+            self.ui.tabWidget.setCurrentIndex(2)
+        else:
+            self.ui.tabWidget.setCurrentIndex(1)
 
+    def clear_cache(self):
+        dst_dir = Tool.user_data_dir('MyApp')
+        dst_dir.mkdir(parents=True, exist_ok=True)
+
+        dst = dst_dir / 'config.json'
+        
+        src = Tool.resourcePath('utilities/config.json')
+        shutil.copy2(src, dst)
+        
+        self.configData = Tool.load_json(Config.cfg_path)
+        for setting, value in self.configData['settings'].items():
+            Config.settings[setting] = bool(value)
+        for setting, value in self.configData['config'].items():
+            Config.config[setting] = value
+    
     def open_url(self, url):
         try:
             QDesktopServices.openUrl(QUrl(url))
@@ -166,17 +195,26 @@ class mainWindow(QMainWindow):
     def processFormula(self):
         self.formulaCustom = str(Tool.evalWithVars(f"{self.ui.customLine.text().replace(',', '.')}"))
         self.ui.customLine.setText(self.formulaCustom)
+        self.formulaMarkup = str(Tool.evalWithVars(f"{self.ui.markupLine.text().replace(',', '.')}"))
+        self.ui.markupLine.setText(self.formulaMarkup)
+        self.formulaLogistic = str(Tool.evalWithVars(f"{self.ui.logisticNum.text().replace(',', '.')}"))
+        self.ui.logisticNum.setText(self.formulaLogistic)
         
         if Config.isTableOpened:
+            self.logisticCalculate()
             self.calculating()
 
-    def openTable(self):
+    def openTable(self, file=None):
         self.ui.KpTable.clearContents()
         self.processFormula()
-                
-        filename = QFileDialog.getOpenFileName(
-            self, "Открыть файл", "", "csv (*.csv);; Excel Files (*.xls, *.xlsx)"
-        )[0]
+        
+        if file:
+            filename = file
+            
+        else:
+            filename = QFileDialog.getOpenFileName(
+                self, "Открыть файл", "", "csv (*.csv);; Excel Files (*.xls, *.xlsx)"
+            )[0]
         
         if filename:
             if not self.ui.customLine.text():
@@ -243,14 +281,17 @@ class mainWindow(QMainWindow):
                     )
                                     
                 self.logisticCalculate()
-                self.calculating()
-            
-                
+                self.calculating()        
                 
             except Exception as e:
                 self.error('Ошибка', f"Невозможно прочитать таблицу\n{e}")
 
             else:
+                Config.config['lastTable'] = filename
+                
+                data = {'config' : Config.config,
+                        'settings' : Config.settings}
+                Tool.save_json_atomic(Config.cfg_path, data)
                 Config.isTableOpened = True
                 self.ui.tabWidget.setCurrentIndex(1)
                 
@@ -287,9 +328,8 @@ class mainWindow(QMainWindow):
         self.paramsData = Tool.load_json(Config.vars_path)
             
         for rowNum in range(self.rows - 1):
-            price =  self.tableData['logistic'][rowNum] / self.tableData["amount"][rowNum]
-            realPrice = 0
-                         
+            price =  Tool.evalWithVars(f"{self.tableData['logistic'][rowNum]}*{self.formulaCustom}") / self.tableData["amount"][rowNum]
+            realPrice = price * float(self.ui.markupLine.text())
             self.ui.KpTable.setItem(
                 rowNum,
                 8,
@@ -298,25 +338,18 @@ class mainWindow(QMainWindow):
                 ),
             )
             self.ui.KpTable.setItem(
-                rowNum, 9, QTableWidgetItem(f"{str(price).replace('.', ',')}")
+                rowNum, 9, QTableWidgetItem(f"{self.tableData['currency'][rowNum]}{str(price).replace('.', ',')}")
             )
 
-            priceIncrease = {(0, 13700): 1.25, (13700, 10**10): 1.4}
-
-            for key, value in priceIncrease.items():
-                if key[0] <= price <= key[1]:
-                    realPrice = price * value
-                    break
-
             self.ui.KpTable.setItem(
-                rowNum, 10, QTableWidgetItem(f"{str(realPrice).replace('.', ',')}")
+                rowNum, 10, QTableWidgetItem(f"{self.tableData['currency'][rowNum]}{str(realPrice).replace('.', ',')}")
             )
 
             self.ui.KpTable.setItem(
                 rowNum,
                 11,
                 QTableWidgetItem(
-                    f"{str(realPrice * self.tableData['amount'][rowNum]).replace('.', ',')}"
+                    f"{self.tableData['currency'][rowNum]}{str(realPrice * self.tableData['amount'][rowNum]).replace('.', ',')}"
                 ),
             )
 
@@ -329,7 +362,7 @@ class mainWindow(QMainWindow):
                 rowNum,
                 12,
                 QTableWidgetItem(
-                    f"{str(realPrice * self.tableData['amount'][rowNum] * temp_var).replace('.', ',')}"
+                    f"{self.tableData['currency'][rowNum]}{str(realPrice * self.tableData['amount'][rowNum] * temp_var).replace('.', ',')}"
                 ),
             )
             
@@ -337,7 +370,7 @@ class mainWindow(QMainWindow):
                     rowNum,
                     13,
                     QTableWidgetItem(
-                        f"{self.tableData['termDelivery'][rowNum] + int(self.ui.termDeliveryLine.text())} суток"
+                        f"{self.tableData['termDelivery'][rowNum] + int(self.ui.termDeliveryLine.text())} дней"
                     ),
                 )
         
@@ -347,7 +380,7 @@ class mainWindow(QMainWindow):
             self.calculating()
             
     def logisticCalculate(self):
-        logisticVarInd = self.ui.logisiticVar.currentIndex()
+        logisticVarInd = self.ui.logisticVar.currentIndex()
         self.tableData['logistic'] = []
         for rowNum in range(self.rows - 1):
             if logisticVarInd == 1:
@@ -378,14 +411,14 @@ class mainWindow(QMainWindow):
 
         for row in range(row_count):
             row_data = []
-            for col in range(6):
+            for col in range(5):
                 item = self.ui.KpTable.item(row, col)
                 if item is not None:
                     row_data.append(item.text())
                 else:
                     row_data.append("")
                     
-            for col in range(10, 15):
+            for col in range(10, 14):
                 item = self.ui.KpTable.item(row, col)
                 if item is not None:
                     row_data.append(item.text())
@@ -434,7 +467,7 @@ class mainWindow(QMainWindow):
             
         
         exportExcelFile((tableData, 
-                         (self.ui.logisiticVar.currentIndex(), self.ui.logisticNum.text()),
+                         (self.ui.logisticVar.currentIndex(), self.ui.logisticNum.text()),
                          self.ui.customLine.text(),
                          sum(self.tableData['totalPrice'])))
         
@@ -447,6 +480,14 @@ class mainWindow(QMainWindow):
         return os.path.join(base_path, relativePath)
 
     def closeEvent(self, event):
+        Config.config['logisticNum'] = self.ui.logisticNum.text()
+        Config.config['customLine'] = self.ui.customLine.text()
+        Config.config['termDelivery'] = self.ui.termDeliveryLine.text()
+        Config.config['markup'] = self.ui.markupLine.text()
+        Config.config['logisticVar'] = str(self.ui.logisticVar.currentIndex())
+        data = {'config' : Config.config,
+                'settings' : Config.settings}
+        Tool.save_json_atomic(Config.cfg_path, data)
         self.close()
 
     def funcExitSystem(self):

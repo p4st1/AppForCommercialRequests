@@ -184,7 +184,6 @@ class Tools:
                 name.append(names[cur-1])
         return plural, name
 
-    @staticmethod
     def num2text(self, num, main_units=((u'', u'', u''), 'm')):
         """
         http://ru.wikipedia.org/wiki/Gettext#.D0.9C.D0.BD.D0.BE.D0.B6.D0.B5.D1.81.\

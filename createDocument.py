@@ -62,7 +62,11 @@ class mainWindow(QMainWindow):
         if confirmedSuppliers:
             id = self.db.createOffer() + 1
             self.db.save()
-            exportTextFile((self.tableData, confirmedSuppliers, extraData, str(id), self.ui.radioButton.isChecked()))
+            exportTextFile((self.tableData, 
+                            confirmedSuppliers, 
+                            extraData, 
+                            str(id), 
+                            self.ui.radioButton.isChecked()))
             self.close()
         
     def getExtraData(self):

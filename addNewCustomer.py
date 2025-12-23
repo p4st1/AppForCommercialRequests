@@ -36,7 +36,6 @@ class mainWindow(QMainWindow):
         self.ui.acceptButton.clicked.connect(self.addNewSupplier)
         
         if exist:
-            print(exist)
             self.ui.nameLine.setText(f'{exist[2]} {exist[1]} {exist[3]}')
             self.ui.emailLine.setText(exist[5])
             self.ui.companyNameLine.setText(exist[7])
@@ -94,8 +93,8 @@ class mainWindow(QMainWindow):
             conditions = self.ui.condLine.text()
         else:
             conditions = ''
-            
-        if self.ui.sexComboBox.currentIndex == 0:
+           
+        if self.ui.sexComboBox.currentIndex() == 0:
             sex = 'мужской'
         else:
             sex = 'женский'
@@ -112,8 +111,7 @@ class mainWindow(QMainWindow):
             conditions,
             sex
                 )
-        
-        print(data)
+    
         db.createCustomer(data)
         db.save()
         db.close()

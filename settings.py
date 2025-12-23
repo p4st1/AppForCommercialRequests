@@ -21,15 +21,31 @@ class mainWindow(QMainWindow):
         
         self.ui.closeTableCheckBox.setChecked(Config.settings['closeTable'])
         self.ui.autoFillCheckBox.setChecked(Config.settings['autoFill'])
+        self.ui.openLastTable.setChecked(Config.settings['openLastTab'])
+        self.ui.openUpdateTab.setChecked(Config.settings['openUpdateTab'])
         
         self.ui.autoFillCheckBox.toggled.connect(self.autoFillChange)
         self.ui.closeTableCheckBox.toggled.connect(self.closeTableChange)
+        self.ui.openLastTable.toggled.connect(self.openLastTableChange)
+        self.ui.openUpdateTab.toggled.connect(self.openUpdateTabChange)
         
         self.ui.CPdirLine.setText(self.resourcePath(Config.config['pathToSaveCP']))
         self.ui.dirOpenButton.clicked.connect(self.selectDirectory)
         
         self.ui.ExcelDirLine.setText(self.resourcePath(Config.config['pathToSaveExcel']))
         self.ui.dirOpenButton_2.clicked.connect(self.selectDirectory2)
+        
+        self.ui.excelIndent.setValue(int(Config.config['ExcelIndent']))
+        self.ui.excelIndent.valueChanged.connect(self.ExcelIndentChange)
+    
+    def ExcelIndentChange(self, value):
+        Config.config['ExcelIndent'] = str(value)
+        
+    def openUpdateTabChange(self, signal):
+        Config.settings['openUpdateTab'] = signal
+         
+    def openLastTableChange(self, signal):
+        Config.settings['openLastTab'] = signal 
     
     def autoFillChange(self, signal):
         Config.settings['autoFill'] = signal

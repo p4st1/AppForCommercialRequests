@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (QAbstractScrollArea, QApplication, QComboBox, QFr
     QGridLayout, QHeaderView, QLabel, QLineEdit,
     QMainWindow, QMenu, QMenuBar, QPushButton,
     QSizePolicy, QSpacerItem, QStatusBar, QTabWidget,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout,
+    QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -532,6 +533,8 @@ class Ui_MainWindow(object):
         self.supportMenuButton.setObjectName(u"supportMenuButton")
         self.aboutMenuButton = QAction(MainWindow)
         self.aboutMenuButton.setObjectName(u"aboutMenuButton")
+        self.clearCacheMenuButton = QAction(MainWindow)
+        self.clearCacheMenuButton.setObjectName(u"clearCacheMenuButton")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         sizePolicy.setHeightForWidth(self.centralwidget.sizePolicy().hasHeightForWidth())
@@ -1022,6 +1025,7 @@ class Ui_MainWindow(object):
         font3.setPointSize(9)
         font3.setBold(False)
         self.tabWidget.setFont(font3)
+        self.tabWidget.setTabsClosable(False)
         self.tab_3 = QWidget()
         self.tab_3.setObjectName(u"tab_3")
         sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
@@ -1182,10 +1186,11 @@ class Ui_MainWindow(object):
         self.verticalLayout_3.setSpacing(0)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
         self.verticalLayout_3.setContentsMargins(0, 0, 0, 0)
-        self.tableWidget_2 = QTableWidget(self.tab_2)
-        self.tableWidget_2.setObjectName(u"tableWidget_2")
+        self.textUpdates = QTextEdit(self.tab_2)
+        self.textUpdates.setObjectName(u"textUpdates")
+        self.textUpdates.setReadOnly(True)
 
-        self.verticalLayout_3.addWidget(self.tableWidget_2)
+        self.verticalLayout_3.addWidget(self.textUpdates)
 
         self.tabWidget.addTab(self.tab_2, "")
 
@@ -1195,22 +1200,22 @@ class Ui_MainWindow(object):
         self.funcButtons.setObjectName(u"funcButtons")
         self.funcButtons.setHorizontalSpacing(12)
         self.funcButtons.setContentsMargins(5, 5, 5, 5)
-        self.line_7 = QFrame(self.centralwidget)
-        self.line_7.setObjectName(u"line_7")
-        self.line_7.setStyleSheet(u"QFrame {\n"
+        self.horizontalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.funcButtons.addItem(self.horizontalSpacer, 0, 13, 1, 1)
+
+        self.line_3 = QFrame(self.centralwidget)
+        self.line_3.setObjectName(u"line_3")
+        self.line_3.setStyleSheet(u"QFrame {\n"
 "    background-color: #dee2e6;\n"
 "    border: none;\n"
 "    min-height: 1px;\n"
 "    max-height: 100px;\n"
 "}")
-        self.line_7.setFrameShape(QFrame.Shape.VLine)
-        self.line_7.setFrameShadow(QFrame.Shadow.Sunken)
+        self.line_3.setFrameShape(QFrame.Shape.VLine)
+        self.line_3.setFrameShadow(QFrame.Shadow.Sunken)
 
-        self.funcButtons.addWidget(self.line_7, 0, 5, 1, 1)
-
-        self.horizontalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        self.funcButtons.addItem(self.horizontalSpacer, 0, 11, 1, 1)
+        self.funcButtons.addWidget(self.line_3, 2, 2, 1, 1)
 
         self.line_6 = QFrame(self.centralwidget)
         self.line_6.setObjectName(u"line_6")
@@ -1223,7 +1228,277 @@ class Ui_MainWindow(object):
         self.line_6.setFrameShape(QFrame.Shape.VLine)
         self.line_6.setFrameShadow(QFrame.Shadow.Sunken)
 
-        self.funcButtons.addWidget(self.line_6, 2, 5, 1, 1)
+        self.funcButtons.addWidget(self.line_6, 2, 7, 1, 1)
+
+        self.line_4 = QFrame(self.centralwidget)
+        self.line_4.setObjectName(u"line_4")
+        self.line_4.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_4.setFrameShape(QFrame.Shape.VLine)
+        self.line_4.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_4, 0, 3, 1, 1)
+
+        self.line_5 = QFrame(self.centralwidget)
+        self.line_5.setObjectName(u"line_5")
+        self.line_5.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_5.setFrameShape(QFrame.Shape.VLine)
+        self.line_5.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_5, 1, 7, 1, 1)
+
+        self.line_8 = QFrame(self.centralwidget)
+        self.line_8.setObjectName(u"line_8")
+        self.line_8.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_8.setFrameShape(QFrame.Shape.VLine)
+        self.line_8.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_8, 1, 9, 1, 1)
+
+        self.line_9 = QFrame(self.centralwidget)
+        self.line_9.setObjectName(u"line_9")
+        self.line_9.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_9.setFrameShape(QFrame.Shape.VLine)
+        self.line_9.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_9, 2, 9, 1, 1)
+
+        self.line_2 = QFrame(self.centralwidget)
+        self.line_2.setObjectName(u"line_2")
+        self.line_2.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_2.setFrameShape(QFrame.Shape.VLine)
+        self.line_2.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_2, 0, 9, 1, 1)
+
+        self.verticalLayout_10 = QVBoxLayout()
+        self.verticalLayout_10.setObjectName(u"verticalLayout_10")
+        self.verticalLayout_10.setContentsMargins(-1, -1, 0, -1)
+        self.label_3 = QLabel(self.centralwidget)
+        self.label_3.setObjectName(u"label_3")
+        self.label_3.setStyleSheet(u"QLabel {\n"
+"	color:  #2c3e50;\n"
+"	font-weight: 600;\n"
+"	 font-size: 12px;\n"
+"}\n"
+"")
+        self.label_3.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.verticalLayout_10.addWidget(self.label_3)
+
+        self.markupLine = QLineEdit(self.centralwidget)
+        self.markupLine.setObjectName(u"markupLine")
+        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        sizePolicy3.setHorizontalStretch(0)
+        sizePolicy3.setVerticalStretch(0)
+        sizePolicy3.setHeightForWidth(self.markupLine.sizePolicy().hasHeightForWidth())
+        self.markupLine.setSizePolicy(sizePolicy3)
+        self.markupLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
+"    background-color: white;\n"
+"    border: 1px solid #dee2e6;\n"
+"    border-radius: 6px;\n"
+"    padding: 4px 8px;\n"
+"    font-size: 12px;\n"
+"    color: #2c3e50;\n"
+"    min-height: 8px;\n"
+"    selection-background-color: #e3f2fd;\n"
+"}")
+
+        self.verticalLayout_10.addWidget(self.markupLine)
+
+        self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        self.verticalLayout_10.addItem(self.verticalSpacer_3)
+
+
+        self.funcButtons.addLayout(self.verticalLayout_10, 0, 6, 1, 1)
+
+        self.verticalLayout_5 = QVBoxLayout()
+        self.verticalLayout_5.setSpacing(6)
+        self.verticalLayout_5.setObjectName(u"verticalLayout_5")
+        self.verticalLayout_5.setContentsMargins(-1, 0, 0, -1)
+        self.label_5 = QLabel(self.centralwidget)
+        self.label_5.setObjectName(u"label_5")
+        sizePolicy4 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+        sizePolicy4.setHorizontalStretch(0)
+        sizePolicy4.setVerticalStretch(0)
+        sizePolicy4.setHeightForWidth(self.label_5.sizePolicy().hasHeightForWidth())
+        self.label_5.setSizePolicy(sizePolicy4)
+        font6 = QFont()
+        font6.setWeight(QFont.DemiBold)
+        self.label_5.setFont(font6)
+        self.label_5.setStyleSheet(u"QLabel {\n"
+"	color:  #2c3e50;\n"
+"	font-weight: 600;\n"
+"	 font-size: 12px;\n"
+"}\n"
+"")
+        self.label_5.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.verticalLayout_5.addWidget(self.label_5)
+
+        self.logisticVar = QComboBox(self.centralwidget)
+        self.logisticVar.addItem("")
+        self.logisticVar.addItem("")
+        self.logisticVar.setObjectName(u"logisticVar")
+        sizePolicy2.setHeightForWidth(self.logisticVar.sizePolicy().hasHeightForWidth())
+        self.logisticVar.setSizePolicy(sizePolicy2)
+        self.logisticVar.setMinimumSize(QSize(0, 30))
+        self.logisticVar.setFont(font2)
+        self.logisticVar.setStyleSheet(u"QLabel {\n"
+"    color: #2c3e50;\n"
+"    font-size: 12px;\n"
+"}\n"
+"\n"
+"QLabel#titleLabel {\n"
+"    font-size: 16px;\n"
+"    font-weight: 700;\n"
+"    color: #2c3e50;\n"
+"}\n"
+"\n"
+"QLabel#totalLabel {\n"
+"    font-size: 14px;\n"
+"    font-weight: 600;\n"
+"    color: #2c3e50;\n"
+"    background-color: #e8f5e9;\n"
+"    border-radius: 6px;\n"
+"    border: 1px solid #c8e6c9;\n"
+"}\n"
+"\n"
+"\n"
+"\n"
+"QLineEdit:focus, QComboBox:focus, QDateEdit:focus {\n"
+"    border: 1px solid #3498db;\n"
+"    background-color: #f8fdff;\n"
+"}\n"
+"\n"
+"QComboBox::drop-down {\n"
+"    border: none;\n"
+"    background-color: #2c3e50;\n"
+"    border-radius: 0 5px 5px 0;\n"
+"    width: 25px;\n"
+"}\n"
+"\n"
+"QComboBox::down-arrow {\n"
+"    image: url(down_arrow.png);\n"
+"    width: 12px;\n"
+"}")
+
+        self.verticalLayout_5.addWidget(self.logisticVar)
+
+        self.logisticNum = QLineEdit(self.centralwidget)
+        self.logisticNum.setObjectName(u"logisticNum")
+        sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        sizePolicy5.setHorizontalStretch(0)
+        sizePolicy5.setVerticalStretch(0)
+        sizePolicy5.setHeightForWidth(self.logisticNum.sizePolicy().hasHeightForWidth())
+        self.logisticNum.setSizePolicy(sizePolicy5)
+        self.logisticNum.setMinimumSize(QSize(120, 18))
+        self.logisticNum.setFont(font2)
+        self.logisticNum.setAutoFillBackground(False)
+        self.logisticNum.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
+"    background-color: white;\n"
+"    border: 1px solid #dee2e6;\n"
+"    border-radius: 6px;\n"
+"    padding: 4px 8px;\n"
+"    font-size: 12px;\n"
+"    color: #2c3e50;\n"
+"    min-height: 8px;\n"
+"    selection-background-color: #e3f2fd;\n"
+"}")
+        self.logisticNum.setClearButtonEnabled(False)
+
+        self.verticalLayout_5.addWidget(self.logisticNum)
+
+
+        self.funcButtons.addLayout(self.verticalLayout_5, 0, 0, 1, 1)
+
+        self.line_7 = QFrame(self.centralwidget)
+        self.line_7.setObjectName(u"line_7")
+        self.line_7.setStyleSheet(u"QFrame {\n"
+"    background-color: #dee2e6;\n"
+"    border: none;\n"
+"    min-height: 1px;\n"
+"    max-height: 100px;\n"
+"}")
+        self.line_7.setFrameShape(QFrame.Shape.VLine)
+        self.line_7.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.funcButtons.addWidget(self.line_7, 0, 7, 1, 1)
+
+        self.verticalLayout_7 = QVBoxLayout()
+        self.verticalLayout_7.setObjectName(u"verticalLayout_7")
+        self.verticalLayout_7.setContentsMargins(-1, 0, 0, -1)
+        self.label = QLabel(self.centralwidget)
+        self.label.setObjectName(u"label")
+        sizePolicy6 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        sizePolicy6.setHorizontalStretch(0)
+        sizePolicy6.setVerticalStretch(0)
+        sizePolicy6.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
+        self.label.setSizePolicy(sizePolicy6)
+        self.label.setFont(font6)
+        self.label.setStyleSheet(u"QLabel {\n"
+"	color:  #2c3e50;\n"
+"	font-weight: 600;\n"
+"	 font-size: 12px;\n"
+"}\n"
+"")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.verticalLayout_7.addWidget(self.label)
+
+        self.customLine = QLineEdit(self.centralwidget)
+        self.customLine.setObjectName(u"customLine")
+        sizePolicy7 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
+        sizePolicy7.setHorizontalStretch(0)
+        sizePolicy7.setVerticalStretch(0)
+        sizePolicy7.setHeightForWidth(self.customLine.sizePolicy().hasHeightForWidth())
+        self.customLine.setSizePolicy(sizePolicy7)
+        self.customLine.setFont(font2)
+        self.customLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
+"    background-color: white;\n"
+"    border: 1px solid #dee2e6;\n"
+"    border-radius: 6px;\n"
+"    padding: 4px 8px;\n"
+"    font-size: 12px;\n"
+"    color: #2c3e50;\n"
+"    min-height: 8px;\n"
+"    selection-background-color: #e3f2fd;\n"
+"}")
+        self.customLine.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
+
+        self.verticalLayout_7.addWidget(self.customLine)
+
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        self.verticalLayout_7.addItem(self.verticalSpacer_2)
+
+
+        self.funcButtons.addLayout(self.verticalLayout_7, 0, 4, 1, 1)
 
         self.verticalLayout_9 = QVBoxLayout()
         self.verticalLayout_9.setSpacing(6)
@@ -1231,8 +1506,6 @@ class Ui_MainWindow(object):
         self.verticalLayout_9.setContentsMargins(-1, -1, 0, -1)
         self.openTableButton = QPushButton(self.centralwidget)
         self.openTableButton.setObjectName(u"openTableButton")
-        font6 = QFont()
-        font6.setWeight(QFont.DemiBold)
         self.openTableButton.setFont(font6)
         self.openTableButton.setStyleSheet(u"QPushButton {\n"
 "    background-color: #2c3e50;\n"
@@ -1284,7 +1557,48 @@ class Ui_MainWindow(object):
         self.verticalLayout_9.addWidget(self.closeTableButton)
 
 
-        self.funcButtons.addLayout(self.verticalLayout_9, 0, 8, 1, 1)
+        self.funcButtons.addLayout(self.verticalLayout_9, 0, 10, 1, 1)
+
+        self.verticalLayout_6 = QVBoxLayout()
+        self.verticalLayout_6.setObjectName(u"verticalLayout_6")
+        self.verticalLayout_6.setContentsMargins(-1, 0, 0, -1)
+        self.label_2 = QLabel(self.centralwidget)
+        self.label_2.setObjectName(u"label_2")
+        sizePolicy6.setHeightForWidth(self.label_2.sizePolicy().hasHeightForWidth())
+        self.label_2.setSizePolicy(sizePolicy6)
+        self.label_2.setStyleSheet(u"QLabel {\n"
+"	color:  #2c3e50;\n"
+"	font-weight: 600;\n"
+"	 font-size: 12px;\n"
+"}\n"
+"")
+        self.label_2.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.verticalLayout_6.addWidget(self.label_2)
+
+        self.termDeliveryLine = QLineEdit(self.centralwidget)
+        self.termDeliveryLine.setObjectName(u"termDeliveryLine")
+        sizePolicy7.setHeightForWidth(self.termDeliveryLine.sizePolicy().hasHeightForWidth())
+        self.termDeliveryLine.setSizePolicy(sizePolicy7)
+        self.termDeliveryLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
+"    background-color: white;\n"
+"    border: 1px solid #dee2e6;\n"
+"    border-radius: 6px;\n"
+"    padding: 4px 8px;\n"
+"    font-size: 12px;\n"
+"    color: #2c3e50;\n"
+"    min-height: 8px;\n"
+"    selection-background-color: #e3f2fd;\n"
+"}")
+
+        self.verticalLayout_6.addWidget(self.termDeliveryLine)
+
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+
+        self.verticalLayout_6.addItem(self.verticalSpacer)
+
+
+        self.funcButtons.addLayout(self.verticalLayout_6, 0, 2, 1, 1)
 
         self.line1 = QFrame(self.centralwidget)
         self.line1.setObjectName(u"line1")
@@ -1356,20 +1670,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_8.addWidget(self.createExcelButton)
 
 
-        self.funcButtons.addLayout(self.verticalLayout_8, 0, 6, 1, 1)
-
-        self.line_2 = QFrame(self.centralwidget)
-        self.line_2.setObjectName(u"line_2")
-        self.line_2.setStyleSheet(u"QFrame {\n"
-"    background-color: #dee2e6;\n"
-"    border: none;\n"
-"    min-height: 1px;\n"
-"    max-height: 100px;\n"
-"}")
-        self.line_2.setFrameShape(QFrame.Shape.VLine)
-        self.line_2.setFrameShadow(QFrame.Shadow.Sunken)
-
-        self.funcButtons.addWidget(self.line_2, 0, 7, 1, 1)
+        self.funcButtons.addLayout(self.verticalLayout_8, 0, 8, 1, 1)
 
         self.line = QFrame(self.centralwidget)
         self.line.setObjectName(u"line")
@@ -1385,259 +1686,18 @@ class Ui_MainWindow(object):
 
         self.funcButtons.addWidget(self.line, 1, 2, 1, 1)
 
-        self.verticalLayout_5 = QVBoxLayout()
-        self.verticalLayout_5.setSpacing(6)
-        self.verticalLayout_5.setObjectName(u"verticalLayout_5")
-        self.verticalLayout_5.setContentsMargins(-1, 0, 0, -1)
-        self.label_5 = QLabel(self.centralwidget)
-        self.label_5.setObjectName(u"label_5")
-        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
-        sizePolicy3.setHorizontalStretch(0)
-        sizePolicy3.setVerticalStretch(0)
-        sizePolicy3.setHeightForWidth(self.label_5.sizePolicy().hasHeightForWidth())
-        self.label_5.setSizePolicy(sizePolicy3)
-        self.label_5.setFont(font6)
-        self.label_5.setStyleSheet(u"QLabel {\n"
-"	color:  #2c3e50;\n"
-"	font-weight: 600;\n"
-"	 font-size: 12px;\n"
-"}\n"
-"")
-        self.label_5.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.verticalLayout_5.addWidget(self.label_5)
-
-        self.logisiticVar = QComboBox(self.centralwidget)
-        self.logisiticVar.addItem("")
-        self.logisiticVar.addItem("")
-        self.logisiticVar.setObjectName(u"logisiticVar")
-        sizePolicy2.setHeightForWidth(self.logisiticVar.sizePolicy().hasHeightForWidth())
-        self.logisiticVar.setSizePolicy(sizePolicy2)
-        self.logisiticVar.setMinimumSize(QSize(0, 30))
-        self.logisiticVar.setFont(font2)
-        self.logisiticVar.setStyleSheet(u"QLabel {\n"
-"    color: #2c3e50;\n"
-"    font-size: 12px;\n"
-"}\n"
-"\n"
-"QLabel#titleLabel {\n"
-"    font-size: 16px;\n"
-"    font-weight: 700;\n"
-"    color: #2c3e50;\n"
-"}\n"
-"\n"
-"QLabel#totalLabel {\n"
-"    font-size: 14px;\n"
-"    font-weight: 600;\n"
-"    color: #2c3e50;\n"
-"    background-color: #e8f5e9;\n"
-"    border-radius: 6px;\n"
-"    border: 1px solid #c8e6c9;\n"
-"}\n"
-"\n"
-"\n"
-"\n"
-"QLineEdit:focus, QComboBox:focus, QDateEdit:focus {\n"
-"    border: 1px solid #3498db;\n"
-"    background-color: #f8fdff;\n"
-"}\n"
-"\n"
-"QComboBox::drop-down {\n"
-"    border: none;\n"
-"    background-color: #2c3e50;\n"
-"    border-radius: 0 5px 5px 0;\n"
-"    width: 25px;\n"
-"}\n"
-"\n"
-"QComboBox::down-arrow {\n"
-"    image: url(down_arrow.png);\n"
-"    width: 12px;\n"
-"}")
-
-        self.verticalLayout_5.addWidget(self.logisiticVar)
-
-        self.logisticNum = QLineEdit(self.centralwidget)
-        self.logisticNum.setObjectName(u"logisticNum")
-        sizePolicy4 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        sizePolicy4.setHorizontalStretch(0)
-        sizePolicy4.setVerticalStretch(0)
-        sizePolicy4.setHeightForWidth(self.logisticNum.sizePolicy().hasHeightForWidth())
-        self.logisticNum.setSizePolicy(sizePolicy4)
-        self.logisticNum.setMinimumSize(QSize(120, 18))
-        self.logisticNum.setFont(font2)
-        self.logisticNum.setAutoFillBackground(False)
-        self.logisticNum.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
-"    background-color: white;\n"
-"    border: 1px solid #dee2e6;\n"
-"    border-radius: 6px;\n"
-"    padding: 4px 8px;\n"
-"    font-size: 12px;\n"
-"    color: #2c3e50;\n"
-"    min-height: 8px;\n"
-"    selection-background-color: #e3f2fd;\n"
-"}")
-        self.logisticNum.setClearButtonEnabled(False)
-
-        self.verticalLayout_5.addWidget(self.logisticNum)
-
-
-        self.funcButtons.addLayout(self.verticalLayout_5, 0, 0, 1, 1)
-
-        self.line_3 = QFrame(self.centralwidget)
-        self.line_3.setObjectName(u"line_3")
-        self.line_3.setStyleSheet(u"QFrame {\n"
+        self.line_10 = QFrame(self.centralwidget)
+        self.line_10.setObjectName(u"line_10")
+        self.line_10.setStyleSheet(u"QFrame {\n"
 "    background-color: #dee2e6;\n"
 "    border: none;\n"
 "    min-height: 1px;\n"
 "    max-height: 100px;\n"
 "}")
-        self.line_3.setFrameShape(QFrame.Shape.VLine)
-        self.line_3.setFrameShadow(QFrame.Shadow.Sunken)
+        self.line_10.setFrameShape(QFrame.Shape.VLine)
+        self.line_10.setFrameShadow(QFrame.Shadow.Sunken)
 
-        self.funcButtons.addWidget(self.line_3, 2, 2, 1, 1)
-
-        self.verticalLayout_7 = QVBoxLayout()
-        self.verticalLayout_7.setObjectName(u"verticalLayout_7")
-        self.verticalLayout_7.setContentsMargins(-1, 0, 0, -1)
-        self.label = QLabel(self.centralwidget)
-        self.label.setObjectName(u"label")
-        sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        sizePolicy5.setHorizontalStretch(0)
-        sizePolicy5.setVerticalStretch(0)
-        sizePolicy5.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
-        self.label.setSizePolicy(sizePolicy5)
-        self.label.setFont(font6)
-        self.label.setStyleSheet(u"QLabel {\n"
-"	color:  #2c3e50;\n"
-"	font-weight: 600;\n"
-"	 font-size: 12px;\n"
-"}\n"
-"")
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.verticalLayout_7.addWidget(self.label)
-
-        self.customLine = QLineEdit(self.centralwidget)
-        self.customLine.setObjectName(u"customLine")
-        sizePolicy6 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
-        sizePolicy6.setHorizontalStretch(0)
-        sizePolicy6.setVerticalStretch(0)
-        sizePolicy6.setHeightForWidth(self.customLine.sizePolicy().hasHeightForWidth())
-        self.customLine.setSizePolicy(sizePolicy6)
-        self.customLine.setFont(font2)
-        self.customLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
-"    background-color: white;\n"
-"    border: 1px solid #dee2e6;\n"
-"    border-radius: 6px;\n"
-"    padding: 4px 8px;\n"
-"    font-size: 12px;\n"
-"    color: #2c3e50;\n"
-"    min-height: 8px;\n"
-"    selection-background-color: #e3f2fd;\n"
-"}")
-        self.customLine.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
-
-        self.verticalLayout_7.addWidget(self.customLine)
-
-        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
-
-        self.verticalLayout_7.addItem(self.verticalSpacer_2)
-
-
-        self.funcButtons.addLayout(self.verticalLayout_7, 0, 4, 1, 1)
-
-        self.verticalLayout_6 = QVBoxLayout()
-        self.verticalLayout_6.setObjectName(u"verticalLayout_6")
-        self.verticalLayout_6.setContentsMargins(-1, 0, 0, -1)
-        self.label_2 = QLabel(self.centralwidget)
-        self.label_2.setObjectName(u"label_2")
-        sizePolicy5.setHeightForWidth(self.label_2.sizePolicy().hasHeightForWidth())
-        self.label_2.setSizePolicy(sizePolicy5)
-        self.label_2.setStyleSheet(u"QLabel {\n"
-"	color:  #2c3e50;\n"
-"	font-weight: 600;\n"
-"	 font-size: 12px;\n"
-"}\n"
-"")
-        self.label_2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.verticalLayout_6.addWidget(self.label_2)
-
-        self.termDeliveryLine = QLineEdit(self.centralwidget)
-        self.termDeliveryLine.setObjectName(u"termDeliveryLine")
-        sizePolicy6.setHeightForWidth(self.termDeliveryLine.sizePolicy().hasHeightForWidth())
-        self.termDeliveryLine.setSizePolicy(sizePolicy6)
-        self.termDeliveryLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
-"    background-color: white;\n"
-"    border: 1px solid #dee2e6;\n"
-"    border-radius: 6px;\n"
-"    padding: 4px 8px;\n"
-"    font-size: 12px;\n"
-"    color: #2c3e50;\n"
-"    min-height: 8px;\n"
-"    selection-background-color: #e3f2fd;\n"
-"}")
-
-        self.verticalLayout_6.addWidget(self.termDeliveryLine)
-
-        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
-
-        self.verticalLayout_6.addItem(self.verticalSpacer)
-
-
-        self.funcButtons.addLayout(self.verticalLayout_6, 0, 2, 1, 1)
-
-        self.line_9 = QFrame(self.centralwidget)
-        self.line_9.setObjectName(u"line_9")
-        self.line_9.setStyleSheet(u"QFrame {\n"
-"    background-color: #dee2e6;\n"
-"    border: none;\n"
-"    min-height: 1px;\n"
-"    max-height: 100px;\n"
-"}")
-        self.line_9.setFrameShape(QFrame.Shape.VLine)
-        self.line_9.setFrameShadow(QFrame.Shadow.Sunken)
-
-        self.funcButtons.addWidget(self.line_9, 2, 7, 1, 1)
-
-        self.line_5 = QFrame(self.centralwidget)
-        self.line_5.setObjectName(u"line_5")
-        self.line_5.setStyleSheet(u"QFrame {\n"
-"    background-color: #dee2e6;\n"
-"    border: none;\n"
-"    min-height: 1px;\n"
-"    max-height: 100px;\n"
-"}")
-        self.line_5.setFrameShape(QFrame.Shape.VLine)
-        self.line_5.setFrameShadow(QFrame.Shadow.Sunken)
-
-        self.funcButtons.addWidget(self.line_5, 1, 5, 1, 1)
-
-        self.line_4 = QFrame(self.centralwidget)
-        self.line_4.setObjectName(u"line_4")
-        self.line_4.setStyleSheet(u"QFrame {\n"
-"    background-color: #dee2e6;\n"
-"    border: none;\n"
-"    min-height: 1px;\n"
-"    max-height: 100px;\n"
-"}")
-        self.line_4.setFrameShape(QFrame.Shape.VLine)
-        self.line_4.setFrameShadow(QFrame.Shadow.Sunken)
-
-        self.funcButtons.addWidget(self.line_4, 0, 3, 1, 1)
-
-        self.line_8 = QFrame(self.centralwidget)
-        self.line_8.setObjectName(u"line_8")
-        self.line_8.setStyleSheet(u"QFrame {\n"
-"    background-color: #dee2e6;\n"
-"    border: none;\n"
-"    min-height: 1px;\n"
-"    max-height: 100px;\n"
-"}")
-        self.line_8.setFrameShape(QFrame.Shape.VLine)
-        self.line_8.setFrameShadow(QFrame.Shadow.Sunken)
-
-        self.funcButtons.addWidget(self.line_8, 1, 7, 1, 1)
+        self.funcButtons.addWidget(self.line_10, 0, 5, 1, 1)
 
 
         self.verticalLayout.addLayout(self.funcButtons)
@@ -1646,11 +1706,11 @@ class Ui_MainWindow(object):
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
         self.menubar.setGeometry(QRect(0, 0, 1440, 31))
-        sizePolicy7 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum)
-        sizePolicy7.setHorizontalStretch(0)
-        sizePolicy7.setVerticalStretch(0)
-        sizePolicy7.setHeightForWidth(self.menubar.sizePolicy().hasHeightForWidth())
-        self.menubar.setSizePolicy(sizePolicy7)
+        sizePolicy8 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum)
+        sizePolicy8.setHorizontalStretch(0)
+        sizePolicy8.setVerticalStretch(0)
+        sizePolicy8.setHeightForWidth(self.menubar.sizePolicy().hasHeightForWidth())
+        self.menubar.setSizePolicy(sizePolicy8)
         font7 = QFont()
         font7.setFamilies([u"Inter"])
         font7.setPointSize(8)
@@ -1698,6 +1758,7 @@ class Ui_MainWindow(object):
         self.SettingsMenu.addAction(self.importMenuButton)
         self.SettingsMenu.addSeparator()
         self.SettingsMenu.addAction(self.settingsMenuButton)
+        self.SettingsMenu.addAction(self.clearCacheMenuButton)
         self.HelpMenu.addAction(self.helpMenuButton)
         self.HelpMenu.addAction(self.GitHubMenuButton)
         self.HelpMenu.addAction(self.supportMenuButton)
@@ -1705,7 +1766,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.tabWidget.setCurrentIndex(1)
+        self.tabWidget.setCurrentIndex(2)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -1729,6 +1790,7 @@ class Ui_MainWindow(object):
         self.GitHubMenuButton.setText(QCoreApplication.translate("MainWindow", u"GitHub", None))
         self.supportMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u0430", None))
         self.aboutMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u041e \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435", None))
+        self.clearCacheMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u043a\u044d\u0448", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_3), QCoreApplication.translate("MainWindow", u"\u0418\u0442\u043e\u0433\u043e", None))
         ___qtablewidgetitem = self.KpTable.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("MainWindow", u"\u2116", None));
@@ -1761,23 +1823,75 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem14 = self.KpTable.horizontalHeaderItem(14)
         ___qtablewidgetitem14.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0440\u043e\u043a \u043f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0430", None));
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043b\u043d\u0430\u044f \u0442\u0430\u0431\u043b\u0438\u0446\u0430", None))
-        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"Tab 2", None))
-        self.openTableButton.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u041a\u041f \u043f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0430", None))
-        self.closeTableButton.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0440\u044b\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
-        self.createDocButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u041a\u041f", None))
-        self.createExcelButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c Excel", None))
+        self.textUpdates.setHtml(QCoreApplication.translate("MainWindow", u"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
+"<html><head><meta name=\"qrichtext\" content=\"1\" /><meta charset=\"utf-8\" /><style type=\"text/css\">\n"
+"p, li { white-space: pre-wrap; }\n"
+"hr { height: 1px; border-width: 0; }\n"
+"li.unchecked::marker { content: \"\\2610\"; }\n"
+"li.checked::marker { content: \"\\2612\"; }\n"
+"</style></head><body style=\" font-family:'Segoe UI'; font-size:9pt; font-weight:400; font-style:normal;\">\n"
+"<p align=\"center\" style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">AppForCommercialRequests</span></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" f"
+                        "ont-size:12pt; font-weight:700;\">\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435  </span><a href=\"https://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30\"><span style=\" font-size:12pt; text-decoration: underline; color:#262524;\">1.0.3</span></a></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">1. \u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u0430\u044f &quot;\u041d\u0430\u0446\u0435\u043d\u043a\u0430&quot;</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">2. \u041e\u0431\u043d\u043e\u0432"
+                        "\u043b\u0435\u043d\u0438\u0435 \u0432 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0435:<br />	- \u041d\u043e\u0432\u0430\u044f \u0432\u043a\u043b\u0430\u0434\u043a\u0430 &quot;\u041e\u0431\u0432\u043e\u0432\u043b\u0435\u043d\u0438\u044f&quot; \u0441 \u043f\u043e\u043b\u0435\u0437\u043d\u043e\u0439 \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u0435\u0439 \u043e \u043d\u043e\u0432\u044b\u0445 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f\u0445 </span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">	- \u041f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u0430\u044f &quot;\u041d\u0430\u0446\u0435\u043d\u043a\u0430&quot; \u0442\u0435\u043f\u0435\u0440\u044c \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u0443\u0435\u043c\u0430\u044f</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><"
+                        "span style=\" font-size:12pt;\">	- \u041d\u043e\u0432\u0430\u044f \u043a\u043d\u043e\u043f\u043a\u0430 &quot;\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438&quot; -&gt; &quot;\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u043a\u044d\u0448&quot;</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">3. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u0437\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432\u043e \u0432\u043a\u043b\u0430\u0434\u043a\u0435 &quot;\u041f\u043e\u043b\u043d\u0430\u044f \u0442\u0430\u0431\u043b\u0438\u0446\u0430&quot;</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">4. \u0418\u0437\u043c\u0435\u043d\u0435\u043d\u043e \u0444\u043e\u0440"
+                        "\u043c\u0430\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435 \u0438\u0442\u043e\u0433\u043e\u0432\u043e\u0433\u043e \u041a\u041f</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">5. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u0437\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435 \u0438\u0442\u043e\u0433\u043e\u0432\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432 \u041a\u041f:</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">6. \u041d\u043e\u0432\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438 \u0432 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430\u0445:<br />	- \u041e\u0442\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0443\u044e \u0442\u0430\u0431\u043b\u0438\u0446\u0443 -"
+                        " \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u044e\u044e \u0442\u0430\u0431\u043b\u0438\u0446\u0443, \u043e\u0442\u043a\u0440\u044b\u0442\u0443\u044e \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u043c</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">	- \u041f\u0440\u0438 \u043e\u0442\u043a\u0440\u044b\u0442\u0438\u0438 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f, \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u0432\u043a\u043b\u0430\u0434\u043a\u0443 &quot;\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f&quot; - \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u0432\u043a\u043b\u0430\u0434\u043a\u0443 \u0441 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435\u043c \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f \u043d\u0430 \u0433\u043b\u0430\u0432\u043d\u043e"
+                        "\u043c \u044d\u043a\u0440\u0430\u043d\u0435</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">	- \u0412\u044b\u0431\u043e\u0440 \u043e\u0442\u0441\u0442\u0443\u043f\u0430 \u043f\u0440\u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0438 Excel - \u0438\u0437\u043c\u0435\u043d\u044f\u0435\u0442 \u043e\u0442\u0441\u0442\u0443\u043f \u0443 \u0438\u0442\u043e\u0433\u043e\u0432\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432 Excel \u043d\u0430 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439 \u043e\u0442\u0441\u0442\u0443\u043f</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">7. \u0421\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0435 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u0438\u0445 \u0444\u0430\u0439\u043b\u043e\u0432 Excel</span><"
+                        "/p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">8. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0435 \u043f\u043e\u043b\u0430 \u0437\u0430\u043a\u0430\u0437\u0447\u0438\u043a\u0430</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">9. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0430 \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u043e\u0439 \u043b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0438</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">10. \u0418\u0442\u043e\u0433\u043e\u0432\u0430\u044f \u0441\u0443\u043c\u043c\u0430 \u0432"
+                        " Docx \u0442\u0435\u043f\u0435\u0440\u044c \u043f\u0440\u043e\u043f\u0438\u0441\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u043f\u0440\u043e\u043f\u0438\u0441\u044c\u044e</span></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt; font-weight:700;\">\u0420\u0435\u043b\u0438\u0437  </span><a href=\"https://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30\"><span style=\" font-size:12pt; text-decoration: underline; color:#262524;\">1.0.2</span></a></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-blo"
+                        "ck-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">1. Excel</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">   - \u041f\u043e\u044f\u0432\u0438\u043b\u0430\u0441\u044c \u043a\u043d\u043e\u043f\u043a\u0430, \u043f\u043e\u0437\u0432\u043e\u043b\u044f\u044e\u0449\u0430\u044f \u0441\u0444\u043e\u0440\u043c\u0438\u0432\u0440\u043e\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443 \u0441 \u0440\u0430\u0441\u0447\u0435\u0442\u0430\u043c\u0438 \u0438 \u0441\u043a\u0430\u0447\u0430\u0442\u044c \u0444\u0430\u0439\u043b \u0441 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u0435\u043c .excel.</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">2. \u041d\u043e\u0432\u044b\u0435 \u0432\u0435\u0440\u0441\u0438\u0438 \u0434\u043b\u044f Macos ARM64x \u0438"
+                        " MacOS x86 (x64)</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">3. \u041d\u043e\u0432\u044b\u0435 \u043f\u0443\u043d\u043a\u0442\u044b \u0432 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430\u0445:</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">   - \u041f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u0432\u043a\u043b\u0430\u0434\u043a\u0438 \u043d\u0430 \u0430\u043a\u0442\u0438\u0432\u043d\u0443\u044e, \u043f\u0440\u0438 \u043e\u0442\u043a\u0440\u044b\u0442\u0438\u0438 \u0442\u0430\u0431\u043b\u0438\u0446\u044b</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">   - \u0414\u0438\u0440\u0435\u043a\u0442\u043e\u0440\u0438\u044f "
+                        "\u0434\u043b\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f Excel \u0442\u0430\u0431\u043b\u0438\u0446</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">4. \u041a\u043d\u043e\u043f\u043a\u0438 \u0432 \u0432\u0435\u0440\u0445\u043d\u0435\u043c \u043c\u0435\u043d\u044e \u0434\u0443\u0431\u043b\u0438\u0440\u0443\u044e\u0442 \u0444\u0443\u043d\u043a\u0446\u0438\u043e\u043d\u0430\u043b \u043d\u0438\u0436\u043d\u0438\u0445 \u0444\u0443\u043d\u043a\u0446\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u044b\u0445 \u043a\u043d\u043e\u043f\u043e\u043a</span></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;"
+                        "\">18.12.2025</span></p></body></html>", None))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f", None))
+        self.label_3.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0446\u0435\u043d\u043a\u0430", None))
+        self.markupLine.setText("")
+        self.markupLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u0427\u0438\u0441\u043b\u043e", None))
         self.label_5.setText(QCoreApplication.translate("MainWindow", u"\u041b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0430", None))
-        self.logisiticVar.setItemText(0, QCoreApplication.translate("MainWindow", u"\u043a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442", None))
-        self.logisiticVar.setItemText(1, QCoreApplication.translate("MainWindow", u"\u0440\u0430\u0441\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0438\u0435", None))
+        self.logisticVar.setItemText(0, QCoreApplication.translate("MainWindow", u"\u043a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442", None))
+        self.logisticVar.setItemText(1, QCoreApplication.translate("MainWindow", u"\u0440\u0430\u0441\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0438\u0435", None))
 
         self.logisticNum.setText("")
         self.logisticNum.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u0427\u0438\u0441\u043b\u043e", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"\u0422\u0430\u043c\u043e\u0436\u043d\u044f", None))
         self.customLine.setText("")
         self.customLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u041a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442", None))
+        self.openTableButton.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u041a\u041f \u043f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0430", None))
+        self.closeTableButton.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0440\u044b\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
         self.label_2.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0440\u043e\u043a \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0438", None))
         self.termDeliveryLine.setText("")
         self.termDeliveryLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u0427\u0438\u0441\u043b\u043e (\u0432 \u0441\u0443\u0442\u043a\u0430\u0445)", None))
+        self.createDocButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u041a\u041f", None))
+        self.createExcelButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c Excel", None))
         self.FileMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u0424\u0430\u0439\u043b", None))
         self.EditMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u0420\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c", None))
         self.SettingsMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438", None))

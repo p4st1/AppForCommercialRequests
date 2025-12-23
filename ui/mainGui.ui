@@ -988,7 +988,10 @@ QDialog QPushButton {
        </font>
       </property>
       <property name="currentIndex">
-       <number>1</number>
+       <number>2</number>
+      </property>
+      <property name="tabsClosable">
+       <bool>false</bool>
       </property>
       <widget class="QWidget" name="tab_3">
        <property name="sizePolicy">
@@ -1283,7 +1286,7 @@ QTableWidget::item:selected {
         </sizepolicy>
        </property>
        <attribute name="title">
-        <string>Tab 2</string>
+        <string>Обновления</string>
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayout_3">
         <property name="spacing">
@@ -1302,7 +1305,50 @@ QTableWidget::item:selected {
          <number>0</number>
         </property>
         <item>
-         <widget class="QTableWidget" name="tableWidget_2"/>
+         <widget class="QTextEdit" name="textUpdates">
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="html">
+           <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;meta charset=&quot;utf-8&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+hr { height: 1px; border-width: 0; }
+li.unchecked::marker { content: &quot;\2610&quot;; }
+li.checked::marker { content: &quot;\2612&quot;; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Segoe UI'; font-size:9pt; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p align=&quot;center&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;AppForCommercialRequests&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt; font-weight:700;&quot;&gt;Обновление  &lt;/span&gt;&lt;a href=&quot;https://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30&quot;&gt;&lt;span style=&quot; font-size:12pt; text-decoration: underline; color:#262524;&quot;&gt;1.0.3&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;1. Дополнительная переменная &amp;quot;Наценка&amp;quot;&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;2. Обновление в интерфейсе:&lt;br /&gt;	- Новая вкладка &amp;quot;Обвовления&amp;quot; с полезной информацией о новых обновлениях &lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;	- Переменная &amp;quot;Наценка&amp;quot; теперь редактируемая&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;	- Новая кнопка &amp;quot;Настройки&amp;quot; -&amp;gt; &amp;quot;Очистить кэш&amp;quot;&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;3. Исправлено заполнение основной таблицы во вкладке &amp;quot;Полная таблица&amp;quot;&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;4. Изменено форматирование итогового КП&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;5. Исправлено заполнение итоговой таблицы в КП:&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;6. Новые функции в настройках:&lt;br /&gt;	- Открывать предыдущую таблицу - открывает последнюю таблицу, открытую пользователем&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;	- При открытии приложения, открывать вкладку &amp;quot;Обновления&amp;quot; - открывает вкладку с описанием обновления на главном экране&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;	- Выбор отступа при сохранении Excel - изменяет отступ у итоговой таблицы в Excel на выбранный отступ&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;7. Сохранение нескольких файлов Excel&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;8. Исправлено сохранение пола заказчика&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;9. Исправлена обработка переменной логистики&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;10. Итоговая сумма в Docx теперь прописывается прописью&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt; font-weight:700;&quot;&gt;Релиз  &lt;/span&gt;&lt;a href=&quot;https://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30&quot;&gt;&lt;span style=&quot; font-size:12pt; text-decoration: underline; color:#262524;&quot;&gt;1.0.2&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;1. Excel&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;   - Появилась кнопка, позволяющая сформивровать таблицу с расчетами и скачать файл с расширением .excel.&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;2. Новые версии для Macos ARM64x и MacOS x86 (x64)&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;3. Новые пункты в настройках:&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;   - Переключение вкладки на активную, при открытии таблицы&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;   - Директория для сохранения Excel таблиц&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;4. Кнопки в верхнем меню дублируют функционал нижних функциональных кнопок&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt;&quot;&gt;18.12.2025&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          </property>
+         </widget>
         </item>
        </layout>
       </widget>
@@ -1325,22 +1371,7 @@ QTableWidget::item:selected {
       <property name="horizontalSpacing">
        <number>12</number>
       </property>
-      <item row="0" column="5">
-       <widget class="Line" name="line_7">
-        <property name="styleSheet">
-         <string notr="true">QFrame {
-    background-color: #dee2e6;
-    border: none;
-    min-height: 1px;
-    max-height: 100px;
-}</string>
-        </property>
-        <property name="orientation">
-         <enum>Qt::Orientation::Vertical</enum>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="11">
+      <item row="0" column="13">
        <spacer name="horizontalSpacer">
         <property name="font">
          <font>
@@ -1360,7 +1391,22 @@ QTableWidget::item:selected {
         </property>
        </spacer>
       </item>
-      <item row="2" column="5">
+      <item row="2" column="2">
+       <widget class="Line" name="line_3">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="7">
        <widget class="Line" name="line_6">
         <property name="styleSheet">
          <string notr="true">QFrame {
@@ -1375,88 +1421,8 @@ QTableWidget::item:selected {
         </property>
        </widget>
       </item>
-      <item row="0" column="8">
-       <layout class="QVBoxLayout" name="verticalLayout_9">
-        <property name="spacing">
-         <number>6</number>
-        </property>
-        <property name="rightMargin">
-         <number>0</number>
-        </property>
-        <item>
-         <widget class="QPushButton" name="openTableButton">
-          <property name="font">
-           <font>
-            <pointsize>-1</pointsize>
-            <fontweight>DemiBold</fontweight>
-           </font>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QPushButton {
-    background-color: #2c3e50;
-    color: white;
-    border: none;
-    padding: 4px 4px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 12px;
-    min-height: 35px;
-    min-width: 100px;
-}
-
-QPushButton:hover {
-    background-color: #34495e;
-    border: 1px solid #2c3e50;
-}
-
-QPushButton:pressed {
-    background-color: #1a252f;
-}</string>
-          </property>
-          <property name="text">
-           <string>Загрузить КП поставщика</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="closeTableButton">
-          <property name="font">
-           <font>
-            <pointsize>-1</pointsize>
-            <fontweight>DemiBold</fontweight>
-           </font>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QPushButton {
-    background-color: #2c3e50;
-    color: white;
-    border: none;
-    padding: 4px 4px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 12px;
-    min-height: 35px;
-    min-width: 100px;
-}
-
-QPushButton:hover {
-    background-color: #34495e;
-    border: 1px solid #2c3e50;
-}
-
-QPushButton:pressed {
-    background-color: #1a252f;
-}</string>
-          </property>
-          <property name="text">
-           <string>Закрыть таблицу</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
-      <item row="0" column="1">
-       <widget class="Line" name="line1">
+      <item row="0" column="3">
+       <widget class="Line" name="line_4">
         <property name="styleSheet">
          <string notr="true">QFrame {
     background-color: #dee2e6;
@@ -1470,87 +1436,52 @@ QPushButton:pressed {
         </property>
        </widget>
       </item>
-      <item row="0" column="6">
-       <layout class="QVBoxLayout" name="verticalLayout_8">
-        <property name="spacing">
-         <number>6</number>
-        </property>
-        <property name="rightMargin">
-         <number>0</number>
-        </property>
-        <item>
-         <widget class="QPushButton" name="createDocButton">
-          <property name="font">
-           <font>
-            <pointsize>-1</pointsize>
-            <fontweight>DemiBold</fontweight>
-           </font>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QPushButton {
-    background-color: #2c3e50;
-    color: white;
+      <item row="1" column="7">
+       <widget class="Line" name="line_5">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
     border: none;
-    padding: 4px 4px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 12px;
-    min-height: 35px;
-    min-width: 32px;
-}
-
-QPushButton:hover {
-    background-color: #34495e;
-    border: 1px solid #2c3e50;
-}
-
-QPushButton:pressed {
-    background-color: #1a252f;
+    min-height: 1px;
+    max-height: 100px;
 }</string>
-          </property>
-          <property name="text">
-           <string>Скачать КП</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="createExcelButton">
-          <property name="font">
-           <font>
-            <pointsize>-1</pointsize>
-            <fontweight>DemiBold</fontweight>
-           </font>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QPushButton {
-    background-color: #2c3e50;
-    color: white;
-    border: none;
-    padding: 4px 4px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 12px;
-    min-height: 35px;
-    min-width: 100px;
-}
-
-QPushButton:hover {
-    background-color: #34495e;
-    border: 1px solid #2c3e50;
-}
-
-QPushButton:pressed {
-    background-color: #1a252f;
-}</string>
-          </property>
-          <property name="text">
-           <string>Скачать Excel</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </widget>
       </item>
-      <item row="0" column="7">
+      <item row="1" column="9">
+       <widget class="Line" name="line_8">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="9">
+       <widget class="Line" name="line_9">
+        <property name="styleSheet">
+         <string notr="true">QFrame {
+    background-color: #dee2e6;
+    border: none;
+    min-height: 1px;
+    max-height: 100px;
+}</string>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="9">
        <widget class="Line" name="line_2">
         <property name="styleSheet">
          <string notr="true">QFrame {
@@ -1565,21 +1496,74 @@ QPushButton:pressed {
         </property>
        </widget>
       </item>
-      <item row="1" column="2">
-       <widget class="Line" name="line">
-        <property name="styleSheet">
-         <string notr="true">/* ===== РАЗДЕЛИТЕЛИ ===== */
-QFrame {
-    background-color: #dee2e6;
-    border: none;
-    min-height: 1px;
-    max-height: 100px;
+      <item row="0" column="6">
+       <layout class="QVBoxLayout" name="verticalLayout_10">
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="label_3">
+          <property name="styleSheet">
+           <string notr="true">QLabel {
+	color:  #2c3e50;
+	font-weight: 600;
+	 font-size: 12px;
+}
+</string>
+          </property>
+          <property name="text">
+           <string>Наценка</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignmentFlag::AlignCenter</set>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="markupLine">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #2c3e50;
+    min-height: 8px;
+    selection-background-color: #e3f2fd;
 }</string>
-        </property>
-        <property name="orientation">
-         <enum>Qt::Orientation::Vertical</enum>
-        </property>
-       </widget>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="placeholderText">
+           <string>Число</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacer_3">
+          <property name="orientation">
+           <enum>Qt::Orientation::Vertical</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Policy::Minimum</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
       </item>
       <item row="0" column="0">
        <layout class="QVBoxLayout" name="verticalLayout_5">
@@ -1623,7 +1607,7 @@ QFrame {
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="logisiticVar">
+         <widget class="QComboBox" name="logisticVar">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
             <horstretch>0</horstretch>
@@ -1740,8 +1724,8 @@ QComboBox::down-arrow {
         </item>
        </layout>
       </item>
-      <item row="2" column="2">
-       <widget class="Line" name="line_3">
+      <item row="0" column="7">
+       <widget class="Line" name="line_7">
         <property name="styleSheet">
          <string notr="true">QFrame {
     background-color: #dee2e6;
@@ -1847,6 +1831,86 @@ QComboBox::down-arrow {
         </item>
        </layout>
       </item>
+      <item row="0" column="10">
+       <layout class="QVBoxLayout" name="verticalLayout_9">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QPushButton" name="openTableButton">
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+          </property>
+          <property name="text">
+           <string>Загрузить КП поставщика</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="closeTableButton">
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+          </property>
+          <property name="text">
+           <string>Закрыть таблицу</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
       <item row="0" column="2">
        <layout class="QVBoxLayout" name="verticalLayout_6">
         <property name="topMargin">
@@ -1925,8 +1989,8 @@ QComboBox::down-arrow {
         </item>
        </layout>
       </item>
-      <item row="2" column="7">
-       <widget class="Line" name="line_9">
+      <item row="0" column="1">
+       <widget class="Line" name="line1">
         <property name="styleSheet">
          <string notr="true">QFrame {
     background-color: #dee2e6;
@@ -1940,10 +2004,91 @@ QComboBox::down-arrow {
         </property>
        </widget>
       </item>
-      <item row="1" column="5">
-       <widget class="Line" name="line_5">
+      <item row="0" column="8">
+       <layout class="QVBoxLayout" name="verticalLayout_8">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QPushButton" name="createDocButton">
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 32px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+          </property>
+          <property name="text">
+           <string>Скачать КП</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="createExcelButton">
+          <property name="font">
+           <font>
+            <pointsize>-1</pointsize>
+            <fontweight>DemiBold</fontweight>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 100px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+          </property>
+          <property name="text">
+           <string>Скачать Excel</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="1" column="2">
+       <widget class="Line" name="line">
         <property name="styleSheet">
-         <string notr="true">QFrame {
+         <string notr="true">/* ===== РАЗДЕЛИТЕЛИ ===== */
+QFrame {
     background-color: #dee2e6;
     border: none;
     min-height: 1px;
@@ -1955,23 +2100,8 @@ QComboBox::down-arrow {
         </property>
        </widget>
       </item>
-      <item row="0" column="3">
-       <widget class="Line" name="line_4">
-        <property name="styleSheet">
-         <string notr="true">QFrame {
-    background-color: #dee2e6;
-    border: none;
-    min-height: 1px;
-    max-height: 100px;
-}</string>
-        </property>
-        <property name="orientation">
-         <enum>Qt::Orientation::Vertical</enum>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="7">
-       <widget class="Line" name="line_8">
+      <item row="0" column="5">
+       <widget class="Line" name="line_10">
         <property name="styleSheet">
          <string notr="true">QFrame {
     background-color: #dee2e6;
@@ -2058,6 +2188,7 @@ QComboBox::down-arrow {
     <addaction name="importMenuButton"/>
     <addaction name="separator"/>
     <addaction name="settingsMenuButton"/>
+    <addaction name="clearCacheMenuButton"/>
    </widget>
    <widget class="QMenu" name="WindowMenu">
     <property name="font">
@@ -2194,6 +2325,11 @@ QComboBox::down-arrow {
   <action name="aboutMenuButton">
    <property name="text">
     <string>О программе</string>
+   </property>
+  </action>
+  <action name="clearCacheMenuButton">
+   <property name="text">
+    <string>Очистить кэш</string>
    </property>
   </action>
  </widget>
