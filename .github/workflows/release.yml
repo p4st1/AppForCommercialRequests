@@ -55,6 +55,8 @@ jobs:
           test -f assets/app.ico
           test -f assets/app.icns
           test -f assets/app.jpg
+          test -f assets/print.png
+          test -f assets/sign.png
 
       - name: Install deps
         shell: bash
@@ -92,6 +94,8 @@ jobs:
             --add-data=utilities:utilities `
             --add-data=database:database `
             --add-data=assets/app.jpg:assets `
+            --add-data=assets/print.png:assets `
+            --add-data=assets/sign.png:assets `
             --add-data=templates/template.xlsx:templates `
             --add-data=templates/logs.log:templates `
             run.py
@@ -158,6 +162,8 @@ jobs:
             --target-arch "${TARCH}" \
             --icon assets/app.icns \
             --add-data=assets/app.jpg:assets \
+            --add-data=assets/sign.png:assets \
+            --add-data=assets/print.png:assets \
             --add-data=utilities:utilities \
             --add-data=database:database \
             --add-data=templates/template.xlsx:templates \
@@ -167,9 +173,6 @@ jobs:
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
 
-          # КЛЮЧЕВОЙ ФИКС ДЛЯ python-docx:
-          # python-docx строит путь как docx/parts/../templates/...
-          # поэтому нужно, чтобы docx/parts существовал физически на диске.
           DOCX_BASE="$APP_PATH/Contents/Frameworks/docx"
           mkdir -p "$DOCX_BASE/templates"
           mkdir -p "$DOCX_BASE/parts"
