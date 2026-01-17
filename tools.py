@@ -76,12 +76,12 @@ class DatabaseTools:
         return Path.home() / ".local" / "share" / app_name
 
     @staticmethod
-    def ensure_user_file(app_name: str, template_rel_path: str, target_name: str) -> Path:
+    def ensure_user_file(app_name: str, template_rel_path: str, target_name: str, f=0) -> Path:
         dst_dir = DatabaseTools.user_data_dir(app_name)
         dst_dir.mkdir(parents=True, exist_ok=True)
 
         dst = dst_dir / target_name
-        if not dst.exists():
+        if not dst.exists() or f:
             src = DatabaseTools.resourcePath(template_rel_path)
             shutil.copy2(src, dst)
 

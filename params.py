@@ -81,10 +81,7 @@ class mainWindow(QMainWindow):
         self.parameters = {}
         self.hasChanges = False
 
-        with open(
-            self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
-        ) as f:
-            self.paramsData = json.load(f)
+        self.paramsData = Tool.load_json(Config.vars_path)  
 
         self.ui.saveButton.setDisabled(True)
         self.ui.saveAndCloseButton.setDisabled(True)
@@ -110,11 +107,12 @@ class mainWindow(QMainWindow):
         self.ui.cancelButton.clicked.connect(self.cancelChanges)
 
     def saveChanges(self):
+        data = Tool.load_json(Config.vars_path)  
         for key, item in self.parameters.items():
             value = item.text().split("%")[0]
             if value.isdigit():
-                self.paramsData["parameters"][key] = [
-                    self.paramsData["parameters"][key][0],
+                data["parameters"][key] = [
+                    data["parameters"][key][0],
                     value,
                     "percents",
                 ]
@@ -123,18 +121,20 @@ class mainWindow(QMainWindow):
                 error.setWindowTitle("Ошибка")
                 error.setText(f"Введены некорректные данные: {value}")
                 error.exec()
-        with open(self.resourcePath("utilities/variables.json"), "w", encoding='utf-8') as f:
-            json.dump(self.paramsData, f, indent=4)
-        self.saveButton.setDisabled(True)
-        self.saveAndCloseButton.setDisabled(True)
+        
+         
+        Tool.save_json_atomic(Config.vars_path, data) 
+        self.ui.saveButton.setDisabled(True)
+        self.ui.saveAndCloseButton.setDisabled(True)
         self.hasChanges = False
 
     def saveChangesAndClose(self):
+        data = Tool.load_json(Config.vars_path)  
         for key, item in self.parameters.items():
             value = item.text().split("%")[0]
             if value.isdigit():
-                self.paramsData["parameters"][key] = [
-                    self.paramsData["parameters"][key][0],
+                data["parameters"][key] = [
+                    data["parameters"][key][0],
                     value,
                     "percents",
                 ]
@@ -143,17 +143,18 @@ class mainWindow(QMainWindow):
                 error.setWindowTitle("Ошибка")
                 error.setText(f"Введены некорректные данные: {value}")
                 error.exec()
-        with open(self.resourcePath("utilities/variables.json"), "w", encoding='utf-8') as f:
-            json.dump(self.paramsData, f, indent=4)
-        self.saveButton.setDisabled(True)
-        self.saveAndCloseButton.setDisabled(True)
+        
+         
+        Tool.save_json_atomic(Config.vars_path, data) 
+        self.ui.saveButton.setDisabled(True)
+        self.ui.saveAndCloseButton.setDisabled(True)
         self.hasChanges = False
         self.close()
 
     def onTextValueChanged(self, arg):
         self.hasChanges = True
-        self.saveButton.setDisabled(False)
-        self.saveAndCloseButton.setDisabled(False)
+        self.ui.saveButton.setDisabled(False)
+        self.ui.saveAndCloseButton.setDisabled(False)
 
     def getValueType(self, value):
         if value == "percents":

@@ -50,8 +50,27 @@ class mainWindow(QMainWindow):
                         row, col, QTableWidgetItem(str(self.tableData[1][row][col]))
                     )
                 
+        self.ui.payComboBox.currentIndexChanged.connect(self.indChanged)
+        self.ui.payLineEdit.textChanged.connect(self.payUpd)
+                
         self.ui.summaryTable.resizeColumnsToContents()     
-           
+        self.payInd = 0
+        self.pay = ['на дату подписания спецификации Поставщиком',
+                    'на дату оплаты',
+                    '']
+        self.ui.payLineEdit.setEnabled(False)
+    
+    def payUpd(self):
+        self.pay[2] =  self.ui.payLineEdit.text()
+        
+    def indChanged(self, ind):
+        self.payInd = ind
+        if self.payInd == 2:
+            self.ui.payLineEdit.setEnabled(True)
+        else:
+            self.ui.payLineEdit.setEnabled(False)
+            
+            
     def confirmDoc(self):
         confirmedSuppliers = []
         for i in range(self.ui.suppliersList.count()):
@@ -66,7 +85,8 @@ class mainWindow(QMainWindow):
                             confirmedSuppliers, 
                             extraData, 
                             str(id), 
-                            self.ui.radioButton.isChecked()))
+                            self.ui.radioButton.isChecked(),
+                            self.pay[self.payInd]))
             self.close()
         
     def getExtraData(self):
@@ -77,6 +97,7 @@ class mainWindow(QMainWindow):
         result.append(self.ui.producerLine.text())
         result.append(self.ui.deliveryTimeLine.text())
         return result
+    
     def setupSuppliersItems(self):
         self.ui.suppliersList.clear()
         for supplier in self.suppliers:

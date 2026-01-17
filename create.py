@@ -2,12 +2,12 @@ from docx import Document
 from docx.shared import Inches
 from docx.shared import Inches, Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from tools import DatabaseTools as Tools
 from tools import Tools as ExtraTools
 from datetime import datetime, timedelta
 from openpyxl import load_workbook
-from openpyxl.styles import Border, Side  
+from openpyxl.styles import Border, Side, Alignment
 from config import Config
 import shutil
 import os
@@ -81,7 +81,7 @@ class createTextFile:
         cell_left.text = f"""Исх. №{data[3]}/{datetime.now().strftime('%d.%m')} от {datetime.now().strftime('%d.%m.%Y')}"""
         cell_left.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
         
-        cell_right = header_table.cell(0, 1)
+        cell_right = header_table.cell(2, 1)
         cell_right.text = f'{self.customerData[2]} {self.customerData[1][0]}. {self.customerData[3][0]}.'
         cell_right.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         
@@ -89,7 +89,7 @@ class createTextFile:
         cell_bottom.text = f'{self.customerData[7]}'
         cell_bottom.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         
-        cell_bottom = header_table.cell(2, 1)
+        cell_bottom = header_table.cell(0, 1)
         cell_bottom.text = f'{self.customerData[8]}'
         cell_bottom.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         
@@ -128,16 +128,18 @@ class createTextFile:
         table = document.add_table(rows=self.rows + 1, cols=len(self.headers))
         table.style = "Table Grid"
 
-        for col in table.columns:
-            col.width = Inches(3)
-
-        table.columns[1].width = Inches(4)
+        cols = [0.77, 2.98, 2.69, 1.03, 1.22, 3, 3, 3, 0.1, 0.1,]
+        
+        for i in range(len(self.headers)):
+            for cell in table.columns[i].cells:
+                cell.width = Cm(cols[i])
 
         for col in range(len(self.headers)):
             cell = table.cell(0, col)
             cell.text = self.headers[col]
             paragraph = cell.paragraphs[0]
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             run = paragraph.runs[0]
             run.font.size = Pt(11)
             run.font.name = run.font.name = 'Times New Roman'
@@ -150,6 +152,7 @@ class createTextFile:
                 cell.text = self.table[row][col]
                 paragraph = cell.paragraphs[0]
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
                 run = paragraph.runs[0]
                 run.font.size = Pt(11)
                 run.font.name = 'Times New Roman'
@@ -161,7 +164,9 @@ class createTextFile:
         cell = table.cell(len(self.table) + 1, 0)
         cell.text = 'Итого'
         paragraph = cell.paragraphs[0]
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        table.rows[len(self.table) + 1].height = Cm(0.7)
         run = paragraph.runs[0]
         run.font.size = Pt(11)
         run.font.name = 'Times New Roman'
@@ -175,11 +180,12 @@ class createTextFile:
             result[1][1] += float(item[7][1:].replace(',', '.'))
             if int(item[8].split()[0]) > delivery_min:
                 delivery_min = int(item[8].split()[0])
-            
+        
         cell = table.cell(len(self.table) + 1, 6)
-        cell.text = f"{result[0][0]}{str(result[0][1]).replace('.', ',')}"
+        cell.text = f"{result[0][0]}{str(round(result[0][1], 2)).replace('.', ',')}"
         paragraph = cell.paragraphs[0]
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         run = paragraph.runs[0]
         run.font.size = Pt(11)
         run.font.name = 'Times New Roman'
@@ -187,7 +193,8 @@ class createTextFile:
         cell = table.cell(len(self.table) + 1, 7)
         cell.text = f"{result[1][0]}{str(result[1][1]).replace('.', ',')}"
         paragraph = cell.paragraphs[0]
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         run = paragraph.runs[0]
         run.font.size = Pt(11)
         run.font.name = 'Times New Roman'
@@ -199,9 +206,10 @@ class createTextFile:
         p = document.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p.paragraph_format.line_spacing = 1.15
-        run = p.add_run(f"""\n{str(result[0][1]).replace('.', ',')} {Config.currency[result[1][0]][0]} ({tool.decimal2text(result[0][1],
+        
+        run = p.add_run(f"""\n{str(round(result[0][1], 2)).replace('.', ',')} {Config.currency[result[1][0]][0]} ({tool.decimal2text(result[0][1],
                         int_units=Config.currency[result[1][0]][1],
-                        exp_units=Config.currency[result[1][0]][2])}), включая НДС (20%) в сумме {str(result[2][1]).replace('.', ',')} {Config.currency[result[1][0]][0]} ({tool.decimal2text(result[2][1],
+                        exp_units=Config.currency[result[1][0]][2])}), включая НДС ({Tools.load_json(Config.vars_path)['parameters']['1'][1]}%) в сумме {str(round(result[2][1],2 )).replace('.', ',')} {Config.currency[result[1][0]][0]} ({tool.decimal2text(result[2][1],
                         int_units=Config.currency[result[1][0]][1],
                         exp_units=Config.currency[result[1][0]][2])})""")
         run.font.bold = True
@@ -222,7 +230,7 @@ class createTextFile:
             
             (f"Условия оплаты: посланная в течение {self.extraData[2]} с момента поставки;", ""),
             
-            ("Оплата осуществляется в Рублях РФ по курсу Центрального банка РФ на дату подписания спецификации Поставщиком;", ""),
+            (f"Оплата осуществляется в Рублях РФ по курсу Центрального банка РФ {data[-1]}", ""),
             
             (f"Срок действия КП до {(datetime.now() + timedelta(days=10)).strftime('%d.%m.%Y')}.", "")
         ]
@@ -252,6 +260,11 @@ class createTextFile:
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         run = p.add_run(f"""С уважением,\nГениральнай директор""")
         run.font.size = Pt(11)
+        
+        p = document.add_paragraph()
+        run = p.add_run()
+        run.add_picture(str(Config.print_path))
+        run.add_picture(str(Config.sign_path))
 
         try:
             Tools.write_log("creating docx File...")
@@ -293,7 +306,9 @@ class createExcelFile:
             workSheet[f'H{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00' 
             
         workSheet[f'H{len(dataTable) + 2 + indent}'] = f'=SUM(H{2 + indent}:H{len(dataTable) + 1 + indent})'
-        workSheet[f'H{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00' 
+        workSheet[f'H{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
+        workSheet[f'I{len(dataTable) + 2 + indent}'] = f'=SUM(I{2 + indent}:I{len(dataTable) + 1 + indent})'
+        workSheet[f'I{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
         workSheet[f'H{len(dataTable) + 3 + indent}'] = f'=H{len(dataTable) + 2 + indent}-G{len(dataTable) + 2 + indent}'
         workSheet[f'H{len(dataTable) + 3 + indent}'].number_format = f'"{currency}"#,##0.00' 
         
@@ -313,7 +328,16 @@ class createExcelFile:
         
         workSheet[f'K{len(dataTable) + 2 + indent}'] = f'ИТОГО:'
         workSheet[f'L{len(dataTable) + 2 + indent}'] = f'=SUM(L{2 + indent}:L{len(dataTable) + 1 + indent})'
+        workSheet[f'L{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
         workSheet[f'M{len(dataTable) + 2 + indent}'] = f'=SUM(M{2 + indent}:M{len(dataTable) + 1 + indent})'
+        workSheet[f'M{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
+        
+        workSheet[f'K{len(dataTable) + 5 + indent}'] = f'Прибыль'
+        workSheet[f'K{len(dataTable) + 6 + indent}'] = f'Прибыль %'
+        workSheet[f'L{len(dataTable) + 5 + indent}'] = f'=L{len(dataTable) + 2 + indent}-I{len(dataTable) + 2 + indent}'
+        workSheet[f'L{len(dataTable) + 5 + indent}'].number_format = f'"{currency}"#,##0.00'
+        workSheet[f'L{len(dataTable) + 6 + indent}'] = f'=L{len(dataTable) + 5 + indent}/I{len(dataTable) + 2 + indent}'
+        workSheet[f'L{len(dataTable) + 6 + indent}'].number_format = f'0%'
         
         border = Border(
             left=Side(style='thin'),
@@ -326,6 +350,7 @@ class createExcelFile:
             for cell in row:
                 if self.cell_has_data(cell):
                     cell.border = border
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
         
         workSheet.move_range(f"A1:O1", rows=indent)
         

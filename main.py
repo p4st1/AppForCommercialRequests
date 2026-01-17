@@ -28,11 +28,11 @@ class mainWindow(QMainWindow):
         self.ui.setupUi(self)
         
         self.setWindowIcon(QIcon(self.resourcePath("assets/app.ico")))
-
-        self.configData = Tool.load_json(Config.cfg_path)
-        for setting, value in self.configData['settings'].items():
+        
+        configData = Tool.load_json(Config.cfg_path)
+        for setting, value in configData['settings'].items():
             Config.settings[setting] = bool(value)
-        for setting, value in self.configData['config'].items():
+        for setting, value in configData['config'].items():
             Config.config[setting] = value
                 
         self.db = Database()
@@ -165,7 +165,7 @@ class mainWindow(QMainWindow):
             self,
             "О программе",
             "<b>Автоматизация подгтовки коммерческих приложений</b><br>"
-            "Версия 1.0.0<br><br>"
+            "Версия 1.0.4<br><br>"
             "Создано с использованием PySide6<br>"
             "© 2024 Все права защищены<br>"
             "Автор: https://github.com/p4st1"
@@ -276,7 +276,7 @@ class mainWindow(QMainWindow):
                         rowNum - 1,
                         14,
                         QTableWidgetItem(
-                            f"{df['col6'][rowNum].split()[0]} суток"
+                            f"{df['col6'][rowNum].split()[0]} дней"
                         ),
                     )
                                     
@@ -328,8 +328,8 @@ class mainWindow(QMainWindow):
         self.paramsData = Tool.load_json(Config.vars_path)
             
         for rowNum in range(self.rows - 1):
-            price =  Tool.evalWithVars(f"{self.tableData['logistic'][rowNum]}*{self.formulaCustom}") / self.tableData["amount"][rowNum]
-            realPrice = price * float(self.ui.markupLine.text())
+            price =  round(Tool.evalWithVars(f"{self.tableData['logistic'][rowNum]}*{self.formulaCustom}") / self.tableData["amount"][rowNum], 2)
+            realPrice = round(price * float(self.ui.markupLine.text()), 2)
             self.ui.KpTable.setItem(
                 rowNum,
                 8,
@@ -349,7 +349,7 @@ class mainWindow(QMainWindow):
                 rowNum,
                 11,
                 QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}{str(realPrice * self.tableData['amount'][rowNum]).replace('.', ',')}"
+                    f"{self.tableData['currency'][rowNum]}{str(round(realPrice * self.tableData['amount'][rowNum], 2)).replace('.', ',')}"
                 ),
             )
 
@@ -362,7 +362,7 @@ class mainWindow(QMainWindow):
                 rowNum,
                 12,
                 QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}{str(realPrice * self.tableData['amount'][rowNum] * temp_var).replace('.', ',')}"
+                    f"{self.tableData['currency'][rowNum]}{str(round(realPrice * self.tableData['amount'][rowNum] * temp_var, 2)).replace('.', ',')}"
                 ),
             )
             
