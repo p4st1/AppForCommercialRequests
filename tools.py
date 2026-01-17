@@ -81,10 +81,14 @@ class DatabaseTools:
         dst_dir.mkdir(parents=True, exist_ok=True)
 
         dst = dst_dir / target_name
-        if not dst.exists() or f:
+        if not dst.exists():
             src = DatabaseTools.resourcePath(template_rel_path)
             shutil.copy2(src, dst)
-
+         
+        if f:
+            src = DatabaseTools.resourcePath(template_rel_path)
+            shutil.copy2(src, dst)
+            
         return dst
 
     @staticmethod

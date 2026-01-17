@@ -18,7 +18,7 @@ def resourcePath(relativePath):
     
 if __name__ == '__main__':
     try:
-        Config.cfg_path = Tool.ensure_user_file('MyApp', 'utilities/config.json', 'config.json')
+        Config.cfg_path = Tool.ensure_user_file('MyApp', 'utilities/config.json', 'config.json', f=1)
         Config.db_path = Tool.ensure_user_file('MyApp', 'database/database.db', 'database.db')
         Config.vars_path = Tool.ensure_user_file('MyApp', 'utilities/variables.json', 'variables.json')
         Config.template_path = Tool.ensure_user_file('MyApp', 'templates/template.xlsx', 'template.xlsx')
@@ -26,45 +26,7 @@ if __name__ == '__main__':
         Config.logo_path = Tool.ensure_user_file('MyApp', 'assets/app.jpg', 'app.jpg')
         Config.print_path = Tool.ensure_user_file('MyApp', 'assets/print.png', 'print.png')
         Config.sign_path = Tool.ensure_user_file('MyApp', 'assets/sign.png', 'sign.png')
-        
-        with open('utilities/config.json', "r", encoding="utf-8") as f:
-            with open(Config.cfg_path, "r", encoding="utf-8") as cf:
-                data =  json.load(f)
-                appdata = json.load(cf)
-                
-        Tool.write_log(f'Checking config... [utilities/config.json]')
-        Tool.write_log(f'Config: {data}')
-        for item in data['config']:
-            Tool.write_log(f'checinkg utilities/config/{item} in config...')
-            if item in appdata['config']:
-                Tool.write_log(f'✅utilities/config/{item} in config')
-            else:
-                Tool.write_log(f'❌utilities/config/{item} not in config')
-                configData = Tool.load_json(Config.cfg_path)
-                
-                Tool.write_log(f'trying add {item} to config')
-                configData['config'][item] = data['config'][item]
-                
-                Tool.save_json_atomic(Config.cfg_path, data)
-        else:
-            Tool.write_log(f'Config is up to date')
-                         
-        for item in data['settings']:
-            Tool.write_log(f'checinkg utilities/config/{item} in settings...')
-            if item in appdata['settings']:
-                Tool.write_log(f'✅utilities/config/{item} in settings')
-            else:
-                Tool.write_log(f'❌utilities/config/{item} not in config')
-                
-                configData = Tool.load_json(Config.cfg_path)
-                
-                Tool.write_log(f'trying add {item} to settings [{Config.cfg_path}]')
-                configData['settings'][item] = data['settings'][item]
-                        
-                Tool.save_json_atomic(Config.cfg_path, data)
-        else:
-            Tool.write_log(f'Settings is up to date')
-                
+              
         Tool.write_log("=" * 50)
         Tool.write_log("🚀 APPLICATION STARTING")
         Tool.write_log(f"Current working directory: {os.getcwd()}")
