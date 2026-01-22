@@ -1,12 +1,15 @@
 # pip install python-docx
 import copy
 from decimal import Decimal, ROUND_HALF_UP
+from config import Config
+from tools import DatabaseTools as Tools
+from datetime import datetime
 
 from docx import Document
 
 
-TEMPLATE_PATH = "templates/template.docx"   # <-- твой шаблон (как в загрузке)
-OUTPUT_PATH = "КП_1v1.docx"                   # <-- результат
+TEMPLATE_PATH = "templates/template.docx" 
+OUTPUT_PATH = "КП_1v1.docx"             
 
 
 def _replace_in_paragraph(paragraph, mapping: dict[str, str]) -> None:
@@ -66,7 +69,6 @@ def fill_doc_like_template(
 ) -> None:
     doc = Document(template_path)
 
-    # ====== ДАННЫЕ (оставил как в твоем файле — будет 1-в-1) ======
     data = {
         # header
         "ООО «АЛЬФА КАППА ИНЖИНИРИНГ»": "ООО «АЛЬФА КАППА ИНЖИНИРИНГ»",
@@ -80,7 +82,7 @@ def fill_doc_like_template(
         "Исх. №9/19.01 от 19.01.2026": "Исх. №9/19.01 от 19.01.2026",
         "Директору": "Директору",
         "ООО Сусуман": "ООО Сусуман",
-        "Иванов И. И.": "Иванов И. И.",
+        "Иванов И. И.": "Земцов И. И.",
 
         # greeting + text
         "Уважаемая Иван Иваныч !": "Уважаемая Иван Иваныч !",
@@ -160,5 +162,5 @@ def fill_doc_like_template(
 
 
 if __name__ == "__main__":
-    fill_doc_like_template(TEMPLATE_PATH, OUTPUT_PATH)
+    fill_doc_like_template('templates/template.docx', f"/КП_от_{datetime.now().strftime('%d.%m.%Y')}.docx")
     print(f"Saved: {OUTPUT_PATH}")

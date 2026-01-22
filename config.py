@@ -19,6 +19,7 @@ class Config:
     db_path = ''
     vars_path = ''
     template_path = ''
+    template_docx_path = ''
     log_path = ''
     logo_path = ''
     
