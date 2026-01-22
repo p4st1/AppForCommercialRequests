@@ -255,16 +255,29 @@ class createTextFile:
                 run3 = p2.add_run('  ' + sub_text)
                 run3.font.name = 'Times New Roman'
                 run3.font.size = Pt(11)
-                
-        p = document.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        run = p.add_run(f"""С уважением,\nГениральнай директор""")
-        run.font.size = Pt(11)
         
-        p = document.add_paragraph()
-        run = p.add_run()
+        footer_table = document.add_table(rows=2, cols=4)
+        footer_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        
+        cell_left = footer_table.cell(0, 0)
+        cell_left.text = f"""С уважением,\nГенеральный директор"""
+        cell_left.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+        
+        cell_mid = footer_table.cell(0, 1)        
+        left_paragraph = cell_mid.paragraphs[0]
+        run = left_paragraph.add_run()
         run.add_picture(str(Config.print_path))
+        cell_mid.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+        cell_mid = footer_table.cell(0, 2)        
+        left_paragraph = cell_mid.paragraphs[0]
+        run = left_paragraph.add_run()
         run.add_picture(str(Config.sign_path))
+        cell_mid.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+        
+        cell_right = footer_table.cell(0, 3)
+        cell_right.text = f'Иванов И. И.'
+        cell_right.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
         try:
             Tools.write_log("creating docx File...")

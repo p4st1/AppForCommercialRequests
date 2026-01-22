@@ -18,7 +18,7 @@ def resourcePath(relativePath):
     
 if __name__ == '__main__':
     try:
-        Config.cfg_path = Tool.ensure_user_file('MyApp', 'utilities/config.json', 'config.json', f=1)
+        Config.cfg_path = Tool.ensure_user_file('MyApp', 'utilities/config.json', 'config.json')
         Config.db_path = Tool.ensure_user_file('MyApp', 'database/database.db', 'database.db')
         Config.vars_path = Tool.ensure_user_file('MyApp', 'utilities/variables.json', 'variables.json')
         Config.template_path = Tool.ensure_user_file('MyApp', 'templates/template.xlsx', 'template.xlsx')
