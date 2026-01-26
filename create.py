@@ -28,11 +28,7 @@ class createTextFile:
         
         minDays, maxDays = 10 ** 4, 0
         
-        for i in docxData:
-            print(i)
-            
         for i in tableData:
-            print(i, int(i[8].split()[0]))
             sum1 += float(i[6][1:].replace(',', '.'))
             sum2 += float(i[7][1:].replace(',', '.'))
             currency = i[6][0]
@@ -43,196 +39,343 @@ class createTextFile:
         
         currency = Config.currency[currency]
         
-  
-        def _replace_in_paragraph(paragraph, mapping: dict[str, str]) -> None:
-            # ВАЖНО: заменяем по run'ам, чтобы не убить форматирование
-            for run in paragraph.runs:
+        if docxData[4]:
+            TEMPLATE_PATH = Config.template_docx_path
+        else:
+            TEMPLATE_PATH = Config.template_docx_path_short
+
+        OUTPUT_PATH = f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_{docxData[3]}_от_{datetime.now().strftime('%d.%m.%Y')}_.docx"
+
+        VAT_RATE = Decimal("0.20")
+
+        GENDER = {
+            'мужской': "ый",
+            'женский': "ая"
+        }
+
+        PLACEHOLDERS = {
+            "<<COMPANY>>": "ООО «АЛЬФА КАППА ИНЖИНИРИНГ»",
+            "<<INN>>": "9731121825",
+            "<<KPP>>": "772901001",
+            "<<ADDRESS>>": "121471, Г.МОСКВА, УЛ., РЯБИНОВАЯ, Д.26 СТР.1, ПОМЕЩ.141",
+            "<<SITE>>": "alphakappa.ru",
+            "<<PHONE>>": "+7 (993) 338-47-22",
+            "<<EMAIL>>": "admin@alphakappa.ru",
+
+            "<<OUT_NUM>>": "9/19.01",
+            "<<OUT_DATE>>": "19.01.2026",
+
+            "<<TO_TITLE>>": "Директору",
+            "<<CLIENT_COMPANY>>": "ООО Сусуман",
+            "<<CLIENT_PERSON>>": "Иванов И. И.",
+
+            "<<VALID_UNTIL>>": "29.01.2026",
+
+            "<<SIGN_TITLE>>": "Гениральнай директор",
+            "<<SIGN_NAME>>": "А. О. Кадыров",
+
+            "{{num}}": f"{docxData[3]}",
+            "{{date_f}}": f"{datetime.now().strftime('%d.%m')}",
+            "{{now}}": f"{datetime.now().strftime('%d.%m.%Y')}",
+            "{{post}}": customerData[8],
+            "{{company}}": customerData[7],
+            "{{initials}}": f"{customerData[1]} {customerData[2][0]}. {customerData[3][0]}." ,
+
+            "Уважаемая Иван Иваныч !": f"Уважаем{GENDER[customerData[10]]} {customerData[1]} {customerData[3]} !",
+            "{{gender}}": f"{GENDER[customerData[10]]}",
+            "{{name}}": f"{customerData[1]}",
+            "{{surname}}": f"{customerData[3]}",
+            "{{app_num}}": f"{extraData[0]}",
+
+            "{{Total_wo}}": f"{Tools.num2text(sum1)}",
+            "{{Currency}}": f"{currency[0]}",
+            "{{Total_diff}}": f"{Tools.num2text(sum2 - sum1)}",
+
+            "{{Total_wo_text}}": f"({tool.decimal2text(sum1,
+                int_units=currency[1],
+                exp_units=currency[2])})",
+
+            "{{Total_diff_text}}": f"({tool.decimal2text(sum2 - sum1,
+                int_units=currency[1],
+                exp_units=currency[2])})",
+
+            "{{NDS}}": f"{Tools.load_json(Config.vars_path)['parameters']['1'][1]}",
+            
+            "{{Conditions}}": f"{customerData[9]}",
+            "{{Garanty_period}}": f"{extraData[1]}",
+            "{{MinDays}}": f"{minDays}",
+            "{{MaxDays}}": f"{maxDays}",
+            "{{Producer}}": f"{extraData[3]}",
+            "{{Pay_period}}": f"{extraData[2]}",
+            "{{Pay_cond}}": f"{docxData[5]}",
+            "{{date_20days}}": f"{(datetime.now() + timedelta(days=10)).strftime('%d.%m.%Y')}"
+        }
+
+        ITEMS = [
+            {"name": "Ось 123", "sku": "2065214", "unit": "шт.", "qty": 1, "price": "1.57", "days": "40 дней"},
+            {"name": "Редуктор бортовой 1857593", "sku": "1857593", "unit": "шт.", "qty": 1, "price": "1.57", "days": "50 дней"},
+            {"name": "Какашка 1857593", "sku": "1857593", "unit": "шт.", "qty": 1, "price": "1.57", "days": "70 дней"},
+        ]
+
+        ROW_TOKENS = {
+            "<<I>>": None,
+            "<<Name>>": None,
+            "<<SKU>>": None,
+            "<<Unit>>": None,
+            "<<Qty>>": None,
+            "<<Price>>": None,
+            "<<Sum_wo>>": None,
+            "<<Sum_w>>": None,
+            "<<Days>>": None,
+        }
+
+        TOTAL_TOKENS = {
+            "<<TOTAL_WO>>": None,
+            "<<TOTAL_W>>": None,
+        }
+
+        def _fmt_dec_comma(v: Decimal) -> str:
+            x = v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            return f"{x:.2f}".replace(".", ",")
+
+
+        def fmt_money_with_symbol(v) -> str:
+            return currency[0] + _fmt_dec_comma(Decimal(str(v)))
+
+
+        def fmt_money_no_symbol(v) -> str:
+            return _fmt_dec_comma(Decimal(str(v)))
+
+
+        def _replace_in_paragraph_runs(paragraph, mapping: dict[str, str]) -> bool:
+            changed = False
+            for r in paragraph.runs:
                 for k, v in mapping.items():
-                    if k in run.text:
-                        run.text = run.text.replace(k, v)
+                    if k in r.text:
+                        r.text = r.text.replace(k, v)
+                        changed = True
+            return changed
 
 
-        def _replace_everywhere(doc: Document, mapping: dict[str, str]) -> None:
-            # body paragraphs
+        def _replace_in_paragraph_fallback_merge(paragraph, mapping: dict[str, str]) -> bool:
+            if not paragraph.runs:
+                return False
+
+            full = "".join(r.text for r in paragraph.runs)
+            new = full
+            for k, v in mapping.items():
+                if k in new:
+                    new = new.replace(k, v)
+
+            if new == full:
+                return False
+
+            paragraph.runs[0].text = new
+            for r in paragraph.runs[1:]:
+                r.text = ""
+            return True
+
+
+        def replace_placeholders_everywhere(doc: Document, mapping: dict[str, str]) -> None:
+            def handle_paragraph(p):
+                changed = _replace_in_paragraph_runs(p, mapping)
+                if not changed:
+                    _replace_in_paragraph_fallback_merge(p, mapping)
+
             for p in doc.paragraphs:
-                _replace_in_paragraph(p, mapping)
+                handle_paragraph(p)
 
-            # tables in body
             for t in doc.tables:
                 for row in t.rows:
                     for cell in row.cells:
                         for p in cell.paragraphs:
-                            _replace_in_paragraph(p, mapping)
+                            handle_paragraph(p)
 
-            # headers/footers
             for sec in doc.sections:
                 for p in sec.header.paragraphs:
-                    _replace_in_paragraph(p, mapping)
+                    handle_paragraph(p)
                 for p in sec.footer.paragraphs:
-                    _replace_in_paragraph(p, mapping)
+                    handle_paragraph(p)
 
 
-        def _set_cell_text_preserve(cell, text: str) -> None:
-            # Не используем cell.text = ..., иначе слетит формат.
+        def _set_cell_text_keep_style(cell, text: str) -> None:
             p = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
-            if p.runs:
+            if not p.runs:
+                p.add_run(text)
+            else:
                 p.runs[0].text = text
-                # очистим остальные run'ы, если есть
                 for r in p.runs[1:]:
                     r.text = ""
-            else:
-                p.add_run(text)
+            for extra_p in cell.paragraphs[1:]:
+                for r in extra_p.runs:
+                    r.text = ""
 
 
-        def _remove_row(table, row_idx: int) -> None:
-            table._tbl.remove(table.rows[row_idx]._tr)
+        def _find_products_table(doc: Document):
+            need = ["Наименование", "Каталожный товар", "Кол-во"]
+            for t in doc.tables:
+                if len(t.rows) == 0:
+                    continue
+                header = " | ".join(c.text for c in t.rows[0].cells)
+                if all(x in header for x in need):
+                    return t
+            return doc.tables[1] if len(doc.tables) > 1 else None
 
 
-        def _fmt_money(v) -> str:
-            # формат как в шаблоне: 1,57 (запятая) + знак ¥
-            x = Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            s = f"{x:.2f}".replace(".", ",")
-            return f"¥{s}"
+        def _row_text_lower(row) -> str:
+            return "|".join((c.text or "") for c in row.cells).lower()
 
 
-        def fill_doc_like_template(
-            template_path: str,
-            output_path: str,
-        ) -> None:
-            doc = Document(template_path)
+        def _find_row_idx_by_token(table, token: str) -> int | None:
+            tok = token.lower()
+            for i, row in enumerate(table.rows):
+                if tok in _row_text_lower(row):
+                    return i
+            return None
 
-            gender = {
-                'мужской': "ый",
-                'женский': "ая"
-            }
-            
-            data = {
-                # header
-                "ООО «АЛЬФА КАППА ИНЖИНИРИНГ»": "ООО «АЛЬФА КАППА ИНЖИНИРИНГ»",
-                "ИНН 9731121825; КПП 772901001": "ИНН 9731121825; КПП 772901001",
-                "121471, Г.МОСКВА, УЛ., РЯБИНОВАЯ, Д.26 СТР.1, ПОМЕЩ.141": "121471, Г.МОСКВА, УЛ., РЯБИНОВАЯ, Д.26 СТР.1, ПОМЕЩ.141",
-                "alphakappa.ru": "alphakappa.ru",
-                "+7 (993) 338-47-22": "+7 (993) 338-47-22",
-                "admin@alphakappa.ru": "admin@alphakappa.ru",
+        def _find_header_row_idx(table) -> int:
+            need = ["наименование", "каталожный", "кол-во"]
+            for i, row in enumerate(table.rows):
+                rt = _row_text_lower(row)
+                if all(x in rt for x in need):
+                    return i
+            return 0
 
-                # body/table 0
-                "Исх. №9/19.01 от 19.01.2026": f"Исх. №{docxData[3]}/{datetime.now().strftime('%d.%m')} от {datetime.now().strftime('%d.%m.%Y')}",
-                "Директору": customerData[8],
-                "ООО Сусуман": customerData[7],
-                "Иванов И. И.": f"{customerData[1]} {customerData[2][0]}. {customerData[3][0]}." ,
+        def _find_total_row_idx(table) -> int:
+            for i, row in enumerate(table.rows):
+                for cell in row.cells:
+                    if (cell.text or "").strip().lower() == "итого":
+                        return i
+            return len(table.rows) - 1
 
-                # greeting + text
-                "Уважаемая Иван Иваныч !": f"Уважаем{gender[customerData[10]]} {customerData[1]} {customerData[3]} !",
-                
-                "заявку 123": f"заявку {extraData[0]}",
+        def _fill_row_by_indices(row, idx: int, it: dict, sum_wo: Decimal, sum_w: Decimal):
+            _set_cell_text_keep_style(row.cells[0], str(idx))
+            _set_cell_text_keep_style(row.cells[1], it["name"])
+            _set_cell_text_keep_style(row.cells[2], it["sku"])
+            _set_cell_text_keep_style(row.cells[3], it["unit"])
+            _set_cell_text_keep_style(row.cells[4], str(it["qty"]))
+            _set_cell_text_keep_style(row.cells[5], fmt_money_with_symbol(it["price"]))
+            _set_cell_text_keep_style(row.cells[6], currency[0] + _fmt_dec_comma(sum_wo))
+            _set_cell_text_keep_style(row.cells[7], currency[0] + _fmt_dec_comma(sum_w))
+            _set_cell_text_keep_style(row.cells[8], it["days"])
 
-                # totals paragraph + terms
-                "4,71 CNY ": f"{_fmt_money(sum1)} {currency[0]} ",
-                "0,93 CNY": f"{_fmt_money(sum2 - sum1)} {currency[0]}",
-                
-                "(четыре юаня семьдесят одна фэнь)": f"({tool.decimal2text(sum1,
-                int_units=currency[1],
-                exp_units=currency[2])})",
-                "(ноль юаней девяносто три фэня)": f"({tool.decimal2text(sum2 - sum1,
-                int_units=currency[1],
-                exp_units=currency[2])})",
-                
-                "(20%)": f"({Tools.load_json(Config.vars_path)['parameters']['1'][1]}%)",
 
-                "Условия поставки: ": f"Условия поставки: {customerData[9]}",
-                
-                "Срок гарантии - 123": f"Срок гарантии - {extraData[1]}",
-                
-                "Производитель - 123;": f"Производитель - {extraData[3]};",
-                
-                "в течение 123": f"в течение {extraData[2]}",
-                
-                "Сроки поставки - от 70 до 193 дней с момента подписания спецификации с возможностью досрочной поставки;": f"Сроки поставки - от {minDays} до {maxDays} дней с момента подписания спецификации с возможностью досрочной поставки;",
-                
-                "Оплата осуществляется в Рублях РФ по курсу Центрального банка РФ на дату оплаты": f"Оплата осуществляется в Рублях РФ по курсу Центрального банка РФ {docxData[5]}",
-                
-                "Срок действия КП до 29.01.2026.": f"Срок действия КП до {(datetime.now() + timedelta(days=10)).strftime('%d.%m.%Y')}.",
+        def _fill_row_by_tokens(row, mapping: dict[str, str]):
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    _replace_in_paragraph_runs(p, mapping)
+                    _replace_in_paragraph_fallback_merge(p, mapping)
 
-                # signature
-                "Гениральнай директор": "Гениральнай директор",
-                "А. О. Кадыров": "А. О. Кадыров",
-            }
 
-            # ====== 1) Глобальные замены (если ты хочешь менять поля) ======
-            _replace_everywhere(doc, data)
+        def fill_products_table(doc: Document, items: list[dict]) -> tuple[Decimal, Decimal, Decimal]:
+            table = _find_products_table(doc)
+            if table is None:
+                raise RuntimeError("Не нашёл таблицу товаров в документе.")
 
-            # ====== 2) Таблица с товарами: пересобрать строки по списку items, сохранив формат 1-в-1 ======
-            # В твоем файле это doc.tables[1]
-            products = doc.tables[1]
+            header_idx = _find_header_row_idx(table)
+            total_idx = _find_total_row_idx(table)
 
-            # Сохраняем XML-шаблон одной товарной строки (строка 1)
-            row_template_tr = copy.deepcopy(products.rows[1]._tr)
+            template_idx = _find_row_idx_by_token(table, "<<Name>>")
+            if template_idx is None:
+                template_idx = _find_row_idx_by_token(table, "{{Name}}")
 
-            # Удаляем все товарные строки между заголовком и итогом
-            # Останутся: row 0 (шапка) и last row (итого)
-            while len(products.rows) > 2:
-                _remove_row(products, 1)
+            if template_idx is None:
+                template_idx = header_idx + 1
+                if template_idx >= total_idx:
+                    raise RuntimeError("В таблице нет строки-образца товара между заголовком и итогом.")
 
-            # Товары (как в файле, чтобы вышло 1-в-1)
-            items = [
-            
-            ]
-            
-            for item in tableData:
-                items.append(
-                    {"name": item[1],
-                     "sku": item[2],
-                     "unit": item[3],
-                     "qty": item[4],
-                    "price": item[5].replace(',', '.')[1:],
-                    "price2": item[6].replace(',', '.')[1:],
-                    "price3": item[7].replace(',', '.')[1:],
-                    "days": item[8]}
-                )                
+            template_tr = copy.deepcopy(table.rows[template_idx]._tr)
 
-            totals_tr = products.rows[-1]._tr
+            for i in range(total_idx - 1, header_idx, -1):
+                if i == template_idx:
+                    continue
+                table._tbl.remove(table.rows[i]._tr)
+
+            total_idx = _find_total_row_idx(table)
+            total_tr = table.rows[total_idx]._tr
+
             total_wo = Decimal("0.00")
             total_w = Decimal("0.00")
 
-            for i, it in enumerate(items, start=1):
-                new_tr = copy.deepcopy(row_template_tr)
-                totals_tr.addprevious(new_tr)
+            template_row_text = _row_text_lower(table.rows[template_idx])
+            use_tokens = ("<<Name>>" in template_row_text) or ("{{Name}}" in template_row_text)
 
-                # только что вставленная строка всегда станет предпоследней
-                r = products.rows[-2]
-
+            for n, it in enumerate(items, start=1):
                 price = Decimal(str(it["price"]))
                 qty = Decimal(str(it["qty"]))
-                row_wo = (price * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                row_w = (row_wo * Decimal("1.20")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                sum_wo = (price * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                sum_w = (sum_wo * (Decimal("1.00") + VAT_RATE)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-                total_wo += Decimal(it["price2"])
-                total_w += Decimal(it["price3"])
+                total_wo += sum_wo
+                total_w += sum_w
 
-                _set_cell_text_preserve(r.cells[0], str(i))
-                _set_cell_text_preserve(r.cells[1], it["name"])
-                _set_cell_text_preserve(r.cells[2], it["sku"])
-                _set_cell_text_preserve(r.cells[3], it["unit"])
-                _set_cell_text_preserve(r.cells[4], str(it["qty"]))
-                _set_cell_text_preserve(r.cells[5], _fmt_money(str(it["price"])))
-                _set_cell_text_preserve(r.cells[6], _fmt_money(str(it["price2"])))
-                _set_cell_text_preserve(r.cells[7], _fmt_money(str(it["price3"])))
-                _set_cell_text_preserve(r.cells[8], it["days"])
+                if n == 1:
+                    row = table.rows[template_idx]
+                else:
+                    new_tr = copy.deepcopy(template_tr)
+                    total_tr.addprevious(new_tr)
+                    row = table.rows[_find_total_row_idx(table) - 1]
 
-            # Итоговая строка (в шаблоне первые 6 колонок уже слиты)
-            total_row = products.rows[-1]
-            _set_cell_text_preserve(total_row.cells[0], "Итого")
-            _set_cell_text_preserve(total_row.cells[6], _fmt_money(total_wo))
-            _set_cell_text_preserve(total_row.cells[7], _fmt_money(total_w))
-            
-            doc.save(output_path)
-        
-        fill_doc_like_template(Config.template_docx_path, f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_от_{datetime.now().strftime('%d.%m.%Y')}_.docx")
+                if use_tokens:
+                    row_map = {
+                        "<<I>>": str(n),
+                        "<<Name>>": it["name"],
+                        "<<SKU>>": it["sku"],
+                        "<<UNIT>>": it["unit"],
+                        "<<QTY>>": str(it["qty"]),
+                        "<<PRICE>>": fmt_money_with_symbol(price),
+                        "<<SUM_WO>>": currency[0] + _fmt_dec_comma(sum_wo),
+                        "<<SUM_W>>": currency[0] + _fmt_dec_comma(sum_w),
+                        "<<DAYS>>": it["days"],
+                        "{{I}}": str(n),
+                        "{{NAME}}": it["name"],
+                        "{{SKU}}": it["sku"],
+                        "{{UNIT}}": it["unit"],
+                        "{{QTY}}": str(it["qty"]),
+                        "{{PRICE}}": fmt_money_with_symbol(price),
+                        "{{SUM_WO}}": currency[0] + _fmt_dec_comma(sum_wo),
+                        "{{SUM_W}}": currency[0] + _fmt_dec_comma(sum_w),
+                        "{{DAYS}}": it["days"],
+                    }
+                    _fill_row_by_tokens(row, row_map)
+                else:
+                    _fill_row_by_indices(row, n, it, sum_wo, sum_w)
+
+            total_row = table.rows[_find_total_row_idx(table)]
+            if ("<<total_wo>>" in _row_text_lower(total_row)) or ("{{total_wo}}" in _row_text_lower(total_row)):
+                totals_map = {
+                    "<<TOTAL_WO>>": currency[0] + _fmt_dec_comma(total_wo),
+                    "<<TOTAL_W>>": currency[0] + _fmt_dec_comma(total_w),
+                    "{{TOTAL_WO}}": currency[0] + _fmt_dec_comma(total_wo),
+                    "{{TOTAL_W}}": currency[0] + _fmt_dec_comma(total_w),
+                }
+                _fill_row_by_tokens(total_row, totals_map)
+            else:
+                _set_cell_text_keep_style(total_row.cells[6], currency[0] + _fmt_dec_comma(total_wo))
+                _set_cell_text_keep_style(total_row.cells[7], currency[0] + _fmt_dec_comma(total_w))
+
+            vat_sum = (total_w - total_wo).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            return total_wo, vat_sum, total_w
+
+
+        def main():
+            doc = Document(TEMPLATE_PATH)
+
+            total_wo, vat_sum, total_w = fill_products_table(doc, ITEMS)
+
+            mapping = dict(PLACEHOLDERS)
+            mapping["<<TOTAL_WO_CNY>>"] = fmt_money_no_symbol(total_wo)
+            mapping["<<VAT_CNY>>"] = fmt_money_no_symbol(vat_sum)
+            mapping["<<TOTAL_W_CNY>>"] = fmt_money_no_symbol(total_w)
+
+            replace_placeholders_everywhere(doc, mapping)
+
+            doc.save(OUTPUT_PATH)
         
         try:
+            main()
             Tools.write_log("creating docx File...")
             Tools.write_log(f"saving docx to: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
-            #{docxData[3]}
             
         except Exception as e:
             Tools.write_log(f"Unnable to save Docx: {e}")

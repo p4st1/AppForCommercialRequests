@@ -23,6 +23,7 @@ if __name__ == '__main__':
         Config.vars_path = Tool.ensure_user_file('MyApp', 'utilities/variables.json', 'variables.json')
         Config.template_path = Tool.ensure_user_file('MyApp', 'templates/template.xlsx', 'template.xlsx')
         Config.template_docx_path = Tool.ensure_user_file('MyApp', 'templates/template.docx', 'template.docx')
+        Config.template_docx_path_short = Tool.ensure_user_file('MyApp', 'templates/template_short.docx', 'template_short.docx')
         Config.log_path = Tool.ensure_user_file('MyApp', 'templates/logs.log', 'logs.log')
         Config.logo_path = Tool.ensure_user_file('MyApp', 'assets/app.jpg', 'app.jpg')
         Config.print_path = Tool.ensure_user_file('MyApp', 'assets/print.png', 'print.png')

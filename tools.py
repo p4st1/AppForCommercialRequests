@@ -108,7 +108,17 @@ class DatabaseTools:
         with open(Config.log_path, 'a', encoding='utf-8') as f:
             timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
             f.write(f"[{timestamp}] {message}\n")
-        
+    
+    @staticmethod
+    def num2text(num):
+        num, mantissa = str(num).split('.')
+        num = num[::-1]
+        num = [num[i : i + 3] for i in range(0, len(num), 3)]
+        res = ''
+        for i in num[::-1]:
+            res += f'{i[::-1]} '
+        return f'{res.strip()},{mantissa.zfill(2)}'
+
 class Tools:
     def __init__(self):
         self.units = (

@@ -20,6 +20,7 @@ class Config:
     vars_path = ''
     template_path = ''
     template_docx_path = ''
+    template_docx_path_short = ''
     log_path = ''
     logo_path = ''
     
