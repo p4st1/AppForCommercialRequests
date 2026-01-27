@@ -91,13 +91,9 @@ class createTextFile:
             "{{Currency}}": f"{currency[0]}",
             "{{Total_diff}}": f"{Tools.num2text(sum2 - sum1)}",
 
-            "{{Total_wo_text}}": f"({tool.decimal2text(sum1,
-                int_units=currency[1],
-                exp_units=currency[2])})",
+            "{{Total_wo_text}}": f"({tool.decimal2text(sum1,int_units=currency[1],exp_units=currency[2])})",
 
-            "{{Total_diff_text}}": f"({tool.decimal2text(sum2 - sum1,
-                int_units=currency[1],
-                exp_units=currency[2])})",
+            "{{Total_diff_text}}": f"({tool.decimal2text(sum2 - sum1,int_units=currency[1],exp_units=currency[2])})",
 
             "{{NDS}}": f"{Tools.load_json(Config.vars_path)['parameters']['1'][1]}",
             
@@ -112,11 +108,19 @@ class createTextFile:
         }
 
         ITEMS = [
-            {"name": "Ось 123", "sku": "2065214", "unit": "шт.", "qty": 1, "price": "1.57", "days": "40 дней"},
-            {"name": "Редуктор бортовой 1857593", "sku": "1857593", "unit": "шт.", "qty": 1, "price": "1.57", "days": "50 дней"},
-            {"name": "Какашка 1857593", "sku": "1857593", "unit": "шт.", "qty": 1, "price": "1.57", "days": "70 дней"},
-        ]
 
+        ]
+        
+        for item in tableData:
+            ITEMS.append({"name": item[1], 
+                          "sku": item[2], 
+                          "unit": item[3], 
+                          "qty": item[4], 
+                          "price": Decimal(item[5][1:].replace(',', '.')),
+                          "sum_wo": Decimal(item[6][1:].replace(',', '.')),
+                          "sum_w": Decimal(item[7][1:].replace(',', '.')),
+                          "days": item[8]})
+        
         ROW_TOKENS = {
             "<<I>>": None,
             "<<Name>>": None,
@@ -126,8 +130,10 @@ class createTextFile:
             "<<Price>>": None,
             "<<Sum_wo>>": None,
             "<<Sum_w>>": None,
-            "<<Days>>": None,
         }
+        
+        if docxData[4]:
+            ROW_TOKENS["<<Days>>"] = None
 
         TOTAL_TOKENS = {
             "<<TOTAL_WO>>": None,
@@ -257,7 +263,8 @@ class createTextFile:
             _set_cell_text_keep_style(row.cells[5], fmt_money_with_symbol(it["price"]))
             _set_cell_text_keep_style(row.cells[6], currency[0] + _fmt_dec_comma(sum_wo))
             _set_cell_text_keep_style(row.cells[7], currency[0] + _fmt_dec_comma(sum_w))
-            _set_cell_text_keep_style(row.cells[8], it["days"])
+            if docxData[4]:
+                _set_cell_text_keep_style(row.cells[8], it["days"])
 
 
         def _fill_row_by_tokens(row, mapping: dict[str, str]):
@@ -303,8 +310,8 @@ class createTextFile:
             for n, it in enumerate(items, start=1):
                 price = Decimal(str(it["price"]))
                 qty = Decimal(str(it["qty"]))
-                sum_wo = (price * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                sum_w = (sum_wo * (Decimal("1.00") + VAT_RATE)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                sum_wo = it['sum_wo']
+                sum_w = it['sum_w']
 
                 total_wo += sum_wo
                 total_w += sum_w
@@ -335,8 +342,9 @@ class createTextFile:
                         "{{PRICE}}": fmt_money_with_symbol(price),
                         "{{SUM_WO}}": currency[0] + _fmt_dec_comma(sum_wo),
                         "{{SUM_W}}": currency[0] + _fmt_dec_comma(sum_w),
-                        "{{DAYS}}": it["days"],
                     }
+                    if docxData[4]:
+                        row_map["{{DAYS}}"] = it["days"]
                     _fill_row_by_tokens(row, row_map)
                 else:
                     _fill_row_by_indices(row, n, it, sum_wo, sum_w)
@@ -362,12 +370,11 @@ class createTextFile:
             doc = Document(TEMPLATE_PATH)
 
             total_wo, vat_sum, total_w = fill_products_table(doc, ITEMS)
-
             mapping = dict(PLACEHOLDERS)
             mapping["<<TOTAL_WO_CNY>>"] = fmt_money_no_symbol(total_wo)
             mapping["<<VAT_CNY>>"] = fmt_money_no_symbol(vat_sum)
             mapping["<<TOTAL_W_CNY>>"] = fmt_money_no_symbol(total_w)
-
+            
             replace_placeholders_everywhere(doc, mapping)
 
             doc.save(OUTPUT_PATH)

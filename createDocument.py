@@ -79,7 +79,7 @@ class mainWindow(QMainWindow):
                 confirmedSuppliers.append(self.db.getCustomer(item.text())[0])
         extraData = self.getExtraData()
         if confirmedSuppliers:
-            id = self.db.createOffer() + 1
+            id = self.db.createOffer()
             self.db.save()
             exportTextFile((self.tableData, 
                             confirmedSuppliers, 

@@ -49,13 +49,25 @@ class Database:
         self.connection.commit()
 
     def createOffer(self):
-        self.cursor.execute("SELECT MAX(id) FROM offers")
-        id = self.cursor.fetchone()[0]
-        self.cursor.execute('''INSERT INTO offers (
-                            date
-                            ) VALUES (?)
-                        ''', (datetime.now().strftime('%d.%m'), ))
-        return id
+        self.cursor.execute('''
+            INSERT INTO offers (id, date)
+            SELECT 
+                COALESCE(MAX(id), 0) + 1,
+                date('now')
+            FROM offers 
+            WHERE date = date('now')
+            UNION ALL
+            SELECT 1, date('now')
+            WHERE NOT EXISTS (
+                SELECT 1 FROM offers WHERE date = date('now')
+            )
+            ORDER BY 1 DESC
+            LIMIT 1
+        ''')
+        
+        new_id = self.cursor.lastrowid
+        print(new_id)
+        return new_id
     
     def createCustomer(self, data):
         self.cursor.execute('''INSERT INTO customers (
@@ -114,6 +126,5 @@ class Database:
         except Exception as e:
             print(e)
             return -1
-        
         
         
