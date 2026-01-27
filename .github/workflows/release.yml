@@ -99,7 +99,7 @@ jobs:
             --add-data=assets/print.png:assets `
             --add-data=assets/sign.png:assets `
             --add-data=templates/template.xlsx:templates `
-            --add-data=templates/templates.docx:templates `
+            --add-data=templates/template.docx:templates `
             --add-data=templates/template_short.docx:templates `
             --add-data=templates/logs.log:templates `
             run.py
