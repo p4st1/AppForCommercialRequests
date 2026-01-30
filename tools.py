@@ -119,6 +119,17 @@ class DatabaseTools:
             res += f'{i[::-1]} '
         return f'{res.strip()},{mantissa.zfill(2)}'
 
+    @staticmethod
+    def parsePrice(line):
+        for symb in Config.currencySymb:
+            if symb in line:
+                currency_ind = line.find(symb)
+                break
+        if currency_ind == 0:
+            return line[0], line[1:]
+        else:
+            return line[-1], line[:-1]
+        
 class Tools:
     def __init__(self):
         self.units = (

@@ -167,7 +167,7 @@ class mainWindow(QMainWindow):
             "<b>Автоматизация подгтовки коммерческих приложений</b><br>"
             "Версия 1.0.4<br><br>"
             "Создано с использованием PySide6<br>"
-            "© 2024 Все права защищены<br>"
+            "<br>Лицензия MIT</br>"
             "Автор: https://github.com/p4st1"
         )
         
@@ -204,8 +204,18 @@ class mainWindow(QMainWindow):
             self.logisticCalculate()
             self.calculating()
 
+    def parsePrice(self, line):
+        for symb in Config.currencySymb:
+            if symb in line:
+                currency_ind = line.find(symb)
+                break
+        if currency_ind == 0:
+            return line[0], line[1:]
+        else:
+            return line[-1], line[:-1]
+
     def openTable(self, file=None):
-        self.ui.KpTable.clearContents()
+        self.closeTable()
         self.processFormula()
         
         if file:
@@ -231,6 +241,7 @@ class mainWindow(QMainWindow):
             
             try:
                 df = pd.read_csv(filename, header=None, sep=";")
+                print(df)
                 df.columns = [f"col{i}" for i in range(len(df.columns))]
                 df = df.fillna("")
                 self.rows = len(df["col0"])
@@ -254,9 +265,12 @@ class mainWindow(QMainWindow):
                         colNum += 1
 
                     self.tableData["amount"].append(int(df["col4"][rowNum][0]))
-                    self.tableData["currency"].append(str(df["col5"][rowNum][0]))
+
+                    currency, unitPrice = self.parsePrice(str(df["col5"][rowNum]))
+                    print(currency, unitPrice)
+                    self.tableData["currency"].append(currency)
                     self.tableData["unitPrice"].append(
-                        float(df["col5"][rowNum][1:].replace(",", "."))
+                        float(unitPrice.replace(",", "."))
                     )
                     self.tableData["totalPrice"].append(
                         self.tableData["amount"][rowNum - 1]
@@ -470,7 +484,7 @@ class mainWindow(QMainWindow):
                          (self.ui.logisticVar.currentIndex(), self.ui.logisticNum.text()),
                          self.ui.customLine.text(),
                          sum(self.tableData['totalPrice'])))
-        
+
     def resourcePath(self, relativePath):
         try:
             base_path = sys._MEIPASS

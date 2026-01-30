@@ -31,13 +31,13 @@ class createTextFile:
         for i in tableData:
             sum1 += float(i[6][1:].replace(',', '.'))
             sum2 += float(i[7][1:].replace(',', '.'))
-            currency = i[6][0]
+            symbCurrency = i[6][0]
             if int(i[8].split()[0]) > maxDays:
                 maxDays = int(i[8].split()[0])
             if int(i[8].split()[0]) < minDays:
                 minDays = int(i[8].split()[0]) 
         
-        currency = Config.currency[currency]
+        currency = Config.currency[symbCurrency]
         
         if docxData[4]:
             TEMPLATE_PATH = Config.template_docx_path
@@ -146,7 +146,7 @@ class createTextFile:
 
 
         def fmt_money_with_symbol(v) -> str:
-            return currency[0] + _fmt_dec_comma(Decimal(str(v)))
+            return symbCurrency + _fmt_dec_comma(Decimal(str(v)))
 
 
         def fmt_money_no_symbol(v) -> str:
@@ -261,8 +261,8 @@ class createTextFile:
             _set_cell_text_keep_style(row.cells[3], it["unit"])
             _set_cell_text_keep_style(row.cells[4], str(it["qty"]))
             _set_cell_text_keep_style(row.cells[5], fmt_money_with_symbol(it["price"]))
-            _set_cell_text_keep_style(row.cells[6], currency[0] + _fmt_dec_comma(sum_wo))
-            _set_cell_text_keep_style(row.cells[7], currency[0] + _fmt_dec_comma(sum_w))
+            _set_cell_text_keep_style(row.cells[6], symbCurrency + _fmt_dec_comma(sum_wo))
+            _set_cell_text_keep_style(row.cells[7], symbCurrency + _fmt_dec_comma(sum_w))
             if docxData[4]:
                 _set_cell_text_keep_style(row.cells[8], it["days"])
 
@@ -398,13 +398,13 @@ class createExcelFile:
         
         dataTable = data[0]
         for row in range(len(dataTable)):
-            currency = dataTable[row][5][0]
+            currency, unitPrice = Tools.parsePrice(dataTable[row][5])
             workSheet[f'A{row + 2 + indent}'] = int(dataTable[row][0])
             workSheet[f'B{row + 2 + indent}'] = dataTable[row][1]
             workSheet[f'C{row + 2 + indent}'] = int(dataTable[row][2])
             workSheet[f'D{row + 2 + indent}'] = dataTable[row][3]
             workSheet[f'E{row + 2 + indent}'] = int(dataTable[row][4])
-            workSheet[f'F{row + 2 + indent}'] = float(dataTable[row][5][1:].replace(',', '.'))
+            workSheet[f'F{row + 2 + indent}'] = float(unitPrice.replace(',', '.'))
             workSheet[f'F{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
             workSheet[f'G{row + 2 + indent}'] = f'=F{row + 2 + indent}*E{row + 2 + indent}'
             workSheet[f'G{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
