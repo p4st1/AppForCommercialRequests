@@ -9,9 +9,19 @@ from openpyxl.styles import Border, Side, Alignment
 from config import Config
 import shutil
 import os
-
+    
 class createTextFile:
     def __init__(self, docxData):
+        Tools.write_log(f"test feature: {Config.settings['testFeature']}")
+        if Config.settings['testFeature']:
+            Tools.write_log(f"Trying to import pymorphy2")
+            try:
+                import pymorphy2
+            except Exception as e:
+                Tools.write_log(f"ERROR: unable to import pymorphy2: {e}")
+            else:
+                Tools.write_log(f"Succesfuly imported pymorphy2")
+                
         Tools.write_log(f"Docx path to save: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
         Tools.write_log('INIT DOCX...')
         
@@ -29,9 +39,11 @@ class createTextFile:
         minDays, maxDays = 10 ** 4, 0
         
         for i in tableData:
-            sum1 += float(i[6][1:].replace(',', '.'))
-            sum2 += float(i[7][1:].replace(',', '.'))
-            symbCurrency = i[6][0]
+            currency1, amount1 = Tools.parsePrice(i[6].replace(',', '.'))
+            currency2, amount2 = Tools.parsePrice(i[7].replace(',', '.'))
+            sum1 += float(amount1)
+            sum2 += float(amount2)
+            symbCurrency = currency1
             if int(i[8].split()[0]) > maxDays:
                 maxDays = int(i[8].split()[0])
             if int(i[8].split()[0]) < minDays:
@@ -53,6 +65,12 @@ class createTextFile:
             'женский': "ая"
         }
 
+        if Config.settings['testFeature']:
+            morph = pymorphy2.MorphAnalyzer()
+            post = decline_name(customerData[8], 'дательный')
+        else:
+            post = customerData[8]
+            
         PLACEHOLDERS = {
             "<<COMPANY>>": "ООО «АЛЬФА КАППА ИНЖИНИРИНГ»",
             "<<INN>>": "9731121825",
@@ -77,9 +95,9 @@ class createTextFile:
             "{{num}}": f"{docxData[3]}",
             "{{date_f}}": f"{datetime.now().strftime('%d.%m')}",
             "{{now}}": f"{datetime.now().strftime('%d.%m.%Y')}",
-            "{{post}}": customerData[8],
+            "{{post}}": post,
             "{{company}}": customerData[7],
-            "{{initials}}": f"{customerData[1]} {customerData[2][0]}. {customerData[3][0]}." ,
+            "{{initials}}": f"{customerData[2]} {customerData[1][0]}. {customerData[3][0]}." ,
 
             "Уважаемая Иван Иваныч !": f"Уважаем{GENDER[customerData[10]]} {customerData[1]} {customerData[3]} !",
             "{{gender}}": f"{GENDER[customerData[10]]}",
@@ -89,7 +107,7 @@ class createTextFile:
 
             "{{Total_wo}}": f"{Tools.num2text(sum1)}",
             "{{Currency}}": f"{currency[0]}",
-            "{{Total_diff}}": f"{Tools.num2text(sum2 - sum1)}",
+            "{{Total_diff}}": f"{Tools.num2text(round(sum2 - sum1, 2))}",
 
             "{{Total_wo_text}}": f"({tool.decimal2text(sum1,int_units=currency[1],exp_units=currency[2])})",
 
@@ -116,9 +134,9 @@ class createTextFile:
                           "sku": item[2], 
                           "unit": item[3], 
                           "qty": item[4], 
-                          "price": Decimal(item[5][1:].replace(',', '.')),
-                          "sum_wo": Decimal(item[6][1:].replace(',', '.')),
-                          "sum_w": Decimal(item[7][1:].replace(',', '.')),
+                          "price": Decimal(Tools.parsePrice(item[5])[1].replace(',', '.')),
+                          "sum_wo": Decimal(Tools.parsePrice(item[6])[1].replace(',', '.')),
+                          "sum_w": Decimal(Tools.parsePrice(item[7])[1].replace(',', '.')),
                           "days": item[8]})
         
         ROW_TOKENS = {
@@ -139,7 +157,10 @@ class createTextFile:
             "<<TOTAL_WO>>": None,
             "<<TOTAL_W>>": None,
         }
-
+        def decline_name(name, case):
+            parsed = morph.parse(name)[0]
+            return parsed.inflect({case}).word if parsed else name
+    
         def _fmt_dec_comma(v: Decimal) -> str:
             x = v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             return f"{x:.2f}".replace(".", ",")
@@ -260,9 +281,9 @@ class createTextFile:
             _set_cell_text_keep_style(row.cells[2], it["sku"])
             _set_cell_text_keep_style(row.cells[3], it["unit"])
             _set_cell_text_keep_style(row.cells[4], str(it["qty"]))
-            _set_cell_text_keep_style(row.cells[5], fmt_money_with_symbol(it["price"]))
-            _set_cell_text_keep_style(row.cells[6], symbCurrency + _fmt_dec_comma(sum_wo))
-            _set_cell_text_keep_style(row.cells[7], symbCurrency + _fmt_dec_comma(sum_w))
+            _set_cell_text_keep_style(row.cells[5], Tools.formatPrice(_fmt_dec_comma(it["price"]), symbCurrency))
+            _set_cell_text_keep_style(row.cells[6], Tools.formatPrice(_fmt_dec_comma(sum_wo), symbCurrency))
+            _set_cell_text_keep_style(row.cells[7], Tools.formatPrice(_fmt_dec_comma(sum_w), symbCurrency))
             if docxData[4]:
                 _set_cell_text_keep_style(row.cells[8], it["days"])
 
@@ -340,8 +361,8 @@ class createTextFile:
                         "{{UNIT}}": it["unit"],
                         "{{QTY}}": str(it["qty"]),
                         "{{PRICE}}": fmt_money_with_symbol(price),
-                        "{{SUM_WO}}": currency[0] + _fmt_dec_comma(sum_wo),
-                        "{{SUM_W}}": currency[0] + _fmt_dec_comma(sum_w),
+                        "{{SUM_WO}}": fmt_money_with_symbol(_fmt_dec_comma(sum_wo)),
+                        "{{SUM_W}}": fmt_money_with_symbol(_fmt_dec_comma(sum_w)),
                     }
                     if docxData[4]:
                         row_map["{{DAYS}}"] = it["days"]
@@ -352,10 +373,10 @@ class createTextFile:
             total_row = table.rows[_find_total_row_idx(table)]
             if ("<<total_wo>>" in _row_text_lower(total_row)) or ("{{total_wo}}" in _row_text_lower(total_row)):
                 totals_map = {
-                    "<<TOTAL_WO>>": currency[0] + _fmt_dec_comma(total_wo),
-                    "<<TOTAL_W>>": currency[0] + _fmt_dec_comma(total_w),
-                    "{{TOTAL_WO}}": currency[0] + _fmt_dec_comma(total_wo),
-                    "{{TOTAL_W}}": currency[0] + _fmt_dec_comma(total_w),
+                    "<<TOTAL_WO>>": Tools.formatPrice(_fmt_dec_comma(total_wo), symbCurrency),
+                    "<<TOTAL_W>>": Tools.formatPrice(_fmt_dec_comma(total_w), symbCurrency),
+                    "{{TOTAL_WO}}": Tools.formatPrice(_fmt_dec_comma(total_wo), symbCurrency),
+                    "{{TOTAL_W}}": Tools.formatPrice(_fmt_dec_comma(total_w), symbCurrency),
                 }
                 _fill_row_by_tokens(total_row, totals_map)
             else:
@@ -372,7 +393,7 @@ class createTextFile:
             total_wo, vat_sum, total_w = fill_products_table(doc, ITEMS)
             mapping = dict(PLACEHOLDERS)
             mapping["<<TOTAL_WO_CNY>>"] = fmt_money_no_symbol(total_wo)
-            mapping["<<VAT_CNY>>"] = fmt_money_no_symbol(vat_sum)
+            mapping["<<VAT_CNY>>"] = fmt_money_no_symbol(round(vat_sum, 2))
             mapping["<<TOTAL_W_CNY>>"] = fmt_money_no_symbol(total_w)
             
             replace_placeholders_everywhere(doc, mapping)
@@ -396,7 +417,9 @@ class createExcelFile:
         wb = load_workbook(newFilePath)
         workSheet = wb.active
         
+        print(data)
         dataTable = data[0]
+        params = data[1]
         for row in range(len(dataTable)):
             currency, unitPrice = Tools.parsePrice(dataTable[row][5])
             workSheet[f'A{row + 2 + indent}'] = int(dataTable[row][0])
@@ -431,11 +454,11 @@ class createExcelFile:
             workSheet[f'I{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
             workSheet[f'J{row + 2 + indent}'] = f'=I{row + 2 + indent}/E{row + 2 + indent}'
             workSheet[f'J{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
-            workSheet[f'K{row + 2 + indent}'] = f'=ROUND(J{row + 2 + indent}*1.25, 2)'
+            workSheet[f'K{row + 2 + indent}'] = f'=ROUND(J{row + 2 + indent}*{params[2]}, 2)'
             workSheet[f'K{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
             workSheet[f'L{row + 2 + indent}'] = f'=K{row + 2 + indent}*E{row + 2 + indent}'
             workSheet[f'L{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
-            workSheet[f'M{row + 2 + indent}'] = f'=L{row + 2 + indent}*1.2'
+            workSheet[f'M{row + 2 + indent}'] = f'=L{row + 2 + indent}*{1+(float(Tools.load_json(Config.vars_path)['parameters']['1'][1])/100)}'
             workSheet[f'M{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
             workSheet[f'N{row + 2 + indent}'] = dataTable[row][6]
             workSheet[f'O{row + 2 + indent}'] = dataTable[row][7]

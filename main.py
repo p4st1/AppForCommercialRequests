@@ -57,6 +57,9 @@ class mainWindow(QMainWindow):
         self.ui.exportMenuButton.triggered.connect(self.exportDatabase)
         self.ui.importMenuButton.triggered.connect(self.importDatabase)
         self.ui.clearCacheMenuButton.triggered.connect(self.clear_cache)
+        self.ui.changeFormButton.triggered.connect(self.testFeature)
+
+        self.ui.changeFormButton.setChecked(Config.settings['testFeature'])
         
         self.ui.helpMenuButton.triggered.connect(self.show_help)
         self.ui.aboutMenuButton.triggered.connect(self.show_about)
@@ -85,6 +88,17 @@ class mainWindow(QMainWindow):
         else:
             self.ui.tabWidget.setCurrentIndex(1)
 
+    def testFeature(self, checked):
+        QMessageBox.about(
+            self,
+            "ВНИМАНИЕ",
+            "Для включения тестовой функции, необходимо перезапустить приложение"
+            "<br>*Возможны неточности в склонении слов</br>"
+        )
+        print(Config.settings)
+        Config.settings['testFeature'] = checked
+        
+        
     def clear_cache(self):
         dst_dir = Tool.user_data_dir('MyApp')
         dst_dir.mkdir(parents=True, exist_ok=True)
@@ -161,7 +175,6 @@ class mainWindow(QMainWindow):
         msg.exec()
     
     def show_about(self):
-        """Показать информацию о программе"""
         QMessageBox.about(
             self,
             "О программе",
@@ -497,7 +510,7 @@ class mainWindow(QMainWindow):
             
         
         exportExcelFile((tableData, 
-                         (self.ui.logisticVar.currentIndex(), self.ui.logisticNum.text()),
+                         (self.ui.logisticVar.currentIndex(), self.ui.logisticNum.text(), self.ui.markupLine.text()),
                          self.ui.customLine.text(),
                          sum(self.tableData['totalPrice'])))
 

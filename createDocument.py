@@ -86,7 +86,8 @@ class mainWindow(QMainWindow):
                             extraData, 
                             str(id), 
                             self.ui.radioButton.isChecked(),
-                            self.pay[self.payInd]))
+                            self.pay[self.payInd]),
+                           )
             self.close()
         
     def getExtraData(self):

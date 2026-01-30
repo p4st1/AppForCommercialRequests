@@ -15,6 +15,7 @@
         "closeTable": true,
         "autoFill": true,
         "openUpdateTab": true,
-        "openLastTab": true
+        "openLastTab": true,
+        "testFeature": false
     }
 }

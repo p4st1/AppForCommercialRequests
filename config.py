@@ -6,7 +6,7 @@ class Config:
         }
     
     isTableOpened = False
-    
+
     settings = {
         
     }
@@ -14,7 +14,7 @@ class Config:
     config = {
         
     }
-    
+
     cfg_path = ''
     db_path = ''
     vars_path = ''
@@ -43,3 +43,5 @@ class Config:
               ((u'евроцент', u'евроцента', u'евроцентов'), 'f')
         )
     }
+    
+    testFeature = False
