@@ -458,7 +458,7 @@ class createExcelFile:
             workSheet[f'K{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
             workSheet[f'L{row + 2 + indent}'] = f'=K{row + 2 + indent}*E{row + 2 + indent}'
             workSheet[f'L{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
-            workSheet[f'M{row + 2 + indent}'] = f'=L{row + 2 + indent}*{1+(float(Tools.load_json(Config.vars_path)['parameters']['1'][1])/100)}'
+            workSheet[f'M{row + 2 + indent}'] = f"=L{row + 2 + indent}*{1+(float(Tools.load_json(Config.vars_path)['parameters']['1'][1])/100)}"
             workSheet[f'M{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
             workSheet[f'N{row + 2 + indent}'] = dataTable[row][6]
             workSheet[f'O{row + 2 + indent}'] = dataTable[row][7]
