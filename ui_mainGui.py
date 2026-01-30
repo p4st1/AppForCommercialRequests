@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'maingui.ui'
+## Form generated from reading UI file 'mainGui.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.8.0
+## Created by: Qt User Interface Compiler version 6.10.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -33,9 +33,6 @@ class Ui_MainWindow(object):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(MainWindow.sizePolicy().hasHeightForWidth())
         MainWindow.setSizePolicy(sizePolicy)
-        font = QFont()
-        font.setFamilies([u"Segoe UI"])
-        MainWindow.setFont(font)
         MainWindow.setAutoFillBackground(False)
         MainWindow.setStyleSheet(u"QQMainWindow {\n"
 "    background-color: #f5f7fa;\n"
@@ -495,15 +492,15 @@ class Ui_MainWindow(object):
         MainWindow.setAnimated(False)
         self.openTableMenuButton = QAction(MainWindow)
         self.openTableMenuButton.setObjectName(u"openTableMenuButton")
-        font1 = QFont()
-        font1.setFamilies([u"Inter"])
-        self.openTableMenuButton.setFont(font1)
+        font = QFont()
+        font.setFamilies([u"Inter"])
+        self.openTableMenuButton.setFont(font)
         self.createDocMenuButton = QAction(MainWindow)
         self.createDocMenuButton.setObjectName(u"createDocMenuButton")
         self.editTableButton = QAction(MainWindow)
         self.editTableButton.setObjectName(u"editTableButton")
-        font2 = QFont()
-        self.editTableButton.setFont(font2)
+        font1 = QFont()
+        self.editTableButton.setFont(font1)
         self.editParamsButton = QAction(MainWindow)
         self.editParamsButton.setObjectName(u"editParamsButton")
         self.action_3 = QAction(MainWindow)
@@ -512,13 +509,13 @@ class Ui_MainWindow(object):
         self.suppliersMenu.setObjectName(u"suppliersMenu")
         self.suppliersMenuButton = QAction(MainWindow)
         self.suppliersMenuButton.setObjectName(u"suppliersMenuButton")
-        self.suppliersMenuButton.setFont(font2)
+        self.suppliersMenuButton.setFont(font1)
         self.helpMenuButton = QAction(MainWindow)
         self.helpMenuButton.setObjectName(u"helpMenuButton")
-        self.helpMenuButton.setFont(font2)
+        self.helpMenuButton.setFont(font1)
         self.settingsMenuButton = QAction(MainWindow)
         self.settingsMenuButton.setObjectName(u"settingsMenuButton")
-        self.settingsMenuButton.setFont(font1)
+        self.settingsMenuButton.setFont(font)
         self.exportMenuButton = QAction(MainWindow)
         self.exportMenuButton.setObjectName(u"exportMenuButton")
         self.importMenuButton = QAction(MainWindow)
@@ -539,7 +536,9 @@ class Ui_MainWindow(object):
         self.centralwidget.setObjectName(u"centralwidget")
         sizePolicy.setHeightForWidth(self.centralwidget.sizePolicy().hasHeightForWidth())
         self.centralwidget.setSizePolicy(sizePolicy)
-        self.centralwidget.setFont(font)
+        font2 = QFont()
+        font2.setFamilies([u"Segoe UI"])
+        self.centralwidget.setFont(font2)
         self.centralwidget.setStyleSheet(u"QMainWindow {\n"
 "    background-color: #f5f7fa;\n"
 "}\n"
@@ -1039,7 +1038,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_4.setContentsMargins(0, 0, 0, 0)
         self.tableWidget_3 = QTableWidget(self.tab_3)
         self.tableWidget_3.setObjectName(u"tableWidget_3")
-        self.tableWidget_3.setFont(font1)
+        self.tableWidget_3.setFont(font)
 
         self.verticalLayout_4.addWidget(self.tableWidget_3)
 
@@ -1102,7 +1101,7 @@ class Ui_MainWindow(object):
         sizePolicy2.setVerticalStretch(0)
         sizePolicy2.setHeightForWidth(self.KpTable.sizePolicy().hasHeightForWidth())
         self.KpTable.setSizePolicy(sizePolicy2)
-        self.KpTable.setFont(font1)
+        self.KpTable.setFont(font)
         self.KpTable.setStyleSheet(u"QTableWidget {\n"
 "    background-color: #ffffff;\n"
 "    gridline-color: #dee2e6;\n"
@@ -1368,7 +1367,7 @@ class Ui_MainWindow(object):
         sizePolicy2.setHeightForWidth(self.logisticVar.sizePolicy().hasHeightForWidth())
         self.logisticVar.setSizePolicy(sizePolicy2)
         self.logisticVar.setMinimumSize(QSize(0, 30))
-        self.logisticVar.setFont(font2)
+        self.logisticVar.setFont(font1)
         self.logisticVar.setStyleSheet(u"QLabel {\n"
 "    color: #2c3e50;\n"
 "    font-size: 12px;\n"
@@ -1418,7 +1417,7 @@ class Ui_MainWindow(object):
         sizePolicy5.setHeightForWidth(self.logisticNum.sizePolicy().hasHeightForWidth())
         self.logisticNum.setSizePolicy(sizePolicy5)
         self.logisticNum.setMinimumSize(QSize(120, 18))
-        self.logisticNum.setFont(font2)
+        self.logisticNum.setFont(font1)
         self.logisticNum.setAutoFillBackground(False)
         self.logisticNum.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
 "    background-color: white;\n"
@@ -1478,7 +1477,7 @@ class Ui_MainWindow(object):
         sizePolicy7.setVerticalStretch(0)
         sizePolicy7.setHeightForWidth(self.customLine.sizePolicy().hasHeightForWidth())
         self.customLine.setSizePolicy(sizePolicy7)
-        self.customLine.setFont(font2)
+        self.customLine.setFont(font1)
         self.customLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
 "    background-color: white;\n"
 "    border: 1px solid #dee2e6;\n"
@@ -1501,7 +1500,7 @@ class Ui_MainWindow(object):
         self.funcButtons.addLayout(self.verticalLayout_7, 0, 4, 1, 1)
 
         self.verticalLayout_9 = QVBoxLayout()
-        self.verticalLayout_9.setSpacing(6)
+        self.verticalLayout_9.setSpacing(10)
         self.verticalLayout_9.setObjectName(u"verticalLayout_9")
         self.verticalLayout_9.setContentsMargins(-1, -1, 0, -1)
         self.openTableButton = QPushButton(self.centralwidget)
@@ -1614,7 +1613,7 @@ class Ui_MainWindow(object):
         self.funcButtons.addWidget(self.line1, 0, 1, 1, 1)
 
         self.verticalLayout_8 = QVBoxLayout()
-        self.verticalLayout_8.setSpacing(6)
+        self.verticalLayout_8.setSpacing(10)
         self.verticalLayout_8.setObjectName(u"verticalLayout_8")
         self.verticalLayout_8.setContentsMargins(-1, -1, 0, -1)
         self.createDocButton = QPushButton(self.centralwidget)
@@ -1705,7 +1704,7 @@ class Ui_MainWindow(object):
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 1440, 31))
+        self.menubar.setGeometry(QRect(0, 0, 1440, 27))
         sizePolicy8 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum)
         sizePolicy8.setHorizontalStretch(0)
         sizePolicy8.setVerticalStretch(0)
@@ -1737,7 +1736,7 @@ class Ui_MainWindow(object):
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
-        self.statusbar.setFont(font2)
+        self.statusbar.setFont(font1)
         MainWindow.setStatusBar(self.statusbar)
 
         self.menubar.addAction(self.FileMenu.menuAction())
@@ -1780,7 +1779,7 @@ class Ui_MainWindow(object):
         self.editParamsButton.setText(QCoreApplication.translate("MainWindow", u"\u0420\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0435", None))
         self.action_3.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438", None))
         self.suppliersMenu.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0438", None))
-        self.suppliersMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0430\u0437\u0447\u0438\u043a\u0438", None))
+        self.suppliersMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0438", None))
         self.helpMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043f\u0440\u0430\u0432\u043a\u0430", None))
         self.settingsMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438...", None))
         self.exportMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0411\u0414...", None))
@@ -1829,57 +1828,70 @@ class Ui_MainWindow(object):
 "hr { height: 1px; border-width: 0; }\n"
 "li.unchecked::marker { content: \"\\2610\"; }\n"
 "li.checked::marker { content: \"\\2612\"; }\n"
-"</style></head><body style=\" font-family:'Segoe UI'; font-size:9pt; font-weight:400; font-style:normal;\">\n"
-"<p align=\"center\" style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">AppForCommercialRequests</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt; font-weight:700;\">\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435  </span><a href=\"https://github.com/p4st1/AppForCommercialRequests/releases/tag/v"
-                        "1.0.2.30\"><span style=\" font-size:12pt; text-decoration: underline; color:#262524;\">1.0.4</span></a></p>\n"
-"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">1. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0432 Excel</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">2. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0432 Docx - &quot;\u0423\u0441\u043b\u043e\u0432\u0438\u044f \u043e\u043f\u043b\u0430\u0442\u044b&quot;</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" fon"
-                        "t-size:12pt;\">3. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430 \u043e\u0448\u0438\u0431\u043a\u0430 \u0441 \u043e\u0447\u0438\u0441\u0442\u043a\u043e\u0439 \u0444\u0430\u0439\u043b\u043e\u0432 \u043a\u043e\u043d\u0444\u0438\u0433\u0430 \u0438 \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445<br />4. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e\u0435 \u0447\u0442\u0435\u043d\u0438\u0435 \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445</span></p>\n"
-"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">17.01.2026<br /></span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:"
-                        "0; text-indent:0px;\"><span style=\" font-size:12pt; font-weight:700;\">\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435  </span><a href=\"https://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30\"><span style=\" font-size:12pt; text-decoration: underline; color:#262524;\">1.0.3</span></a></p>\n"
-"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">1. \u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u0430\u044f &quot;\u041d\u0430\u0446\u0435\u043d\u043a\u0430&quot;</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12"
-                        "pt;\">2. \u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u0432 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0435:<br />	- \u041d\u043e\u0432\u0430\u044f \u0432\u043a\u043b\u0430\u0434\u043a\u0430 &quot;\u041e\u0431\u0432\u043e\u0432\u043b\u0435\u043d\u0438\u044f&quot; \u0441 \u043f\u043e\u043b\u0435\u0437\u043d\u043e\u0439 \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u0435\u0439 \u043e \u043d\u043e\u0432\u044b\u0445 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f\u0445 </span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">	- \u041f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u0430\u044f &quot;\u041d\u0430\u0446\u0435\u043d\u043a\u0430&quot; \u0442\u0435\u043f\u0435\u0440\u044c \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u0443\u0435\u043c\u0430\u044f</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -"
-                        "qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">	- \u041d\u043e\u0432\u0430\u044f \u043a\u043d\u043e\u043f\u043a\u0430 &quot;\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438&quot; -&gt; &quot;\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u043a\u044d\u0448&quot;</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">3. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u0437\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432\u043e \u0432\u043a\u043b\u0430\u0434\u043a\u0435 &quot;\u041f\u043e\u043b\u043d\u0430\u044f \u0442\u0430\u0431\u043b\u0438\u0446\u0430&quot;</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">4. \u0418\u0437\u043c\u0435"
-                        "\u043d\u0435\u043d\u043e \u0444\u043e\u0440\u043c\u0430\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435 \u0438\u0442\u043e\u0433\u043e\u0432\u043e\u0433\u043e \u041a\u041f</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">5. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u0437\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435 \u0438\u0442\u043e\u0433\u043e\u0432\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432 \u041a\u041f:</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">6. \u041d\u043e\u0432\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438 \u0432 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430\u0445:<br />	- \u041e\u0442\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0443\u044e \u0442"
-                        "\u0430\u0431\u043b\u0438\u0446\u0443 - \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u044e\u044e \u0442\u0430\u0431\u043b\u0438\u0446\u0443, \u043e\u0442\u043a\u0440\u044b\u0442\u0443\u044e \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u043c</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">	- \u041f\u0440\u0438 \u043e\u0442\u043a\u0440\u044b\u0442\u0438\u0438 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f, \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u0432\u043a\u043b\u0430\u0434\u043a\u0443 &quot;\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f&quot; - \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u0432\u043a\u043b\u0430\u0434\u043a\u0443 \u0441 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435\u043c \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f \u043d\u0430"
-                        " \u0433\u043b\u0430\u0432\u043d\u043e\u043c \u044d\u043a\u0440\u0430\u043d\u0435</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">	- \u0412\u044b\u0431\u043e\u0440 \u043e\u0442\u0441\u0442\u0443\u043f\u0430 \u043f\u0440\u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0438 Excel - \u0438\u0437\u043c\u0435\u043d\u044f\u0435\u0442 \u043e\u0442\u0441\u0442\u0443\u043f \u0443 \u0438\u0442\u043e\u0433\u043e\u0432\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432 Excel \u043d\u0430 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439 \u043e\u0442\u0441\u0442\u0443\u043f</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">7. \u0421\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0435 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u0438\u0445 \u0444\u0430\u0439"
-                        "\u043b\u043e\u0432 Excel</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">8. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0435 \u043f\u043e\u043b\u0430 \u0437\u0430\u043a\u0430\u0437\u0447\u0438\u043a\u0430</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">9. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0430 \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u043e\u0439 \u043b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0438</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">10. \u0418\u0442\u043e\u0433\u043e\u0432\u0430\u044f "
-                        "\u0441\u0443\u043c\u043c\u0430 \u0432 Docx \u0442\u0435\u043f\u0435\u0440\u044c \u043f\u0440\u043e\u043f\u0438\u0441\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u043f\u0440\u043e\u043f\u0438\u0441\u044c\u044e</span></p>\n"
-"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt; font-weight:700;\">\u0420\u0435\u043b\u0438\u0437  </span><a href=\"https://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30\"><span style=\" font-size:12pt; text-decoration: underline; color:#262524;\">1.0.2</span></a></p>\n"
-"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margi"
-                        "n-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">1. Excel</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">   - \u041f\u043e\u044f\u0432\u0438\u043b\u0430\u0441\u044c \u043a\u043d\u043e\u043f\u043a\u0430, \u043f\u043e\u0437\u0432\u043e\u043b\u044f\u044e\u0449\u0430\u044f \u0441\u0444\u043e\u0440\u043c\u0438\u0432\u0440\u043e\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443 \u0441 \u0440\u0430\u0441\u0447\u0435\u0442\u0430\u043c\u0438 \u0438 \u0441\u043a\u0430\u0447\u0430\u0442\u044c \u0444\u0430\u0439\u043b \u0441 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u0435\u043c .excel.</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">2. \u041d\u043e\u0432\u044b\u0435 \u0432\u0435\u0440\u0441\u0438\u0438"
-                        " \u0434\u043b\u044f Macos ARM64x \u0438 MacOS x86 (x64)</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">3. \u041d\u043e\u0432\u044b\u0435 \u043f\u0443\u043d\u043a\u0442\u044b \u0432 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430\u0445:</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">   - \u041f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u0432\u043a\u043b\u0430\u0434\u043a\u0438 \u043d\u0430 \u0430\u043a\u0442\u0438\u0432\u043d\u0443\u044e, \u043f\u0440\u0438 \u043e\u0442\u043a\u0440\u044b\u0442\u0438\u0438 \u0442\u0430\u0431\u043b\u0438\u0446\u044b</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">   - \u0414\u0438\u0440\u0435"
-                        "\u043a\u0442\u043e\u0440\u0438\u044f \u0434\u043b\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f Excel \u0442\u0430\u0431\u043b\u0438\u0446</span></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:12pt;\">4. \u041a\u043d\u043e\u043f\u043a\u0438 \u0432 \u0432\u0435\u0440\u0445\u043d\u0435\u043c \u043c\u0435\u043d\u044e \u0434\u0443\u0431\u043b\u0438\u0440\u0443\u044e\u0442 \u0444\u0443\u043d\u043a\u0446\u0438\u043e\u043d\u0430\u043b \u043d\u0438\u0436\u043d\u0438\u0445 \u0444\u0443\u043d\u043a\u0446\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u044b\u0445 \u043a\u043d\u043e\u043f\u043e\u043a</span></p>\n"
-"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-size:12pt;\"><br /></p>\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:"
-                        "0px;\"><span style=\" font-size:12pt;\">18.12.2025</span></p></body></html>", None))
+"</style></head><body style=\" font-family:'.AppleSystemUIFont'; font-size:13pt; font-weight:400; font-style:normal;\">\n"
+"<p align=\"center\" style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">AppForCommercialRequests</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt; font-weight:700;\">\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435  </span><a href=\"https"
+                        "://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30\"><span style=\" font-family:'Segoe UI'; font-size:12pt; text-decoration: underline; color:#262524;\">1.0.5</span></a></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Segoe UI'; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">1. \u041f\u0435\u0440\u0435\u0440\u0430\u0431\u043e\u0442\u0430\u043d\u0430 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0430 \u0432\u0430\u043b\u044e\u0442 \u0432 \u0438\u043c\u043f\u043e\u0440\u0442\u0435 \u0438 \u0432\u044b\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u0438 \u0442\u0430\u0431\u043b\u0438\u0446\u044b</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent"
+                        ":0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">2. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0432 \u0432\u044b\u0432\u043e\u0434\u0435 \u0432\u0430\u043b\u044e\u0442\u044b \u0432 Docx </span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">3. \u0421\u0447\u0435\u0442\u0447\u0438\u043a \u041a\u041f \u0442\u0435\u043f\u0435\u0440\u044c \u0441\u0431\u0440\u0430\u0441\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u0441 \u043a\u0430\u0436\u0434\u044b\u043c \u043d\u043e\u0432\u044b\u043c \u0434\u043d\u0435\u043c</p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">4. \u0414\u0432\u0430 \u043d\u043e\u0432\u044b\u0445 \u0448\u0430\u0431\u043b\u043e\u043d\u0430 template.docx \u0438 template_short.docx</p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px"
+                        ";\">5. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e &quot;\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438&quot; - &quot;\u0417\u0430\u043a\u0430\u0437\u0447\u0438\u043a\u0438&quot; -&gt; &quot;\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438&quot; - &quot;\u041f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0438&quot;</p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">6. \u041d\u043e\u0432\u0430\u044f \u043b\u043e\u0433\u0438\u043a\u0430 \u0437\u0430\u043e\u043f\u043b\u043d\u0435\u043d\u0438\u044f Docx</p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">30.01.2026</span><span style=\" font-family:'Segoe UI'; font"
+                        "-size:12pt; font-weight:700;\"><br /><br />\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435  </span><a href=\"https://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30\"><span style=\" font-family:'Segoe UI'; font-size:12pt; text-decoration: underline; color:#262524;\">1.0.4</span></a></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Segoe UI'; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">1. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0432 Excel</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">2. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435"
+                        "\u043d\u0438\u044f \u0432 Docx - &quot;\u0423\u0441\u043b\u043e\u0432\u0438\u044f \u043e\u043f\u043b\u0430\u0442\u044b&quot;</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">3. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430 \u043e\u0448\u0438\u0431\u043a\u0430 \u0441 \u043e\u0447\u0438\u0441\u0442\u043a\u043e\u0439 \u0444\u0430\u0439\u043b\u043e\u0432 \u043a\u043e\u043d\u0444\u0438\u0433\u0430 \u0438 \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445<br />4. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e\u0435 \u0447\u0442\u0435\u043d\u0438\u0435 \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445</span></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Se"
+                        "goe UI'; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">17.01.2026<br /></span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt; font-weight:700;\">\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435  </span><a href=\"https://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30\"><span style=\" font-family:'Segoe UI'; font-size:12pt; text-decoration: underline; color:#262524;\">1.0.3</span></a></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Segoe UI'; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent"
+                        ":0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">1. \u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u0430\u044f &quot;\u041d\u0430\u0446\u0435\u043d\u043a\u0430&quot;</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">2. \u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u0432 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0435:<br />	- \u041d\u043e\u0432\u0430\u044f \u0432\u043a\u043b\u0430\u0434\u043a\u0430 &quot;\u041e\u0431\u0432\u043e\u0432\u043b\u0435\u043d\u0438\u044f&quot; \u0441 \u043f\u043e\u043b\u0435\u0437\u043d\u043e\u0439 \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u0435\u0439 \u043e \u043d\u043e\u0432\u044b\u0445 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f\u0445 </span></p>\n"
+"<p style=\" marg"
+                        "in-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">	- \u041f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u0430\u044f &quot;\u041d\u0430\u0446\u0435\u043d\u043a\u0430&quot; \u0442\u0435\u043f\u0435\u0440\u044c \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u0443\u0435\u043c\u0430\u044f</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">	- \u041d\u043e\u0432\u0430\u044f \u043a\u043d\u043e\u043f\u043a\u0430 &quot;\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438&quot; -&gt; &quot;\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u043a\u044d\u0448&quot;</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">3. \u0418\u0441\u043f"
+                        "\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u0437\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432\u043e \u0432\u043a\u043b\u0430\u0434\u043a\u0435 &quot;\u041f\u043e\u043b\u043d\u0430\u044f \u0442\u0430\u0431\u043b\u0438\u0446\u0430&quot;</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">4. \u0418\u0437\u043c\u0435\u043d\u0435\u043d\u043e \u0444\u043e\u0440\u043c\u0430\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435 \u0438\u0442\u043e\u0433\u043e\u0432\u043e\u0433\u043e \u041a\u041f</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">5. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u0437\u0430\u043f\u043e\u043b"
+                        "\u043d\u0435\u043d\u0438\u0435 \u0438\u0442\u043e\u0433\u043e\u0432\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432 \u041a\u041f:</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">6. \u041d\u043e\u0432\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438 \u0432 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430\u0445:<br />	- \u041e\u0442\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0443\u044e \u0442\u0430\u0431\u043b\u0438\u0446\u0443 - \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u044e\u044e \u0442\u0430\u0431\u043b\u0438\u0446\u0443, \u043e\u0442\u043a\u0440\u044b\u0442\u0443\u044e \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u043c</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right"
+                        ":0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">	- \u041f\u0440\u0438 \u043e\u0442\u043a\u0440\u044b\u0442\u0438\u0438 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f, \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u0432\u043a\u043b\u0430\u0434\u043a\u0443 &quot;\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f&quot; - \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u0432\u043a\u043b\u0430\u0434\u043a\u0443 \u0441 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435\u043c \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f \u043d\u0430 \u0433\u043b\u0430\u0432\u043d\u043e\u043c \u044d\u043a\u0440\u0430\u043d\u0435</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">	- \u0412\u044b\u0431\u043e\u0440 \u043e\u0442\u0441\u0442\u0443\u043f\u0430 \u043f\u0440\u0438 \u0441\u043e\u0445"
+                        "\u0440\u0430\u043d\u0435\u043d\u0438\u0438 Excel - \u0438\u0437\u043c\u0435\u043d\u044f\u0435\u0442 \u043e\u0442\u0441\u0442\u0443\u043f \u0443 \u0438\u0442\u043e\u0433\u043e\u0432\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432 Excel \u043d\u0430 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439 \u043e\u0442\u0441\u0442\u0443\u043f</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">7. \u0421\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0435 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u0438\u0445 \u0444\u0430\u0439\u043b\u043e\u0432 Excel</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">8. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438"
+                        "\u0435 \u043f\u043e\u043b\u0430 \u0437\u0430\u043a\u0430\u0437\u0447\u0438\u043a\u0430</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">9. \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0430 \u043f\u0435\u0440\u0435\u043c\u0435\u043d\u043d\u043e\u0439 \u043b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0438</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">10. \u0418\u0442\u043e\u0433\u043e\u0432\u0430\u044f \u0441\u0443\u043c\u043c\u0430 \u0432 Docx \u0442\u0435\u043f\u0435\u0440\u044c \u043f\u0440\u043e\u043f\u0438\u0441\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u043f\u0440\u043e\u043f\u0438\u0441\u044c\u044e</span></p>\n"
+"<p style=\"-qt-paragraph-type:empty; marg"
+                        "in-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Segoe UI'; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt; font-weight:700;\">\u0420\u0435\u043b\u0438\u0437  </span><a href=\"https://github.com/p4st1/AppForCommercialRequests/releases/tag/v1.0.2.30\"><span style=\" font-family:'Segoe UI'; font-size:12pt; text-decoration: underline; color:#262524;\">1.0.2</span></a></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Segoe UI'; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">1. Excel</span></p>\n"
+"<p style=\" margin"
+                        "-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">   - \u041f\u043e\u044f\u0432\u0438\u043b\u0430\u0441\u044c \u043a\u043d\u043e\u043f\u043a\u0430, \u043f\u043e\u0437\u0432\u043e\u043b\u044f\u044e\u0449\u0430\u044f \u0441\u0444\u043e\u0440\u043c\u0438\u0432\u0440\u043e\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443 \u0441 \u0440\u0430\u0441\u0447\u0435\u0442\u0430\u043c\u0438 \u0438 \u0441\u043a\u0430\u0447\u0430\u0442\u044c \u0444\u0430\u0439\u043b \u0441 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u0435\u043c .excel.</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">2. \u041d\u043e\u0432\u044b\u0435 \u0432\u0435\u0440\u0441\u0438\u0438 \u0434\u043b\u044f Macos ARM64x \u0438 MacOS x86 (x64)</span></p>\n"
+"<p style=\" margin-top:0p"
+                        "x; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">3. \u041d\u043e\u0432\u044b\u0435 \u043f\u0443\u043d\u043a\u0442\u044b \u0432 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430\u0445:</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">   - \u041f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u0432\u043a\u043b\u0430\u0434\u043a\u0438 \u043d\u0430 \u0430\u043a\u0442\u0438\u0432\u043d\u0443\u044e, \u043f\u0440\u0438 \u043e\u0442\u043a\u0440\u044b\u0442\u0438\u0438 \u0442\u0430\u0431\u043b\u0438\u0446\u044b</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">   - \u0414\u0438\u0440\u0435\u043a\u0442\u043e\u0440"
+                        "\u0438\u044f \u0434\u043b\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f Excel \u0442\u0430\u0431\u043b\u0438\u0446</span></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">4. \u041a\u043d\u043e\u043f\u043a\u0438 \u0432 \u0432\u0435\u0440\u0445\u043d\u0435\u043c \u043c\u0435\u043d\u044e \u0434\u0443\u0431\u043b\u0438\u0440\u0443\u044e\u0442 \u0444\u0443\u043d\u043a\u0446\u0438\u043e\u043d\u0430\u043b \u043d\u0438\u0436\u043d\u0438\u0445 \u0444\u0443\u043d\u043a\u0446\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u044b\u0445 \u043a\u043d\u043e\u043f\u043e\u043a</span></p>\n"
+"<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:'Segoe UI'; font-size:12pt;\"><br /></p>\n"
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-bloc"
+                        "k-indent:0; text-indent:0px;\"><span style=\" font-family:'Segoe UI'; font-size:12pt;\">18.12.2025</span></p></body></html>", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f", None))
         self.label_3.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0446\u0435\u043d\u043a\u0430", None))
         self.markupLine.setText("")
