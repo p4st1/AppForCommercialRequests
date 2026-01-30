@@ -130,6 +130,13 @@ class DatabaseTools:
         else:
             return line[-1], line[:-1]
         
+    @staticmethod
+    def formatPrice(price, currency):
+        if currency == '₽':
+            return price + currency
+        if currency in ['$', '¥', '€']:
+            return currency + price
+        
 class Tools:
     def __init__(self):
         self.units = (

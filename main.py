@@ -104,6 +104,7 @@ class mainWindow(QMainWindow):
         try:
             QDesktopServices.openUrl(QUrl(url))
         except Exception as e:
+            Tool.write_log(f'{e}')
             print(f"{e}")
             
     def show_help(self):
@@ -241,7 +242,6 @@ class mainWindow(QMainWindow):
             
             try:
                 df = pd.read_csv(filename, header=None, sep=";")
-                print(df)
                 df.columns = [f"col{i}" for i in range(len(df.columns))]
                 df = df.fillna("")
                 self.rows = len(df["col0"])
@@ -259,15 +259,20 @@ class mainWindow(QMainWindow):
                     colNum = 0
                     for col in df.columns:
                         if df[col][rowNum]:
-                            self.ui.KpTable.setItem(
-                                rowNum - 1, colNum, QTableWidgetItem(str(df[col][rowNum]))
-                            )
+                            if colNum == 5:
+                                currency, unitPrice = self.parsePrice(str(df["col5"][rowNum]))
+                                self.ui.KpTable.setItem(
+                                    rowNum - 1, colNum, QTableWidgetItem(Tool.formatPrice(unitPrice, currency))
+                                )
+                            else:
+                                self.ui.KpTable.setItem(
+                                    rowNum - 1, colNum, QTableWidgetItem(str(df[col][rowNum]))
+                                )
                         colNum += 1
 
                     self.tableData["amount"].append(int(df["col4"][rowNum][0]))
 
                     currency, unitPrice = self.parsePrice(str(df["col5"][rowNum]))
-                    print(currency, unitPrice)
                     self.tableData["currency"].append(currency)
                     self.tableData["unitPrice"].append(
                         float(unitPrice.replace(",", "."))
@@ -282,7 +287,8 @@ class mainWindow(QMainWindow):
                         rowNum - 1,
                         6,
                         QTableWidgetItem(
-                            f"{self.tableData['currency'][rowNum - 1]}{str(self.tableData['totalPrice'][rowNum - 1]).replace('.', ',')}"
+                            Tool.formatPrice(str(self.tableData['totalPrice'][rowNum - 1]).replace('.', ','), 
+                                             self.tableData['currency'][rowNum - 1])
                         ),
                     )
                     
@@ -340,7 +346,6 @@ class mainWindow(QMainWindow):
         
     def calculating(self):
         self.paramsData = Tool.load_json(Config.vars_path)
-            
         for rowNum in range(self.rows - 1):
             price =  round(Tool.evalWithVars(f"{self.tableData['logistic'][rowNum]}*{self.formulaCustom}") / self.tableData["amount"][rowNum], 2)
             realPrice = round(price * float(self.ui.markupLine.text()), 2)
@@ -348,22 +353,32 @@ class mainWindow(QMainWindow):
                 rowNum,
                 8,
                 QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}" + str(Tool.evalWithVars(f"{self.tableData['logistic'][rowNum]}*{self.formulaCustom}")).replace('.', ',')
+                    Tool.formatPrice(str(Tool.evalWithVars(f"{self.tableData['logistic'][rowNum]}*{self.formulaCustom}")).replace('.', ','), 
+                                     self.tableData['currency'][rowNum])
                 ),
             )
+    
+
             self.ui.KpTable.setItem(
-                rowNum, 9, QTableWidgetItem(f"{self.tableData['currency'][rowNum]}{str(price).replace('.', ',')}")
+                rowNum, 9, QTableWidgetItem(
+                    Tool.formatPrice(str(price).replace('.', ','), 
+                                    self.tableData['currency'][rowNum])
+            ),
             )
 
             self.ui.KpTable.setItem(
-                rowNum, 10, QTableWidgetItem(f"{self.tableData['currency'][rowNum]}{str(realPrice).replace('.', ',')}")
+                rowNum, 10, QTableWidgetItem(
+                    Tool.formatPrice(str(realPrice).replace('.', ','),
+                                    self.tableData['currency'][rowNum])
+            ),
             )
 
             self.ui.KpTable.setItem(
                 rowNum,
                 11,
                 QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}{str(round(realPrice * self.tableData['amount'][rowNum], 2)).replace('.', ',')}"
+                    Tool.formatPrice(str(round(realPrice * self.tableData['amount'][rowNum], 2)).replace('.', ','),
+                                    self.tableData['currency'][rowNum])
                 ),
             )
 
@@ -376,7 +391,8 @@ class mainWindow(QMainWindow):
                 rowNum,
                 12,
                 QTableWidgetItem(
-                    f"{self.tableData['currency'][rowNum]}{str(round(realPrice * self.tableData['amount'][rowNum] * temp_var, 2)).replace('.', ',')}"
+                    Tool.formatPrice(str(round(realPrice * self.tableData['amount'][rowNum] * temp_var, 2)).replace('.', ','),
+                                    self.tableData['currency'][rowNum])
                 ),
             )
             
