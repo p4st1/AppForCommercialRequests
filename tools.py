@@ -133,9 +133,33 @@ class DatabaseTools:
     @staticmethod
     def formatPrice(price, currency):
         if currency == '₽':
-            return price + currency
+            return DatabaseTools.num2text(price.replace(',', '.')) + currency
         if currency in ['$', '¥', '€']:
-            return currency + price
+            return currency + DatabaseTools.num2text(price.replace(',', '.'))
+    
+    @staticmethod
+    def formWord(word, form):
+        Dictionary = {
+        'ор': ('ор', 'ора', 'ору', 'ора'),
+        'ер': ('ер', 'ера', 'еру', 'ера'),
+        'ль': ('ль', 'ля', 'лю', 'ля'),
+        'нт': ('нт', 'нта', 'нту', 'нта'),
+        'ат': ('ат', 'ата', 'ату', 'ата'),
+        'ов': ('ов', 'ова', 'ову', 'ова'),
+        'ев': ('ев', 'ева', 'еву', 'ева'),
+        'ко': ('ко', 'ко', 'ко', 'ко'),
+        'ов': ('ов', 'ова', 'ову', 'ова'),
+        'ва': ('ва', 'вой', 'вой', 'ву'),
+        }
+        
+        if len(word) < 2:
+            return -1
+        
+        if word[-2:] not in Dictionary:
+            return word
+        
+        return word[:-2] + Dictionary[word[-2:]][form]
+
         
 class Tools:
     def __init__(self):

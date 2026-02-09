@@ -12,16 +12,7 @@ import os
     
 class createTextFile:
     def __init__(self, docxData):
-        Tools.write_log(f"test feature: {Config.settings['testFeature']}")
-        if Config.settings['testFeature']:
-            Tools.write_log(f"Trying to import pymorphy2")
-            try:
-                import pymorphy2
-            except Exception as e:
-                Tools.write_log(f"ERROR: unable to import pymorphy2: {e}")
-            else:
-                Tools.write_log(f"Succesfuly imported pymorphy2")
-                
+        Tools.write_log(f"test feature: {Config.settings['testFeature']}")               
         Tools.write_log(f"Docx path to save: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
         Tools.write_log('INIT DOCX...')
         
@@ -41,14 +32,19 @@ class createTextFile:
         for i in tableData:
             currency1, amount1 = Tools.parsePrice(i[6].replace(',', '.'))
             currency2, amount2 = Tools.parsePrice(i[7].replace(',', '.'))
-            sum1 += float(amount1)
-            sum2 += float(amount2)
+            sum1 += float(amount1.replace(' ', ''))
+            sum2 += float(amount2.replace(' ', ''))
             symbCurrency = currency1
             if int(i[8].split()[0]) > maxDays:
                 maxDays = int(i[8].split()[0])
             if int(i[8].split()[0]) < minDays:
                 minDays = int(i[8].split()[0]) 
         
+        if minDays == maxDays:
+            period = f'до {minDays}'
+        else:
+            period = f'от {minDays} до {maxDays}'
+            
         currency = Config.currency[symbCurrency]
         
         if docxData[4]:
@@ -61,15 +57,16 @@ class createTextFile:
         VAT_RATE = Decimal("0.20")
 
         GENDER = {
-            'мужской': "ый",
-            'женский': "ая"
+            'мужской': ("ый", 'у'),
+            'женский': ("ая", 'ой')
         }
-
+           
         if Config.settings['testFeature']:
-            morph = pymorphy2.MorphAnalyzer()
-            post = decline_name(customerData[8], 'дательный')
+            post = Tools.formWord(customerData[8], 2)
+            initials = f"{Tools.formWord(customerData[2], 2)} {customerData[1][0]}. {customerData[3][0]}."
         else:
             post = customerData[8]
+            initials = f"{customerData[2]} {customerData[1][0]}. {customerData[3][0]}."
             
         PLACEHOLDERS = {
             "<<COMPANY>>": "ООО «АЛЬФА КАППА ИНЖИНИРИНГ»",
@@ -97,15 +94,15 @@ class createTextFile:
             "{{now}}": f"{datetime.now().strftime('%d.%m.%Y')}",
             "{{post}}": post,
             "{{company}}": customerData[7],
-            "{{initials}}": f"{customerData[2]} {customerData[1][0]}. {customerData[3][0]}." ,
+            "{{initials}}": initials,
 
-            "Уважаемая Иван Иваныч !": f"Уважаем{GENDER[customerData[10]]} {customerData[1]} {customerData[3]} !",
-            "{{gender}}": f"{GENDER[customerData[10]]}",
+            "Уважаемая Иван Иваныч !": f"Уважаем{GENDER[customerData[10]][0]} {customerData[1]} {customerData[3]} !",
+            "{{gender}}": f"{GENDER[customerData[10]][0]}",
             "{{name}}": f"{customerData[1]}",
             "{{surname}}": f"{customerData[3]}",
             "{{app_num}}": f"{extraData[0]}",
 
-            "{{Total_wo}}": f"{Tools.num2text(sum1)}",
+            "{{Total_wo}}": f"{Tools.num2text(sum2)}",
             "{{Currency}}": f"{currency[0]}",
             "{{Total_diff}}": f"{Tools.num2text(round(sum2 - sum1, 2))}",
 
@@ -117,8 +114,7 @@ class createTextFile:
             
             "{{Conditions}}": f"{customerData[9]}",
             "{{Garanty_period}}": f"{extraData[1]}",
-            "{{MinDays}}": f"{minDays}",
-            "{{MaxDays}}": f"{maxDays}",
+            "{{MinDays}}": f"{period}",
             "{{Producer}}": f"{extraData[3]}",
             "{{Pay_period}}": f"{extraData[2]}",
             "{{Pay_cond}}": f"{docxData[5]}",
@@ -129,14 +125,15 @@ class createTextFile:
 
         ]
         
+        print(tableData)
         for item in tableData:
             ITEMS.append({"name": item[1], 
                           "sku": item[2], 
                           "unit": item[3], 
                           "qty": item[4], 
-                          "price": Decimal(Tools.parsePrice(item[5])[1].replace(',', '.')),
-                          "sum_wo": Decimal(Tools.parsePrice(item[6])[1].replace(',', '.')),
-                          "sum_w": Decimal(Tools.parsePrice(item[7])[1].replace(',', '.')),
+                          "price": Decimal(Tools.parsePrice(item[5])[1].replace(',', '.').replace(' ', '')),
+                          "sum_wo": Decimal(Tools.parsePrice(item[6])[1].replace(',', '.').replace(' ', '')),
+                          "sum_w": Decimal(Tools.parsePrice(item[7])[1].replace(',', '.').replace(' ', '')),
                           "days": item[8]})
         
         ROW_TOKENS = {
@@ -157,10 +154,7 @@ class createTextFile:
             "<<TOTAL_WO>>": None,
             "<<TOTAL_W>>": None,
         }
-        def decline_name(name, case):
-            parsed = morph.parse(name)[0]
-            return parsed.inflect({case}).word if parsed else name
-    
+            
         def _fmt_dec_comma(v: Decimal) -> str:
             x = v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             return f"{x:.2f}".replace(".", ",")
@@ -351,7 +345,7 @@ class createTextFile:
                         "<<SKU>>": it["sku"],
                         "<<UNIT>>": it["unit"],
                         "<<QTY>>": str(it["qty"]),
-                        "<<PRICE>>": fmt_money_with_symbol(price),
+                        "<<PRICE>>": Tools.num2text(fmt_money_with_symbol(price)),
                         "<<SUM_WO>>": currency[0] + _fmt_dec_comma(sum_wo),
                         "<<SUM_W>>": currency[0] + _fmt_dec_comma(sum_w),
                         "<<DAYS>>": it["days"],
@@ -360,7 +354,7 @@ class createTextFile:
                         "{{SKU}}": it["sku"],
                         "{{UNIT}}": it["unit"],
                         "{{QTY}}": str(it["qty"]),
-                        "{{PRICE}}": fmt_money_with_symbol(price),
+                        "{{PRICE}}": Tools.num2text(fmt_money_with_symbol(price)),
                         "{{SUM_WO}}": fmt_money_with_symbol(_fmt_dec_comma(sum_wo)),
                         "{{SUM_W}}": fmt_money_with_symbol(_fmt_dec_comma(sum_w)),
                     }
@@ -412,7 +406,7 @@ class createTextFile:
 class createExcelFile:
     def __init__(self, data):
         indent = int(Config.config['ExcelIndent'])
-        newFilePath = f"{Tools.resourcePath(Config.config['pathToSaveExcel'])}/таблица_от_{datetime.now().strftime('%d_%m_%Y')}.xlsx"
+        newFilePath = self.save_with_number(f"{Tools.resourcePath(Config.config['pathToSaveExcel'])}/таблица_от_{datetime.now().strftime('%d_%m_%Y')}.xlsx")
         shutil.copy2(Config.template_path, newFilePath)
         wb = load_workbook(newFilePath)
         workSheet = wb.active
@@ -447,7 +441,8 @@ class createExcelFile:
         workSheet[f'I{len(dataTable) + 2 + indent}'] = f'=SUM(I{2 + indent}:I{len(dataTable) + 1 + indent})'
         workSheet[f'I{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
         workSheet[f'H{len(dataTable) + 3 + indent}'] = f'=H{len(dataTable) + 2 + indent}-G{len(dataTable) + 2 + indent}'
-        workSheet[f'H{len(dataTable) + 3 + indent}'].number_format = f'"{currency}"#,##0.00' 
+        workSheet[f'H{len(dataTable) + 3 + indent}'].number_format = f'"{currency}"#,##0.00'
+        workSheet[f'H{len(dataTable) + 4 + indent}'] = f'=H{len(dataTable) + 3 + indent}/G{len(dataTable) + 2 + indent}'
         
         for row in range(len(dataTable)):
             workSheet[f'I{row + 2 + indent}'] = f'=H{row + 2 + indent}*{data[2]}'
@@ -495,7 +490,6 @@ class createExcelFile:
             
             Tools.write_log("creating Excel File...")
             Tools.write_log(f"Excel path to save: {newFilePath}")
-            newFilePath = self.save_with_number(newFilePath)
             Tools.write_log(f"Final path to save: {newFilePath}")
             wb.save(newFilePath)
         except Exception as e:
