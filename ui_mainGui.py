@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'maingui.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.10.1
+## Created by: Qt User Interface Compiler version 6.8.0
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -1645,6 +1645,31 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_8.addWidget(self.createDocButton)
 
+        self.createDocFromExcelButton = QPushButton(self.centralwidget)
+        self.createDocFromExcelButton.setObjectName(u"createDocFromExcelButton")
+        self.createDocFromExcelButton.setStyleSheet(u"QPushButton {\n"
+"    background-color: #2c3e50;\n"
+"    color: white;\n"
+"    border: none;\n"
+"    padding: 4px 4px;\n"
+"    border-radius: 6px;\n"
+"    font-weight: 600;\n"
+"    font-size: 12px;\n"
+"    min-height: 35px;\n"
+"    min-width: 32px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    background-color: #34495e;\n"
+"    border: 1px solid #2c3e50;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: #1a252f;\n"
+"}")
+
+        self.verticalLayout_8.addWidget(self.createDocFromExcelButton)
+
         self.createExcelButton = QPushButton(self.centralwidget)
         self.createExcelButton.setObjectName(u"createExcelButton")
         self.createExcelButton.setFont(font6)
@@ -1928,6 +1953,7 @@ class Ui_MainWindow(object):
         self.termDeliveryLine.setText("")
         self.termDeliveryLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u0427\u0438\u0441\u043b\u043e (\u0432 \u0441\u0443\u0442\u043a\u0430\u0445)", None))
         self.createDocButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u041a\u041f", None))
+        self.createDocFromExcelButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u041a\u041f \u0438\u0437 Excel", None))
         self.createExcelButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c Excel", None))
         self.FileMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u0424\u0430\u0439\u043b", None))
         self.EditMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u0420\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c", None))

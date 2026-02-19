@@ -2068,6 +2068,35 @@ QPushButton:pressed {
          </widget>
         </item>
         <item>
+         <widget class="QPushButton" name="createDocFromExcelButton">
+          <property name="styleSheet">
+           <string notr="true">QPushButton {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 4px 4px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    min-height: 35px;
+    min-width: 32px;
+}
+
+QPushButton:hover {
+    background-color: #34495e;
+    border: 1px solid #2c3e50;
+}
+
+QPushButton:pressed {
+    background-color: #1a252f;
+}</string>
+          </property>
+          <property name="text">
+           <string>Скачать КП из Excel</string>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="QPushButton" name="createExcelButton">
           <property name="font">
            <font>

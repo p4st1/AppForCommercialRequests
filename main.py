@@ -7,6 +7,7 @@ from customers import mainWindow as customersWindow
 from settings import mainWindow as settingsWindow
 from tools import DatabaseTools as Tool
 from params import mainWindow as paramsWindow
+from openpyxl import load_workbook
 from database import Database
 from config import Config
 from ui_mainGui import Ui_MainWindow
@@ -68,6 +69,7 @@ class mainWindow(QMainWindow):
         
         self.ui.createDocButton.clicked.connect(self.exportDocs)
         self.ui.createExcelButton.clicked.connect(self.exportExcel)
+        self.ui.createDocFromExcelButton.clicked.connect(self.exportDocFromExcel)
         
         self.ui.logisticVar.currentIndexChanged.connect(self.logisticVarChanged)
         
@@ -473,9 +475,23 @@ class mainWindow(QMainWindow):
         
         return table_data
     
+    def exportDocFromExcel(self):
+        filename = QFileDialog.getOpenFileName(
+                self, "Открыть файл", "", "Excel Files (*.xls, *.xlsx)"
+            )[0]
+        workbook = load_workbook(filename)
+        sheet = workbook.active
+        cell_range = sheet['A1:C3']
+        for row in cell_range:
+            for cell in row:
+                print(cell.value, end=' ')
+            print()
+        
+    
     def exportDocs(self):
         Tool.write_log('CREATING DOCX')
         tableData = self.getTableData()
+        print(tableData)
         self.openCreateDocWindow((
             len(tableData),
             tableData))
