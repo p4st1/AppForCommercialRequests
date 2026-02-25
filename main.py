@@ -474,19 +474,28 @@ class mainWindow(QMainWindow):
         self.db.open(Config.db_path)
         
         return table_data
-    
+
     def exportDocFromExcel(self):
         filename = QFileDialog.getOpenFileName(
-                self, "Открыть файл", "", "Excel Files (*.xls, *.xlsx)"
+                self, "Открыть файл", "", "csv (*.csv);;"
             )[0]
-        workbook = load_workbook(filename)
-        sheet = workbook.active
-        cell_range = sheet['A1:C3']
-        for row in cell_range:
-            for cell in row:
-                print(cell.value, end=' ')
-            print()
+        # Сначала читаем через openpyxl с data_only=True
+        print('hello boss')
+        df = pd.read_csv(filename, header=None, sep=";").dropna(how='all')
+        print(df)  
         
+        data = df.values.tolist()
+        table_data = []
+        for i in data:
+            if pd.notna(i[0]):
+                table_data.append([*i[:5], *i[10:14]])
+            else:
+                break
+        print(table_data[1:])
+        self.openCreateDocWindow((
+            len(table_data[1:]),
+            table_data[1:]))
+                
     
     def exportDocs(self):
         Tool.write_log('CREATING DOCX')

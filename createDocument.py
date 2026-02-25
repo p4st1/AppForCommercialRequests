@@ -117,9 +117,12 @@ class mainWindow(QMainWindow):
         return os.path.join(base_path, relativePath)
 
     def closeEvent(self, event):
+        self.db.close()
         self.windowClosed.emit()
         super().closeEvent(event)
+        
         self.close()
 
     def funcExitSystem(self):
+        self.db.close()
         self.close()

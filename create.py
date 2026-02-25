@@ -418,10 +418,10 @@ class createExcelFile:
             currency, unitPrice = Tools.parsePrice(dataTable[row][5])
             workSheet[f'A{row + 2 + indent}'] = int(dataTable[row][0])
             workSheet[f'B{row + 2 + indent}'] = dataTable[row][1]
-            workSheet[f'C{row + 2 + indent}'] = int(dataTable[row][2])
+            workSheet[f'C{row + 2 + indent}'] = dataTable[row][2]
             workSheet[f'D{row + 2 + indent}'] = dataTable[row][3]
             workSheet[f'E{row + 2 + indent}'] = int(dataTable[row][4])
-            workSheet[f'F{row + 2 + indent}'] = float(unitPrice.replace(',', '.'))
+            workSheet[f'F{row + 2 + indent}'] = float(unitPrice.replace(' ', '').replace(',', '.'))
             workSheet[f'F{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
             workSheet[f'G{row + 2 + indent}'] = f'=F{row + 2 + indent}*E{row + 2 + indent}'
             workSheet[f'G{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'

@@ -64,7 +64,7 @@ class Database:
             ORDER BY 1 DESC
             LIMIT 1
         ''')
-        
+    
         new_id = self.cursor.lastrowid
         print(new_id)
         return new_id
