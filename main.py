@@ -26,6 +26,7 @@ class mainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.setWindowIcon(QIcon(self.resourcePath("assets/app.ico")))
+        self.applyEnterpriseStyle()
 
         self.tableData = {
             "amount": [],
@@ -103,6 +104,240 @@ class mainWindow(QMainWindow):
             self.ui.tabWidget.setCurrentIndex(2)
         else:
             self.ui.tabWidget.setCurrentIndex(1)
+
+    def applyEnterpriseStyle(self):
+        """Apply a restrained ERP-like style without changing layout structure."""
+        self.setStyleSheet(
+            """
+            QMainWindow {
+                background-color: #edf1f5;
+                color: #24374d;
+                font-family: "Segoe UI";
+            }
+            QMenuBar {
+                background-color: #dbe5f1;
+                color: #24374d;
+                border-bottom: 1px solid #b9c7d8;
+            }
+            QMenuBar::item {
+                background-color: transparent;
+                padding: 6px 12px;
+            }
+            QMenuBar::item:selected {
+                background-color: #c8d8ea;
+            }
+            QMenu {
+                background-color: #f6f9fc;
+                color: #24374d;
+                border: 1px solid #b9c7d8;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 24px 6px 12px;
+            }
+            QMenu::item:selected {
+                background-color: #dce8f6;
+            }
+            QStatusBar {
+                background-color: #e5edf7;
+                color: #2d3f54;
+                border-top: 1px solid #bccbdd;
+            }
+            """
+        )
+
+        self.ui.centralwidget.setStyleSheet(
+            """
+            QWidget#centralwidget {
+                background-color: #edf1f5;
+            }
+            """
+        )
+
+        self.ui.tabWidget.setStyleSheet(
+            """
+            QTabWidget::pane {
+                border: 1px solid #c7d4e2;
+                background-color: #ffffff;
+                top: -1px;
+            }
+            QTabBar::tab {
+                background-color: #eef3f8;
+                border: 1px solid #c7d4e2;
+                border-bottom: none;
+                color: #30465d;
+                padding: 6px 12px;
+                min-width: 120px;
+            }
+            QTabBar::tab:selected {
+                background-color: #ffffff;
+                color: #1f3653;
+                font-weight: 600;
+            }
+            QTabBar::tab:!selected {
+                margin-top: 2px;
+            }
+            """
+        )
+
+        self.ui.KpTable.setStyleSheet(
+            """
+            QTableWidget {
+                background-color: #ffffff;
+                border: 1px solid #c7d4e2;
+                border-radius: 4px;
+                gridline-color: #d3dde8;
+                selection-background-color: #d9e8f7;
+                selection-color: #1f3653;
+                alternate-background-color: #f7f9fc;
+                font-size: 12px;
+            }
+            QHeaderView::section {
+                background-color: #dde7f2;
+                color: #24374d;
+                border: 1px solid #c7d4e2;
+                border-top: none;
+                border-left: none;
+                padding: 6px 6px;
+                font-weight: 600;
+            }
+            QTableCornerButton::section {
+                background-color: #dde7f2;
+                border: 1px solid #c7d4e2;
+            }
+            QTableWidget::item {
+                padding: 4px 6px;
+            }
+            QTableWidget::item:selected {
+                border: 1px solid #89a5c2;
+            }
+            """
+        )
+        self.ui.KpTable.setAlternatingRowColors(True)
+
+        input_style = """
+            QLineEdit, QComboBox {
+                background-color: #ffffff;
+                border: 1px solid #b9c8d9;
+                border-radius: 3px;
+                padding: 4px 8px;
+                color: #24374d;
+                min-height: 24px;
+            }
+            QLineEdit:focus, QComboBox:focus {
+                border: 1px solid #5b86b1;
+                background-color: #fdfefe;
+            }
+            QComboBox::drop-down {
+                width: 22px;
+                border-left: 1px solid #b9c8d9;
+                background-color: #ecf2f8;
+            }
+        """
+        for widget in (
+            self.ui.markupLine,
+            self.ui.logisticNum,
+            self.ui.customLine,
+            self.ui.termDeliveryLine,
+            self.ui.logisticVar,
+        ):
+            widget.setStyleSheet(input_style)
+
+        label_style = """
+            QLabel {
+                color: #2b3f55;
+                font-size: 12px;
+                font-weight: 600;
+            }
+        """
+        for widget in (self.ui.label, self.ui.label_2, self.ui.label_3, self.ui.label_5):
+            widget.setStyleSheet(label_style)
+
+        neutral_button_style = """
+            QPushButton {
+                background-color: #e8eef5;
+                color: #2a425d;
+                border: 1px solid #bcccdd;
+                border-radius: 4px;
+                padding: 6px 10px;
+                min-height: 30px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #dce7f3;
+            }
+            QPushButton:pressed {
+                background-color: #ccdced;
+            }
+        """
+        for widget in (self.ui.openTableButton, self.ui.closeTableButton):
+            widget.setStyleSheet(neutral_button_style)
+
+        action_button_style = """
+            QPushButton {
+                background-color: #5f88b3;
+                color: #ffffff;
+                border: 1px solid #4f769f;
+                border-radius: 4px;
+                padding: 6px 10px;
+                min-height: 30px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #6c96c2;
+            }
+            QPushButton:pressed {
+                background-color: #4d739c;
+            }
+            QPushButton:disabled {
+                background-color: #b7c7d8;
+                color: #edf2f7;
+                border-color: #aab9c9;
+            }
+        """
+        for widget in (
+            self.ui.createDocButton,
+            self.ui.createDocFromExcelButton,
+            self.ui.createExcelButton,
+        ):
+            widget.setStyleSheet(action_button_style)
+
+        separator_style = """
+            QFrame {
+                background-color: #c7d4e2;
+                border: none;
+                min-height: 1px;
+                max-height: 100px;
+            }
+        """
+        for line_name in (
+            "line",
+            "line1",
+            "line_2",
+            "line_3",
+            "line_4",
+            "line_5",
+            "line_6",
+            "line_7",
+            "line_8",
+            "line_9",
+            "line_10",
+        ):
+            line_widget = getattr(self.ui, line_name, None)
+            if line_widget is not None:
+                line_widget.setStyleSheet(separator_style)
+
+        self.ui.textUpdates.setStyleSheet(
+            """
+            QTextEdit {
+                background-color: #ffffff;
+                border: 1px solid #c7d4e2;
+                border-radius: 4px;
+                color: #24374d;
+                padding: 8px;
+            }
+            """
+        )
 
     def loadConfig(self):
         try:
