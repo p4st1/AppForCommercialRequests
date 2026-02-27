@@ -1,6 +1,12 @@
-from PySide6.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QTableWidgetItem
+from PySide6.QtWidgets import (
+    QMainWindow,
+    QFileDialog,
+    QMessageBox,
+    QTableWidgetItem,
+    QAbstractItemView,
+)
 from PySide6.QtGui import QIcon, QDesktopServices
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, QSignalBlocker
 from createDocument import mainWindow as createDocWindow
 from create import createExcelFile as exportExcelFile
 from customers import mainWindow as customersWindow
@@ -21,6 +27,8 @@ import os
 
 
 class mainWindow(QMainWindow):
+    EDITABLE_COLUMNS = {0, 1, 2, 3, 4, 5, 14}
+
     def __init__(self):
         super().__init__()
 
@@ -91,6 +99,8 @@ class mainWindow(QMainWindow):
         self.ui.customLine.editingFinished.connect(self.processFormula)
         self.ui.termDeliveryLine.editingFinished.connect(self.processFormula)
         self.ui.closeTableButton.clicked.connect(self.closeTable)
+        self.ui.KpTable.itemChanged.connect(self.tableItemChanged)
+        self.ui.KpTable.setEditTriggers(QAbstractItemView.EditTrigger.AllEditTriggers)
         self.ui.KpTable.resizeColumnsToContents()
 
         if Config.settings["openLastTab"] and Config.config["lastTable"]:
@@ -131,6 +141,102 @@ class mainWindow(QMainWindow):
         excel_dir = Tool.ensure_directory(Config.config.get("pathToSaveExcel") or cp_dir, cp_dir)
         Config.config["pathToSaveCP"] = str(cp_dir)
         Config.config["pathToSaveExcel"] = str(excel_dir)
+
+    def _set_table_item(self, row, col, text, editable):
+        item = self.ui.KpTable.item(row, col)
+        if item is None:
+            item = QTableWidgetItem()
+            self.ui.KpTable.setItem(row, col, item)
+
+        item.setText(str(text))
+        flags = item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+        if editable:
+            flags |= Qt.ItemFlag.ItemIsEditable
+        else:
+            flags &= ~Qt.ItemFlag.ItemIsEditable
+        item.setFlags(flags)
+
+    def _update_total_price_cell(self, row):
+        amount = self.tableData["amount"][row]
+        unit_price = self.tableData["unitPrice"][row]
+        currency = self.tableData["currency"][row]
+        total_price = round(amount * unit_price, 2)
+        self.tableData["totalPrice"][row] = total_price
+        self._set_table_item(row, 6, Tool.formatPrice(str(total_price), currency), editable=False)
+
+    def _restore_edited_cell(self, row, col):
+        if col == 4:
+            self._set_table_item(row, col, self.tableData["amount"][row], editable=True)
+            return
+        if col == 5:
+            self._set_table_item(
+                row,
+                col,
+                Tool.formatPrice(
+                    str(self.tableData["unitPrice"][row]),
+                    self.tableData["currency"][row],
+                ),
+                editable=True,
+            )
+            return
+        if col == 14:
+            self._set_table_item(
+                row,
+                col,
+                f"{self.tableData['termDelivery'][row]} дней",
+                editable=True,
+            )
+
+    def tableItemChanged(self, item):
+        if not Config.isTableOpened or item is None:
+            return
+
+        row = item.row()
+        col = item.column()
+        if row < 0 or row >= self.rows or col not in self.EDITABLE_COLUMNS:
+            return
+
+        text = item.text().strip()
+        try:
+            if col == 4:
+                parsed_amount = Tool.parse_int(text, f"Кол-во (строка {row + 1})", allow_zero=False)
+                self.tableData["amount"][row] = parsed_amount
+                blocker = QSignalBlocker(self.ui.KpTable)
+                self._set_table_item(row, 4, parsed_amount, editable=True)
+                self._update_total_price_cell(row)
+                del blocker
+                self.logisticCalculate()
+                self.calculating()
+            elif col == 5:
+                currency, price_text = Tool.parsePrice(text)
+                if not currency:
+                    currency = self.tableData["currency"][row]
+                    price_text = text
+                parsed_price = Tool.parse_float(price_text, f"Цена (строка {row + 1})", allow_zero=True)
+                self.tableData["currency"][row] = currency
+                self.tableData["unitPrice"][row] = parsed_price
+                blocker = QSignalBlocker(self.ui.KpTable)
+                self._set_table_item(row, 5, Tool.formatPrice(str(parsed_price), currency), editable=True)
+                self._update_total_price_cell(row)
+                del blocker
+                self.logisticCalculate()
+                self.calculating()
+            elif col == 14:
+                parsed_term = Tool.parse_delivery_days(text)
+                self.tableData["termDelivery"][row] = parsed_term
+                blocker = QSignalBlocker(self.ui.KpTable)
+                self._set_table_item(row, 14, f"{parsed_term} дней", editable=True)
+                del blocker
+                self.calculating()
+            else:
+                blocker = QSignalBlocker(self.ui.KpTable)
+                self._set_table_item(row, col, text, editable=True)
+                del blocker
+        except ValueError as e:
+            self.error("Ошибка", str(e))
+            blocker = QSignalBlocker(self.ui.KpTable)
+            self._restore_edited_cell(row, col)
+            del blocker
 
     def testFeature(self, checked):
         QMessageBox.about(
@@ -521,30 +627,34 @@ class mainWindow(QMainWindow):
             "logistic": [],
         }
 
+        blocker = QSignalBlocker(self.ui.KpTable)
         for row_num, row in enumerate(parsed_rows):
             total_price = round(row["qty"] * row["unitPrice"], 2)
-            self.ui.KpTable.setItem(row_num, 0, QTableWidgetItem(str(row["number"])))
-            self.ui.KpTable.setItem(row_num, 1, QTableWidgetItem(row["name"]))
-            self.ui.KpTable.setItem(row_num, 2, QTableWidgetItem(row["sku"]))
-            self.ui.KpTable.setItem(row_num, 3, QTableWidgetItem(row["unit"]))
-            self.ui.KpTable.setItem(row_num, 4, QTableWidgetItem(str(row["qty"])))
-            self.ui.KpTable.setItem(
+            self._set_table_item(row_num, 0, row["number"], editable=True)
+            self._set_table_item(row_num, 1, row["name"], editable=True)
+            self._set_table_item(row_num, 2, row["sku"], editable=True)
+            self._set_table_item(row_num, 3, row["unit"], editable=True)
+            self._set_table_item(row_num, 4, row["qty"], editable=True)
+            self._set_table_item(
                 row_num,
                 5,
-                QTableWidgetItem(Tool.formatPrice(str(row["unitPrice"]), row["currency"])),
+                Tool.formatPrice(str(row["unitPrice"]), row["currency"]),
+                editable=True,
             )
-            self.ui.KpTable.setItem(
+            self._set_table_item(
                 row_num,
                 6,
-                QTableWidgetItem(Tool.formatPrice(str(total_price), row["currency"])),
+                Tool.formatPrice(str(total_price), row["currency"]),
+                editable=False,
             )
-            self.ui.KpTable.setItem(row_num, 14, QTableWidgetItem(f"{row['supplierTermDays']} дней"))
+            self._set_table_item(row_num, 14, f"{row['supplierTermDays']} дней", editable=True)
 
             self.tableData["amount"].append(row["qty"])
             self.tableData["currency"].append(row["currency"])
             self.tableData["unitPrice"].append(row["unitPrice"])
             self.tableData["totalPrice"].append(total_price)
             self.tableData["termDelivery"].append(row["supplierTermDays"])
+        del blocker
 
         self.rows = len(parsed_rows)
         self.mixedCurrencyWarningShown = False
@@ -590,8 +700,11 @@ class mainWindow(QMainWindow):
         window.show()
 
     def closeTable(self):
+        Config.isTableOpened = False
+        blocker = QSignalBlocker(self.ui.KpTable)
         self.ui.KpTable.clearContents()
         self.ui.KpTable.setRowCount(0)
+        del blocker
         self.tableData = {
             "amount": [],
             "currency": [],
@@ -601,7 +714,6 @@ class mainWindow(QMainWindow):
             "logistic": [],
         }
         self.rows = 0
-        Config.isTableOpened = False
 
     def _vat_multiplier(self):
         params_data = Tool.load_json(Config.vars_path)
@@ -624,6 +736,7 @@ class mainWindow(QMainWindow):
             return
 
         vat_multiplier = self._vat_multiplier()
+        blocker = QSignalBlocker(self.ui.KpTable)
         for row_num in range(self.rows):
             amount = self.tableData["amount"][row_num]
             currency = self.tableData["currency"][row_num]
@@ -634,36 +747,43 @@ class mainWindow(QMainWindow):
             total_without_vat = round(real_price * amount, 2)
             total_with_vat = round(total_without_vat * vat_multiplier, 2)
 
-            self.ui.KpTable.setItem(
+            self._set_table_item(
                 row_num,
                 8,
-                QTableWidgetItem(Tool.formatPrice(str(customs_sum), currency)),
+                Tool.formatPrice(str(customs_sum), currency),
+                editable=False,
             )
-            self.ui.KpTable.setItem(
+            self._set_table_item(
                 row_num,
                 9,
-                QTableWidgetItem(Tool.formatPrice(str(unit_sale_price), currency)),
+                Tool.formatPrice(str(unit_sale_price), currency),
+                editable=False,
             )
-            self.ui.KpTable.setItem(
+            self._set_table_item(
                 row_num,
                 10,
-                QTableWidgetItem(Tool.formatPrice(str(real_price), currency)),
+                Tool.formatPrice(str(real_price), currency),
+                editable=False,
             )
-            self.ui.KpTable.setItem(
+            self._set_table_item(
                 row_num,
                 11,
-                QTableWidgetItem(Tool.formatPrice(str(total_without_vat), currency)),
+                Tool.formatPrice(str(total_without_vat), currency),
+                editable=False,
             )
-            self.ui.KpTable.setItem(
+            self._set_table_item(
                 row_num,
                 12,
-                QTableWidgetItem(Tool.formatPrice(str(total_with_vat), currency)),
+                Tool.formatPrice(str(total_with_vat), currency),
+                editable=False,
             )
-            self.ui.KpTable.setItem(
+            self._set_table_item(
                 row_num,
                 13,
-                QTableWidgetItem(f"{self.tableData['termDelivery'][row_num] + self.termDeliveryDays} дней"),
+                f"{self.tableData['termDelivery'][row_num] + self.termDeliveryDays} дней",
+                editable=False,
             )
+        del blocker
 
     def logisticVarChanged(self, _):
         if Config.isTableOpened:
@@ -694,6 +814,7 @@ class mainWindow(QMainWindow):
         total_sum = sum(self.tableData["totalPrice"])
         self.tableData["logistic"] = []
 
+        blocker = QSignalBlocker(self.ui.KpTable)
         for row_num in range(self.rows):
             base_total = self.tableData["totalPrice"][row_num]
             if logistic_var == 1:
@@ -704,12 +825,14 @@ class mainWindow(QMainWindow):
             else:
                 f = round(base_total * logistic_num, 2)
             currency = self.tableData["currency"][row_num]
-            self.ui.KpTable.setItem(
+            self._set_table_item(
                 row_num,
                 7,
-                QTableWidgetItem(Tool.formatPrice(str(f), currency)),
+                Tool.formatPrice(str(f), currency),
+                editable=False,
             )
             self.tableData["logistic"].append(f)
+        del blocker
 
     def getTableData(self):
         table_data = []
