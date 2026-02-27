@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QMainWindow, QMessageBox
 from database import Database
 from ui_addCustomerGui import Ui_MainWindow
 from config import Config
+from ui_theme import apply_unified_theme
 import sys
 import os
 
@@ -30,6 +31,7 @@ class mainWindow(QMainWindow):
         
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        apply_unified_theme(self)
         
         self.logoURL = 'None'
         self.edit_customer_id = None

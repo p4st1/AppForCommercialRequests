@@ -4,6 +4,7 @@ from config import Config
 from database import Database
 from addNewCustomer import mainWindow as newSupplierWindow
 from ui_customersGui import Ui_MainWindow
+from ui_theme import apply_unified_theme
 import sys
 import os
 
@@ -31,6 +32,7 @@ class mainWindow(QMainWindow):
         
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        apply_unified_theme(self)
         
         self.db = Database()
         if self.db.open(Config.db_path) == -1:

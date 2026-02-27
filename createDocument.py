@@ -4,6 +4,7 @@ from database import Database
 from config import Config
 from create import createTextFile as exportTextFile
 from ui_createDocGui import Ui_MainWindow
+from ui_theme import apply_unified_theme
 import sys
 import os
 
@@ -31,6 +32,7 @@ class mainWindow(QMainWindow):
         
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        apply_unified_theme(self)
         
         self.ui.createDocButton.clicked.connect(self.confirmDoc)
         

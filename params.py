@@ -4,6 +4,7 @@ from ui_paramsGui import Ui_MainWindow
 from ui_createParamsGui import Ui_MainWindow as Ui_addNewParamWindow
 from tools import DatabaseTools as Tool
 from config import Config
+from ui_theme import apply_unified_theme
 import sys
 import os
 
@@ -30,6 +31,7 @@ class addNewParamGUI(QMainWindow):
         super(addNewParamGUI, self).__init__(parent)
         self.ui = Ui_addNewParamWindow()
         self.ui.setupUi(self)
+        apply_unified_theme(self)
 
         self.ui.addButton.clicked.connect(self.addParam)
         self.ui.cancelButton.clicked.connect(self.cancelParam)
@@ -82,6 +84,7 @@ class mainWindow(QMainWindow):
         super(mainWindow, self).__init__(parent)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        apply_unified_theme(self)
 
         self.parameters = {}
         self.hasChanges = False

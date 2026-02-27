@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QMainWindow, QFileDialog
 from tools import DatabaseTools as Tool
 from ui_settingsAppGui import Ui_MainWindow
 from config import Config
+from ui_theme import apply_unified_theme
 from pathlib import Path
 import sys
 import os
@@ -16,6 +17,7 @@ class mainWindow(QMainWindow):
         
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        apply_unified_theme(self)
         
 
         
