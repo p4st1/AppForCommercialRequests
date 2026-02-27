@@ -21,12 +21,12 @@ Desktop-приложение на `PySide6` для подготовки комм
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python run.py
+python3 run.py
 ```
 
 ## Тесты
 ```bash
-python -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v
 ```
 
 ## Санитайзер файлов
@@ -48,6 +48,30 @@ bash scripts/sanitize_files.sh
 ```bash
 pyinstaller myapp.spec
 ```
+
+## GitHub Release
+В проекте настроен workflow `.github/workflows/release.yml`, который собирает релизные архивы для:
+- Windows
+- macOS arm64
+- macOS x86_64
+
+Пайплайн запускается автоматически при пуше тега формата `v*` (например, `v2.0.0`) или вручную через `workflow_dispatch`.
+
+Перед релизом:
+1. Обновите `assets/updates.txt` и `CHANGELOG.md`.
+2. Проверьте тесты:
+   ```bash
+   python3 -m unittest discover -s tests -v
+   ```
+3. Закоммитьте изменения и запушьте ветку.
+
+Публикация релиза:
+```bash
+git tag -a v2.0.0 -m "Release v2.0.0"
+git push origin v2.0.0
+```
+
+После пуша тега GitHub Actions соберёт архивы и создаст релиз в разделе `Releases`.
 
 ## Структура проекта
 - `run.py` - точка входа приложения.

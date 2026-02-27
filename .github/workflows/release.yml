@@ -1,6 +1,7 @@
 name: Build and Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -12,8 +13,28 @@ env:
   APP_NAME: MyApp
 
 jobs:
+  verify:
+    name: Verify (tests)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -eux
+          python -m unittest discover -s tests -v
+
   build:
     name: Build (${{ matrix.name }})
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -212,9 +233,11 @@ jobs:
       - name: Collect zips
         shell: bash
         run: |
-          set -eux
-          find artifacts -type f -name "*.zip" -print
-          cp artifacts/**/**.zip . || true
+          set -euo pipefail
+          mapfile -t ZIP_FILES < <(find artifacts -type f -name "*.zip" | sort)
+          printf '%s\n' "${ZIP_FILES[@]}"
+          test "${#ZIP_FILES[@]}" -ge 3
+          cp "${ZIP_FILES[@]}" .
           ls -la *.zip
           test -f "MyApp-windows.zip"
           test -f "MyApp-macos-arm64.zip"
@@ -223,6 +246,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
           files: |
             MyApp-windows.zip
             MyApp-macos-arm64.zip
