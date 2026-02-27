@@ -1,9 +1,11 @@
 from docx import Document
+from docx.shared import Pt
 from decimal import Decimal, ROUND_HALF_UP
 from tools import DatabaseTools as Tools
 from tools import Tools as ExtraTools
 from datetime import datetime, timedelta
 import copy
+import math
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Alignment
 from config import Config
@@ -170,6 +172,43 @@ class createTextFile:
 
         def fmt_money_no_symbol(v) -> str:
             return _fmt_dec_comma(Decimal(str(v)))
+
+
+        def _estimate_table_visual_rows(items: list[dict]) -> int:
+            # Word page layout недоступен в python-docx, поэтому оцениваем высоту
+            # строки по самым "узким" колонкам (наименование/артикул/срок).
+            if not items:
+                return 0
+
+            name_chars_per_line = 28 if docxData[4] else 34
+            sku_chars_per_line = 22 if docxData[4] else 26
+            days_chars_per_line = 10
+
+            visual_rows = 0
+            for it in items:
+                name_lines = max(1, math.ceil(len(str(it.get("name", "")).strip()) / name_chars_per_line))
+                sku_lines = max(1, math.ceil(len(str(it.get("sku", "")).strip()) / sku_chars_per_line))
+                days_lines = 1
+                if docxData[4]:
+                    days_lines = max(1, math.ceil(len(str(it.get("days", "")).strip()) / days_chars_per_line))
+                visual_rows += max(name_lines, sku_lines, days_lines)
+            return visual_rows
+
+
+        def _table_spans_multiple_pages(items: list[dict]) -> bool:
+            # Эмпирическая емкость первой страницы с учетом текста до таблицы.
+            capacity = 18 if docxData[4] else 14
+            return _estimate_table_visual_rows(items) > capacity
+
+
+        def _apply_top_indent_for_multipage_table(doc: Document, items: list[dict]) -> None:
+            if not _table_spans_multiple_pages(items):
+                return
+
+            extra_top_indent_pt = 14
+            for sec in doc.sections:
+                current_margin = int(sec.top_margin or 0)
+                sec.top_margin = current_margin + int(Pt(extra_top_indent_pt))
 
 
         def _replace_in_paragraph_runs(paragraph, mapping: dict[str, str]) -> bool:
@@ -369,12 +408,19 @@ class createTextFile:
                     _fill_row_by_indices(row, n, it, sum_wo, sum_w)
 
             total_row = table.rows[_find_total_row_idx(table)]
-            if ("<<total_wo>>" in _row_text_lower(total_row)) or ("{{total_wo}}" in _row_text_lower(total_row)):
+            total_row_text = _row_text_lower(total_row)
+            if any(token in total_row_text for token in ("<<total_wo>>", "<<total_w>>", "{{total_wo}}", "{{total_w}}")):
+                total_wo_text = Tools.formatPrice(_fmt_dec_comma(total_wo), symbCurrency)
+                total_w_text = Tools.formatPrice(_fmt_dec_comma(total_w), symbCurrency)
                 totals_map = {
-                    "<<TOTAL_WO>>": Tools.formatPrice(_fmt_dec_comma(total_wo), symbCurrency),
-                    "<<TOTAL_W>>": Tools.formatPrice(_fmt_dec_comma(total_w), symbCurrency),
-                    "{{TOTAL_WO}}": Tools.formatPrice(_fmt_dec_comma(total_wo), symbCurrency),
-                    "{{TOTAL_W}}": Tools.formatPrice(_fmt_dec_comma(total_w), symbCurrency),
+                    "<<TOTAL_WO>>": total_wo_text,
+                    "<<TOTAL_W>>": total_w_text,
+                    "{{TOTAL_WO}}": total_wo_text,
+                    "{{TOTAL_W}}": total_w_text,
+                    "<<total_wo>>": total_wo_text,
+                    "<<total_w>>": total_w_text,
+                    "{{total_wo}}": total_wo_text,
+                    "{{total_w}}": total_w_text,
                 }
                 _fill_row_by_tokens(total_row, totals_map)
             else:
@@ -387,6 +433,7 @@ class createTextFile:
 
         def main():
             doc = Document(TEMPLATE_PATH)
+            _apply_top_indent_for_multipage_table(doc, ITEMS)
 
             total_wo, vat_sum, total_w = fill_products_table(doc, ITEMS)
             mapping = dict(PLACEHOLDERS)
