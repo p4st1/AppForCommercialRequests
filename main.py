@@ -97,7 +97,7 @@ class mainWindow(QMainWindow):
             "Для включения тестовой функции, необходимо перезапустить приложение"
             "<br>*Возможны неточности в склонении слов</br>"
         )
-        print(Config.settings)
+
         Config.settings['testFeature'] = checked
         
         
@@ -259,6 +259,7 @@ class mainWindow(QMainWindow):
                 df = pd.read_csv(filename, header=None, sep=";")
                 df.columns = [f"col{i}" for i in range(len(df.columns))]
                 df = df.fillna("")
+     
                 self.rows = len(df["col0"])
                 totalPrices = []
 
@@ -271,6 +272,7 @@ class mainWindow(QMainWindow):
                 }
                 self.ui.KpTable.setRowCount(self.rows - 1)
                 for rowNum in range(1, self.rows):
+           
                     colNum = 0
                     for col in df.columns:
                         if df[col][rowNum]:
@@ -289,15 +291,22 @@ class mainWindow(QMainWindow):
 
                     currency, unitPrice = self.parsePrice(str(df["col5"][rowNum]))
                     self.tableData["currency"].append(currency)
+            
                     self.tableData["unitPrice"].append(
                         float(unitPrice.replace(",", "."))
                     )
+             
                     self.tableData["totalPrice"].append(
                         self.tableData["amount"][rowNum - 1]
                         * self.tableData["unitPrice"][rowNum - 1]
                     )
-                    self.tableData['termDelivery'].append(int(df['col6'][rowNum].split()[0]))
-
+    
+                    if df['col6'][rowNum] == '':
+                        period = '0 дней'
+                    else:
+                        period = df['col6'][rowNum]
+                        
+                    self.tableData['termDelivery'].append(int(period.split()[0]))
                     self.ui.KpTable.setItem(
                         rowNum - 1,
                         6,
@@ -306,19 +315,19 @@ class mainWindow(QMainWindow):
                                              self.tableData['currency'][rowNum - 1])
                         ),
                     )
-                    
                     self.ui.KpTable.setItem(
                         rowNum - 1,
                         14,
                         QTableWidgetItem(
-                            f"{df['col6'][rowNum].split()[0]} дней"
+                            f"{period.split()[0]} дней"
                         ),
                     )
-                                    
+            
                 self.logisticCalculate()
                 self.calculating()        
                 
             except Exception as e:
+           
                 self.error('Ошибка', f"Невозможно прочитать таблицу\n{e}")
 
             else:
@@ -479,10 +488,10 @@ class mainWindow(QMainWindow):
         filename = QFileDialog.getOpenFileName(
                 self, "Открыть файл", "", "csv (*.csv);;"
             )[0]
-        # Сначала читаем через openpyxl с data_only=True
-        print('hello boss')
+     
+     
         df = pd.read_csv(filename, header=None, sep=";").dropna(how='all')
-        print(df)  
+   
         
         data = df.values.tolist()
         table_data = []
@@ -491,7 +500,7 @@ class mainWindow(QMainWindow):
                 table_data.append([*i[:5], *i[10:14]])
             else:
                 break
-        print(table_data[1:])
+   
         self.openCreateDocWindow((
             len(table_data[1:]),
             table_data[1:]))
@@ -500,7 +509,7 @@ class mainWindow(QMainWindow):
     def exportDocs(self):
         Tool.write_log('CREATING DOCX')
         tableData = self.getTableData()
-        print(tableData)
+
         self.openCreateDocWindow((
             len(tableData),
             tableData))
