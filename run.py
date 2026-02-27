@@ -2,33 +2,82 @@ from main import mainWindow
 from tools import DatabaseTools as Tool
 from config import Config
 from pathlib import Path
-import json
 import sys
 import os
+import traceback
 
 
 
 def resourcePath(relativePath):
-        try:
-            base_path = sys._MEIPASS
-        except Exception:
-            base_path = os.path.abspath(".")
+    return Tool.resourcePath(relativePath)
 
-        return os.path.join(base_path, relativePath)
-    
 if __name__ == '__main__':
     try:
-        Config.cfg_path = Tool.ensure_user_file('MyApp', 'utilities/config.json', 'config.json')
+        Config.cfg_path = Tool.ensure_user_file(
+            'MyApp',
+            'utilities/config.json',
+            'config.json',
+            sync_mode='merge_json_on_source_change',
+        )
         Config.db_path = Tool.ensure_user_file('MyApp', 'database/database.db', 'database.db')
-        Config.vars_path = Tool.ensure_user_file('MyApp', 'utilities/variables.json', 'variables.json')
-        Config.template_path = Tool.ensure_user_file('MyApp', 'templates/template.xlsx', 'template.xlsx')
-        Config.template_docx_path = Tool.ensure_user_file('MyApp', 'templates/template.docx', 'template.docx')
-        Config.template_docx_path_short = Tool.ensure_user_file('MyApp', 'templates/template_short.docx', 'template_short.docx')
+        Config.vars_path = Tool.ensure_user_file(
+            'MyApp',
+            'utilities/variables.json',
+            'variables.json',
+            sync_mode='merge_json_on_source_change',
+        )
+        Config.template_path = Tool.ensure_user_file(
+            'MyApp',
+            'templates/template.xlsx',
+            'template.xlsx',
+            sync_mode='replace_on_source_change',
+        )
+        Config.template_docx_path = Tool.ensure_user_file(
+            'MyApp',
+            'templates/template.docx',
+            'template.docx',
+            sync_mode='replace_on_source_change',
+        )
+        Config.template_docx_path_short = Tool.ensure_user_file(
+            'MyApp',
+            'templates/template_short.docx',
+            'template_short.docx',
+            sync_mode='replace_on_source_change',
+        )
         Config.log_path = Tool.ensure_user_file('MyApp', 'templates/logs.log', 'logs.log')
-        Config.logo_path = Tool.ensure_user_file('MyApp', 'assets/app.jpg', 'app.jpg')
-        Config.print_path = Tool.ensure_user_file('MyApp', 'assets/print.png', 'print.png')
-        Config.sign_path = Tool.ensure_user_file('MyApp', 'assets/sign.png', 'sign.png')
-              
+        Config.logo_path = Tool.ensure_user_file(
+            'MyApp',
+            'assets/app.jpg',
+            'app.jpg',
+            sync_mode='replace_on_source_change',
+        )
+        Config.print_path = Tool.ensure_user_file(
+            'MyApp',
+            'assets/print.png',
+            'print.png',
+            sync_mode='replace_on_source_change',
+        )
+        Config.sign_path = Tool.ensure_user_file(
+            'MyApp',
+            'assets/sign.png',
+            'sign.png',
+            sync_mode='replace_on_source_change',
+        )
+
+        try:
+            current = Tool.load_json(Config.cfg_path)
+        except Exception as e:
+            Tool.log_exception(
+                f"Не удалось загрузить конфиг: {Config.cfg_path}",
+                e,
+                include_traceback=False,
+            )
+            current = {}
+        normalized = Tool.merge_config_with_defaults(current)
+        Tool.save_json_atomic(Config.cfg_path, normalized)
+        Config.config = normalized["config"]
+        Config.settings = normalized["settings"]
+
         Tool.write_log("=" * 50)
         Tool.write_log("🚀 APPLICATION STARTING")
         Tool.write_log(f"Current working directory: {os.getcwd()}")
@@ -62,29 +111,17 @@ if __name__ == '__main__':
             from PySide6.QtWidgets import QApplication, QMainWindow
             Tool.write_log("✅ PySide6 import successful")
         except ImportError as e:
-            Tool.write_log(f"❌ PySide6 import failed: {e}")
+            Tool.log_exception("PySide6 import failed", e, include_traceback=False)
         Tool.write_log("Creating QApplication...")
         app = QApplication(sys.argv)
         ex = mainWindow()
         ex.show()
         sys.exit(app.exec())
-        
-        Tool.write_log("✅ QApplication created")      
-        Tool.write_log("✅ Window shown - application running")
-        
-        success_file = Path.home() / 'myapp_success.txt'
-        success_file.write_text("Application started successfully!")
-        
-        Tool.write_log(f"{Tools.resourcePath(Config.config['pathToSaveCP'])}")
-    
-        app.exec_()
-        
+
     except Exception as e:
-        Tool.write_log(f"💥 CRITICAL ERROR: {e}")
-        import traceback
-        error_details = traceback.format_exc()
-        Tool.write_log(f"Traceback:\n{error_details}")
+        Tool.log_exception("Критическая ошибка запуска приложения", e, include_traceback=True)
+        error_details = "".join(traceback.format_exception(type(e), e, e.__traceback__))
         error_file = Path.home() / 'myapp_error.txt'
         error_file.write_text(f"Error: {e}\n\n{error_details}")
 
-    
+

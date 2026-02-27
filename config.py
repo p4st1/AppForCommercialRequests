@@ -1,19 +1,35 @@
 class Config:
+    DEFAULT_SETTINGS = {
+        "closeTable": True,
+        "autoFill": True,
+        "openUpdateTab": True,
+        "openLastTab": True,
+        "testFeature": False,
+    }
+
+    DEFAULT_CONFIG = {
+        "logisticVar": "0",
+        "logisticNum": "1",
+        "customNum": "1",
+        "termDelivery": "0",
+        "markup": "1",
+        "pathToSaveCP": "",
+        "pathToSaveExcel": "",
+        "pathToDB": "",
+        "ExcelIndent": "0",
+        "lastTable": "",
+    }
+
     types = {
             '%': 'percents',
             '*': 'multiply',
             '/': 'division'
         }
-    
+
     isTableOpened = False
 
-    settings = {
-        
-    }
-    
-    config = {
-        
-    }
+    settings = DEFAULT_SETTINGS.copy()
+    config = DEFAULT_CONFIG.copy()
 
     cfg_path = ''
     db_path = ''
@@ -23,7 +39,7 @@ class Config:
     template_docx_path_short = ''
     log_path = ''
     logo_path = ''
-    
+
     currencySymb = ('¥', '$', '₽')
     currency = {
         '¥': ('CNY',
@@ -33,7 +49,7 @@ class Config:
         '$': ('USD',
                ((u'доллар', u'доллара', u'долларов'), 'm'),
                ((u'цент', u'цента', u'центов'), 'f')
-        ), 
+        ),
         '₽': ('RUB',
                ((u'рубль', u'рубля', u'рублей'), 'm'),
                ((u'копейка', u'копейки', u'копеек'), 'f')
@@ -43,5 +59,5 @@ class Config:
               ((u'евроцент', u'евроцента', u'евроцентов'), 'f')
         )
     }
-    
+
     testFeature = False

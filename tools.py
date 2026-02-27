@@ -1,12 +1,15 @@
-import shutil
+import ast
+import decimal
+import hashlib
 import json
+import os
+import re
+import shutil
+import sys
+import time
+import traceback
 from pathlib import Path
 from config import Config
-import time
-import decimal
-import json
-import sys
-import os
 
 class DatabaseTools:
     def __init__(self):
@@ -16,40 +19,130 @@ class DatabaseTools:
     def phoneNumToStr(num):
         num = str(num)
         return f'+{num[0]} ({num[1:4]}) {num[4:7]}-{num[7:9]}-{num[9:]}'
-    
+
+    @staticmethod
+    def _safe_eval(expression: str) -> float:
+        allowed_binary = {
+            ast.Add: lambda a, b: a + b,
+            ast.Sub: lambda a, b: a - b,
+            ast.Mult: lambda a, b: a * b,
+            ast.Div: lambda a, b: a / b,
+            ast.Pow: lambda a, b: a ** b,
+        }
+        allowed_unary = {
+            ast.UAdd: lambda a: a,
+            ast.USub: lambda a: -a,
+        }
+        ast_num = getattr(ast, "Num", None)
+
+        def _eval(node):
+            if isinstance(node, ast.Expression):
+                return _eval(node.body)
+            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                return float(node.value)
+            if ast_num is not None and isinstance(node, ast_num):
+                return float(node.n)
+            if isinstance(node, ast.BinOp) and type(node.op) in allowed_binary:
+                return allowed_binary[type(node.op)](_eval(node.left), _eval(node.right))
+            if isinstance(node, ast.UnaryOp) and type(node.op) in allowed_unary:
+                return allowed_unary[type(node.op)](_eval(node.operand))
+            if isinstance(node, ast.Call):
+                raise ValueError("Функции в формулах не поддерживаются")
+            raise ValueError("Недопустимое выражение")
+
+        parsed = ast.parse(expression, mode="eval")
+        return float(_eval(parsed))
+
+    @staticmethod
+    def _to_bool(value, default=False):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "y", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "n", "off"}:
+                return False
+        return default
+
+    @staticmethod
+    def merge_config_with_defaults(raw_data: dict | None) -> dict:
+        data = raw_data if isinstance(raw_data, dict) else {}
+        raw_config = data.get("config", {})
+        raw_settings = data.get("settings", {})
+
+        config = Config.DEFAULT_CONFIG.copy()
+        if isinstance(raw_config, dict):
+            config.update(raw_config)
+
+        # Backward compatibility for older key name.
+        if "customLine" in config and "customNum" not in raw_config:
+            config["customNum"] = str(config["customLine"])
+
+        if not str(config.get("pathToSaveExcel", "")).strip():
+            config["pathToSaveExcel"] = str(config.get("pathToSaveCP", "")).strip()
+
+        config["logisticVar"] = str(config.get("logisticVar", "0"))
+        config["logisticNum"] = str(config.get("logisticNum", "1"))
+        config["customNum"] = str(config.get("customNum", "1"))
+        config["termDelivery"] = str(config.get("termDelivery", "0"))
+        config["markup"] = str(config.get("markup", "1"))
+        config["ExcelIndent"] = str(config.get("ExcelIndent", "0"))
+        config["lastTable"] = str(config.get("lastTable", "")).strip()
+        config["pathToSaveCP"] = str(config.get("pathToSaveCP", "")).strip()
+        config["pathToSaveExcel"] = str(config.get("pathToSaveExcel", "")).strip()
+
+        settings = Config.DEFAULT_SETTINGS.copy()
+        if isinstance(raw_settings, dict):
+            for key in settings:
+                settings[key] = DatabaseTools._to_bool(raw_settings.get(key), settings[key])
+
+        return {"config": config, "settings": settings}
+
     @staticmethod
     def evalWithVars(line):
-        paramsData = DatabaseTools.load_json(Config.vars_path)
-        res = ''
-        for i in line.split('$'):
-            print(res)
-            for key, val in paramsData['parameters'].items():
-                variable, value, calc = val
-                if i == variable:
-                    if calc == 'percents':
-                        res += f'*{value}/100'
-                        break
-                    else:        
-                        res += f'{DatabaseTools.getCalc(calc)}{value}'
-                        break
-            else:
-                res += i
-        
-        if res[0] in '+*/':
-            res = res[1:]
-            
-        return round(eval(f'{res}'), 4)
-    
-    @staticmethod         
-    def resourcePath(relativePath):
-        try:
-            base_path = sys._MEIPASS
-        except Exception:
-            base_path = os.path.abspath(".")
+        expression = str(line or "").strip().replace(",", ".")
+        if not expression:
+            raise ValueError("Пустая формула")
 
+        paramsData = DatabaseTools.load_json(Config.vars_path)
+        parameters = {}
+        for values in paramsData.get("parameters", {}).values():
+            if len(values) >= 3:
+                variable, value, calc = values[0], values[1], values[2]
+                parameters[str(variable)] = (str(value), str(calc))
+
+        def replace_var(match):
+            token = match.group(1).strip()
+            if token not in parameters:
+                raise ValueError(f"Неизвестная переменная: {token}")
+            value, calc = parameters[token]
+            if calc == "percents":
+                return f"({value})/100"
+            if calc == "multiply":
+                return f"*({value})"
+            if calc == "division":
+                return f"/({value})"
+            return f"({value})"
+
+        expression = re.sub(r"\$([^$]+)\$", replace_var, expression)
+        expression = expression.strip()
+        while expression and expression[0] in "+*/":
+            expression = expression[1:]
+
+        if not expression:
+            raise ValueError("Пустая формула")
+
+        return round(DatabaseTools._safe_eval(expression), 4)
+
+    @staticmethod
+    def resourcePath(relativePath):
+        base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
         return os.path.join(base_path, relativePath)
-    
-    @staticmethod         
+
+    @staticmethod
     def getCalc(value):
         if value == "percents":
             return "%"
@@ -57,18 +150,62 @@ class DatabaseTools:
             return '*'
         if value == 'division':
             return '/'
-    
+
     @staticmethod
     def validNum(value):
         try:
-            float(value)
-        except:
+            float(str(value).replace(",", ".").replace(" ", ""))
+        except ValueError:
             return None
         else:
-            return float(value)
-        
+            return float(str(value).replace(",", ".").replace(" ", ""))
+
     @staticmethod
-    def user_data_dir(app_name: str) -> Path:
+    def parse_int(value, field_name: str, allow_zero=True) -> int:
+        normalized = str(value).strip().replace(" ", "").replace(",", ".")
+        if not normalized:
+            raise ValueError(f'Поле "{field_name}" не заполнено')
+        try:
+            parsed = float(normalized)
+        except ValueError:
+            raise ValueError(f'Поле "{field_name}" должно быть числом')
+        if not parsed.is_integer():
+            raise ValueError(f'Поле "{field_name}" должно быть целым числом')
+        parsed_int = int(parsed)
+        if parsed_int < 0 or (parsed_int == 0 and not allow_zero):
+            relation = "положительным" if not allow_zero else "неотрицательным"
+            raise ValueError(f'Поле "{field_name}" должно быть {relation} числом')
+        return parsed_int
+
+    @staticmethod
+    def parse_float(value, field_name: str, allow_zero=True) -> float:
+        normalized = str(value).strip().replace(" ", "").replace(",", ".")
+        if not normalized:
+            raise ValueError(f'Поле "{field_name}" не заполнено')
+        try:
+            parsed = float(normalized)
+        except ValueError:
+            raise ValueError(f'Поле "{field_name}" должно быть числом')
+        if parsed < 0 or (parsed == 0 and not allow_zero):
+            relation = "положительным" if not allow_zero else "неотрицательным"
+            raise ValueError(f'Поле "{field_name}" должно быть {relation} числом')
+        return parsed
+
+    @staticmethod
+    def parse_delivery_days(value) -> int:
+        text = str(value or "").strip()
+        if not text:
+            return 0
+        match = re.search(r"(-?\d+)", text)
+        if not match:
+            raise ValueError(f'Не удалось распознать срок поставки: "{text}"')
+        days = int(match.group(1))
+        if days < 0:
+            raise ValueError(f'Срок поставки не может быть отрицательным: "{text}"')
+        return days
+
+    @staticmethod
+    def _preferred_user_data_dir(app_name: str) -> Path:
         if sys.platform.startswith("win"):
             return Path(os.environ["APPDATA"]) / app_name
         if sys.platform == "darwin":
@@ -76,42 +213,232 @@ class DatabaseTools:
         return Path.home() / ".local" / "share" / app_name
 
     @staticmethod
-    def ensure_user_file(app_name: str, template_rel_path: str, target_name: str, f=0) -> Path:
+    def user_data_dir(app_name: str) -> Path:
+        preferred = DatabaseTools._preferred_user_data_dir(app_name)
+        fallback = Path.cwd() / ".appdata" / app_name
+        for candidate in (preferred, fallback):
+            try:
+                candidate.mkdir(parents=True, exist_ok=True)
+                probe = candidate / ".write_probe"
+                with open(probe, "w", encoding="utf-8") as f:
+                    f.write("ok")
+                probe.unlink(missing_ok=True)
+                return candidate
+            except Exception as e:
+                DatabaseTools.log_exception(
+                    f"Не удалось создать директорию данных: {candidate}",
+                    e,
+                    include_traceback=False,
+                )
+                continue
+
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+    @staticmethod
+    def _source_versions_path(app_name: str) -> Path:
+        return DatabaseTools.user_data_dir(app_name) / ".bundle_versions.json"
+
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with open(path, "rb") as file:
+            while True:
+                chunk = file.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _load_source_versions(app_name: str) -> dict:
+        versions_path = DatabaseTools._source_versions_path(app_name)
+        try:
+            data = DatabaseTools.load_json(versions_path)
+        except Exception as e:
+            DatabaseTools.log_exception(
+                f"Не удалось загрузить версии ресурсов: {versions_path}",
+                e,
+                include_traceback=False,
+            )
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    @staticmethod
+    def _save_source_versions(app_name: str, versions: dict) -> None:
+        versions_path = DatabaseTools._source_versions_path(app_name)
+        DatabaseTools.save_json_atomic(versions_path, versions)
+
+    @staticmethod
+    def _merge_json_defaults(current_value, default_value):
+        if isinstance(default_value, dict):
+            if not isinstance(current_value, dict):
+                current_value = {}
+            merged = dict(current_value)
+            for key, value in default_value.items():
+                merged[key] = DatabaseTools._merge_json_defaults(current_value.get(key), value)
+            return merged
+
+        if current_value is None:
+            return default_value
+        return current_value
+
+    @staticmethod
+    def _sync_json_with_defaults(dst: Path, src: Path) -> None:
+        try:
+            source_data = DatabaseTools.load_json(src)
+        except Exception as e:
+            DatabaseTools.log_exception(
+                f"Не удалось прочитать исходный JSON {src}, выполняется копирование",
+                e,
+                include_traceback=False,
+            )
+            shutil.copy2(src, dst)
+            return
+
+        try:
+            current_data = DatabaseTools.load_json(dst)
+        except Exception as e:
+            DatabaseTools.log_exception(
+                f"Не удалось прочитать пользовательский JSON {dst}, применяются значения по умолчанию",
+                e,
+                include_traceback=False,
+            )
+            current_data = {}
+
+        merged = DatabaseTools._merge_json_defaults(current_data, source_data)
+        DatabaseTools.save_json_atomic(dst, merged)
+
+    @staticmethod
+    def ensure_user_file(
+        app_name: str,
+        template_rel_path: str,
+        target_name: str,
+        f=0,
+        sync_mode: str = "if_missing",
+    ) -> Path:
         dst_dir = DatabaseTools.user_data_dir(app_name)
         dst_dir.mkdir(parents=True, exist_ok=True)
 
         dst = dst_dir / target_name
+        src = Path(DatabaseTools.resourcePath(template_rel_path))
+        legacy = DatabaseTools._preferred_user_data_dir(app_name) / target_name
+
         if not dst.exists():
-            src = DatabaseTools.resourcePath(template_rel_path)
-            shutil.copy2(src, dst)
-         
+            copied = False
+            if legacy.exists() and legacy != dst:
+                try:
+                    shutil.copy2(legacy, dst)
+                    copied = True
+                except Exception as e:
+                    DatabaseTools.log_exception(
+                        f"Не удалось скопировать legacy-файл {legacy} -> {dst}",
+                        e,
+                        include_traceback=False,
+                    )
+                    copied = False
+            if not copied:
+                shutil.copy2(src, dst)
+
         if f:
-            src = DatabaseTools.resourcePath(template_rel_path)
             shutil.copy2(src, dst)
-            
+            return dst
+
+        if sync_mode == "if_missing":
+            return dst
+
+        versions = DatabaseTools._load_source_versions(app_name)
+        current_source_hash = DatabaseTools._file_sha256(src)
+        previous_source_hash = versions.get(target_name)
+
+        if previous_source_hash != current_source_hash:
+            if sync_mode == "replace_on_source_change":
+                shutil.copy2(src, dst)
+            elif sync_mode == "merge_json_on_source_change":
+                DatabaseTools._sync_json_with_defaults(dst, src)
+            versions[target_name] = current_source_hash
+            DatabaseTools._save_source_versions(app_name, versions)
+
+        elif target_name not in versions:
+            versions[target_name] = current_source_hash
+            DatabaseTools._save_source_versions(app_name, versions)
+
         return dst
 
     @staticmethod
     def load_json(path: Path) -> dict:
-        with open(path, "r", encoding="utf-8") as f:
+        file_path = Path(path)
+        with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
     @staticmethod
     def save_json_atomic(path: Path, data: dict) -> None:
-        tmp = path.with_suffix(path.suffix + ".tmp")
+        file_path = Path(path)
+        tmp = file_path.with_suffix(file_path.suffix + ".tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        tmp.replace(path)
-        
+        tmp.replace(file_path)
+
     @staticmethod
-    def write_log(message):
-        with open(Config.log_path, 'a', encoding='utf-8') as f:
-            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-            f.write(f"[{timestamp}] {message}\n")
-    
+    def _resolve_log_path(log_path: str | Path | None = None) -> Path:
+        if log_path is not None:
+            target = Path(log_path)
+        else:
+            configured = str(getattr(Config, "log_path", "") or "").strip()
+            target = Path(configured) if configured else Path.cwd() / "logs.txt"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+
+    @staticmethod
+    def write_log(message, log_path: str | Path | None = None):
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+        log_file = DatabaseTools._resolve_log_path(log_path)
+        line = f"[{timestamp}] {message}\n"
+        try:
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(line)
+        except OSError:
+            sys.stderr.write(line)
+
+    @staticmethod
+    def log_exception(
+        context: str,
+        error: Exception,
+        *,
+        include_traceback: bool = True,
+        log_path: str | Path | None = None,
+    ) -> None:
+        DatabaseTools.write_log(
+            f"[ERROR] {context}: {type(error).__name__}: {error}",
+            log_path=log_path,
+        )
+        if include_traceback:
+            tb = "".join(
+                traceback.format_exception(type(error), error, error.__traceback__)
+            ).strip()
+            if tb:
+                for line in tb.splitlines():
+                    DatabaseTools.write_log(line, log_path=log_path)
+
+    @staticmethod
+    def ensure_directory(path_value: str | Path | None, fallback_dir: Path) -> Path:
+        raw = str(path_value or "").strip()
+        windows_abs = bool(re.match(r"^[A-Za-z]:[\\/]", raw))
+        if windows_abs and os.name != "nt":
+            path = fallback_dir
+        else:
+            path = Path(raw).expanduser() if raw else fallback_dir
+        if not path.is_absolute():
+            path = (fallback_dir / path).resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
     @staticmethod
     def num2text(num):
-        num, mantissa = str(num).split('.')
+        normalized = str(num).replace(" ", "").replace(",", ".")
+        if "." not in normalized:
+            normalized = f"{normalized}.00"
+        num, mantissa = normalized.split('.', 1)
         num = num[::-1]
         num = [num[i : i + 3] for i in range(0, len(num), 3)]
         res = ''
@@ -121,22 +448,33 @@ class DatabaseTools:
 
     @staticmethod
     def parsePrice(line):
+        currency_ind = 0
+        line = str(line or "").strip()
         for symb in Config.currencySymb:
             if symb in line:
                 currency_ind = line.find(symb)
                 break
-        if currency_ind == 0:
-            return line[0], line[1:]
         else:
-            return line[-1], line[:-1]
-        
+            if "€" in line:
+                currency_ind = line.find("€")
+                symb = "€"
+            else:
+                return "", line
+        if currency_ind == 0:
+            return symb, line[1:].strip()
+        return symb, line.replace(symb, "").strip()
+
     @staticmethod
     def formatPrice(price, currency):
+        price_text = DatabaseTools.num2text(str(price).replace(" ", "").replace(",", "."))
+        if not currency:
+            return price_text
         if currency == '₽':
-            return DatabaseTools.num2text(price.replace(',', '.')) + currency
+            return price_text + currency
         if currency in ['$', '¥', '€']:
-            return currency + DatabaseTools.num2text(price.replace(',', '.'))
-    
+            return currency + price_text
+        return price_text
+
     @staticmethod
     def formWord(word, form):
         Dictionary = {
@@ -150,17 +488,18 @@ class DatabaseTools:
         'ко': ('ко', 'ко', 'ко', 'ко'),
         'ов': ('ов', 'ова', 'ову', 'ова'),
         'ва': ('ва', 'вой', 'вой', 'ву'),
+        'ик': ('ик', 'ика', 'ику', 'ика')
         }
-        
+
         if len(word) < 2:
             return -1
-        
+
         if word[-2:] not in Dictionary:
             return word
-        
+
         return word[:-2] + Dictionary[word[-2:]][form]
 
-        
+
 class Tools:
     def __init__(self):
         self.units = (
@@ -275,21 +614,3 @@ class Tools:
         return u'{} {}'.format(
             self.num2text(int(integral), int_units),
             self.num2text(int(exp), exp_units))
-
-    if __name__ == '__main__':
-        import sys
-        if len(sys.argv) > 1:
-            try:
-                num = sys.argv[1]
-                if '.' in num:
-                    print(decimal2text(
-                        decimal.Decimal(num),
-                        int_units=((u'штука', u'штуки', u'штук'), 'f'),
-                        exp_units=((u'кусок', u'куска', u'кусков'), 'm')))
-                else:
-                    print(num2text(
-                        int(num),
-                        main_units=((u'штука', u'штуки', u'штук'), 'f')))
-            except ValueError:
-                print (sys.stderr, "Invalid argument {}".format(sys.argv[1]))
-            sys.exit()
