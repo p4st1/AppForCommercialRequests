@@ -1,9 +1,9 @@
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QFileDialog
 from tools import DatabaseTools as Tool
 from ui_settingsAppGui import Ui_MainWindow
-import json
 from config import Config
+from pathlib import Path
 import sys
 import os
 
@@ -28,11 +28,17 @@ class mainWindow(QMainWindow):
         self.ui.closeTableCheckBox.toggled.connect(self.closeTableChange)
         self.ui.openLastTable.toggled.connect(self.openLastTableChange)
         self.ui.openUpdateTab.toggled.connect(self.openUpdateTabChange)
-        
-        self.ui.CPdirLine.setText(self.resourcePath(Config.config['pathToSaveCP']))
+
+        default_dir = Path.home() / "Documents"
+        cp_dir = Tool.ensure_directory(Config.config.get('pathToSaveCP'), default_dir)
+        excel_dir = Tool.ensure_directory(Config.config.get('pathToSaveExcel') or cp_dir, cp_dir)
+        Config.config['pathToSaveCP'] = str(cp_dir)
+        Config.config['pathToSaveExcel'] = str(excel_dir)
+
+        self.ui.CPdirLine.setText(str(cp_dir))
         self.ui.dirOpenButton.clicked.connect(self.selectDirectory)
-        
-        self.ui.ExcelDirLine.setText(self.resourcePath(Config.config['pathToSaveExcel']))
+
+        self.ui.ExcelDirLine.setText(str(excel_dir))
         self.ui.dirOpenButton_2.clicked.connect(self.selectDirectory2)
         
         self.ui.excelIndent.setValue(int(Config.config['ExcelIndent']))
@@ -54,22 +60,27 @@ class mainWindow(QMainWindow):
         Config.settings['closeTable'] = signal
             
     def selectDirectory(self):
+        current_dir = Config.config.get('pathToSaveCP', str(Path.home()))
         directory = QFileDialog.getExistingDirectory(
             self,
             "Выберите директорию",
-            "",
+            current_dir,
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
         
         if directory:
             Config.config['pathToSaveCP'] = directory
+            if not Config.config.get('pathToSaveExcel'):
+                Config.config['pathToSaveExcel'] = directory
+                self.ui.ExcelDirLine.setText(directory)
             self.ui.CPdirLine.setText(directory)
     
     def selectDirectory2(self):
+        current_dir = Config.config.get('pathToSaveExcel', Config.config.get('pathToSaveCP', str(Path.home())))
         directory = QFileDialog.getExistingDirectory(
             self,
             "Выберите директорию",
-            "",
+            current_dir,
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
         
@@ -86,12 +97,17 @@ class mainWindow(QMainWindow):
         return os.path.join(base_path, relativePath)
 
     def closeEvent(self, event):
+        default_dir = Path.home() / "Documents"
+        cp_dir = Tool.ensure_directory(Config.config.get('pathToSaveCP'), default_dir)
+        excel_dir = Tool.ensure_directory(Config.config.get('pathToSaveExcel') or cp_dir, cp_dir)
+        Config.config['pathToSaveCP'] = str(cp_dir)
+        Config.config['pathToSaveExcel'] = str(excel_dir)
+
         data = {'config' : Config.config,
                 'settings' : Config.settings}
         Tool.save_json_atomic(Config.cfg_path, data)
         self.windowClosed.emit()
         super().closeEvent(event)
-        self.close()
 
     def funcExitSystem(self):
         self.close()

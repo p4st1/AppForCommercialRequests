@@ -120,8 +120,6 @@ class mainWindow(QMainWindow):
         self.db.close()
         self.windowClosed.emit()
         super().closeEvent(event)
-        
-        self.close()
 
     def funcExitSystem(self):
         self.db.close()

@@ -1,4 +1,25 @@
 class Config:
+    DEFAULT_SETTINGS = {
+        "closeTable": True,
+        "autoFill": True,
+        "openUpdateTab": True,
+        "openLastTab": True,
+        "testFeature": False,
+    }
+
+    DEFAULT_CONFIG = {
+        "logisticVar": "0",
+        "logisticNum": "1",
+        "customNum": "1",
+        "termDelivery": "0",
+        "markup": "1",
+        "pathToSaveCP": "",
+        "pathToSaveExcel": "",
+        "pathToDB": "",
+        "ExcelIndent": "0",
+        "lastTable": "",
+    }
+
     types = {
             '%': 'percents',
             '*': 'multiply',
@@ -7,13 +28,8 @@ class Config:
     
     isTableOpened = False
 
-    settings = {
-        
-    }
-    
-    config = {
-        
-    }
+    settings = DEFAULT_SETTINGS.copy()
+    config = DEFAULT_CONFIG.copy()
 
     cfg_path = ''
     db_path = ''

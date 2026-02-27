@@ -1,7 +1,5 @@
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit
-from tools import DatabaseTools as Tool
-import json
+from PySide6.QtCore import Signal, Qt
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QListWidgetItem
 from config import Config
 from database import Database
 from addNewCustomer import mainWindow as newSupplierWindow
@@ -35,43 +33,58 @@ class mainWindow(QMainWindow):
         self.ui.setupUi(self)
         
         self.db = Database()
-        self.db.open(Config.db_path)
+        if self.db.open(Config.db_path) == -1:
+            QMessageBox.critical(self, "Ошибка", "Не удалось открыть базу данных")
         
         self.ui.suppliersList.itemClicked.connect(self.customerSelected)
         self.ui.closeButton.clicked.connect(self.close)
         self.ui.addSupplierButton.clicked.connect(self.openNewCustomer)
         self.ui.changeSupplierButton.clicked.connect(self.openExistCustomer)
         self.ui.deleteSupplierButton.clicked.connect(self.delSelectedCustomer)
+
+        self.selectedCustomerData = None
+        self.ui.deleteSupplierButton.setEnabled(False)
+        self.ui.changeSupplierButton.setEnabled(False)
         
         self.showSuppliers()
     
     def showSuppliers(self):
         self.suppliers = self.db.getAllCustomers()
         self.ui.suppliersList.clear()
+        self.customer_by_id = {}
         for supplier in self.suppliers:
-            self.ui.suppliersList.addItem(supplier[7])
+            display_name = supplier[7] if supplier[7] else f"{supplier[2]} {supplier[1]}".strip()
+            item = QListWidgetItem(display_name or "Без названия")
+            item.setData(Qt.ItemDataRole.UserRole, supplier[0])
+            self.customer_by_id[supplier[0]] = supplier
+            self.ui.suppliersList.addItem(item)
     
     def customerSelected(self, item):
-        self.selectedCustomerData = self.db.getCustomer(item.text())
-        self.ui.deleteSupplierButton.setEnabled(True)
-        self.ui.changeSupplierButton.setEnabled(True)
+        customer_id = item.data(Qt.ItemDataRole.UserRole)
+        self.selectedCustomerData = self.customer_by_id.get(customer_id)
+        is_enabled = self.selectedCustomerData is not None
+        self.ui.deleteSupplierButton.setEnabled(is_enabled)
+        self.ui.changeSupplierButton.setEnabled(is_enabled)
 
     def delSelectedCustomer(self):
-        self.db.delCustomer(self.selectedCustomerData[0][7])
+        if not self.selectedCustomerData:
+            return
+        self.db.delCustomerById(self.selectedCustomerData[0])
         self.db.save()
         self.showSuppliers()
+        self.selectedCustomerData = None
         self.ui.deleteSupplierButton.setEnabled(False)
         self.ui.changeSupplierButton.setEnabled(False)
         
     def openExistCustomer(self):
-        self.db.delCustomer(self.selectedCustomerData[0][7])
-        self.db.save()
-        window = newSupplierWindow(self, exist=self.selectedCustomerData[0])
+        if not self.selectedCustomerData:
+            return
+        window = newSupplierWindow(self, exist=self.selectedCustomerData)
         window.show()
         window.windowClosed.connect(self.showSuppliers)
         
     def openNewCustomer(self):
-        window = newSupplierWindow(self, exist=[])
+        window = newSupplierWindow(self, exist=None)
         window.show()
         window.windowClosed.connect(self.showSuppliers)
         
@@ -87,7 +100,6 @@ class mainWindow(QMainWindow):
         self.db.close()
         self.windowClosed.emit()
         super().closeEvent(event)
-        self.close()
 
     def funcExitSystem(self):
         self.close()

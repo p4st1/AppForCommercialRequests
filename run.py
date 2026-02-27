@@ -2,7 +2,6 @@ from main import mainWindow
 from tools import DatabaseTools as Tool
 from config import Config
 from pathlib import Path
-import json
 import sys
 import os
 
@@ -28,6 +27,15 @@ if __name__ == '__main__':
         Config.logo_path = Tool.ensure_user_file('MyApp', 'assets/app.jpg', 'app.jpg')
         Config.print_path = Tool.ensure_user_file('MyApp', 'assets/print.png', 'print.png')
         Config.sign_path = Tool.ensure_user_file('MyApp', 'assets/sign.png', 'sign.png')
+
+        try:
+            current = Tool.load_json(Config.cfg_path)
+        except Exception:
+            current = {}
+        normalized = Tool.merge_config_with_defaults(current)
+        Tool.save_json_atomic(Config.cfg_path, normalized)
+        Config.config = normalized["config"]
+        Config.settings = normalized["settings"]
               
         Tool.write_log("=" * 50)
         Tool.write_log("🚀 APPLICATION STARTING")
@@ -68,16 +76,6 @@ if __name__ == '__main__':
         ex = mainWindow()
         ex.show()
         sys.exit(app.exec())
-        
-        Tool.write_log("✅ QApplication created")      
-        Tool.write_log("✅ Window shown - application running")
-        
-        success_file = Path.home() / 'myapp_success.txt'
-        success_file.write_text("Application started successfully!")
-        
-        Tool.write_log(f"{Tools.resourcePath(Config.config['pathToSaveCP'])}")
-    
-        app.exec_()
         
     except Exception as e:
         Tool.write_log(f"💥 CRITICAL ERROR: {e}")

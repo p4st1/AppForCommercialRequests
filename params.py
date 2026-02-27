@@ -3,7 +3,6 @@ from PySide6.QtWidgets import QMainWindow, QMessageBox, QLabel, QLineEdit
 from ui_paramsGui import Ui_MainWindow
 from ui_createParamsGui import Ui_MainWindow as Ui_addNewParamWindow
 from tools import DatabaseTools as Tool
-import json
 from config import Config
 import sys
 import os
@@ -39,20 +38,26 @@ class addNewParamGUI(QMainWindow):
         self.close()
 
     def addParam(self):
+        name = self.ui.nameEdit.text().strip()
+        value_raw = self.ui.valueEdit.text().strip().replace(",", ".")
+        if not name:
+            QMessageBox.warning(self, "Ошибка", "Введите название переменной")
+            return
+        try:
+            value = str(float(value_raw))
+        except ValueError:
+            QMessageBox.warning(self, "Ошибка", "Введите числовое значение")
+            return
 
-        with open(
-            self.resourcePath("utilities/variables.json"), "r", encoding="utf-8"
-        ) as f:
-            self.paramsData = json.load(f)
-            self.paramsData["parameters"][len(self.paramsData["parameters"]) + 1] = [
-                self.ui.nameEdit.text(),
-                self.ui.valueEdit.text(),
-                Config.types[self.typeEdit.currentText()],
-            ]
-        with open(
-            self.resourcePath("utilities/variables.json"), "w", encoding="utf-8"
-        ) as f:
-            json.dump(self.paramsData, f, indent=4)
+        self.paramsData = Tool.load_json(Config.vars_path)
+        keys = [int(k) for k in self.paramsData.get("parameters", {}).keys() if str(k).isdigit()]
+        next_key = str(max(keys, default=0) + 1)
+        self.paramsData["parameters"][next_key] = [
+            name,
+            value,
+            Config.types[self.ui.typeEdit.currentText()],
+        ]
+        Tool.save_json_atomic(Config.vars_path, self.paramsData)
         self.close()
     
     def resourcePath(self, relativePath):
@@ -64,7 +69,7 @@ class addNewParamGUI(QMainWindow):
         return os.path.join(base_path, relativePath)
 
     def closeEvent(self, event):
-        self.close()
+        super().closeEvent(event)
 
     def funcExitSystem(self):
         self.close()
@@ -107,45 +112,69 @@ class mainWindow(QMainWindow):
         self.ui.cancelButton.clicked.connect(self.cancelChanges)
 
     def saveChanges(self):
-        data = Tool.load_json(Config.vars_path)  
+        data = Tool.load_json(Config.vars_path)
         for key, item in self.parameters.items():
-            value = item.text().split("%")[0]
-            if value.isdigit():
-                data["parameters"][key] = [
-                    data["parameters"][key][0],
-                    value,
-                    "percents",
-                ]
+            raw = item.text().strip().replace(",", ".")
+            if not raw:
+                QMessageBox.warning(self, "Ошибка", f"Поле {data['parameters'][key][0]} пустое")
+                return
+            if raw[-1] in Config.types:
+                symbol = raw[-1]
+                value_part = raw[:-1]
+                calc_type = Config.types[symbol]
             else:
+                value_part = raw
+                calc_type = data["parameters"][key][2]
+            try:
+                value = str(float(value_part))
+            except ValueError:
                 error = QMessageBox(self)
                 error.setWindowTitle("Ошибка")
-                error.setText(f"Введены некорректные данные: {value}")
+                error.setText(f"Введены некорректные данные: {raw}")
                 error.exec()
-        
-         
-        Tool.save_json_atomic(Config.vars_path, data) 
+                return
+
+            data["parameters"][key] = [
+                data["parameters"][key][0],
+                value,
+                calc_type,
+            ]
+
+        Tool.save_json_atomic(Config.vars_path, data)
         self.ui.saveButton.setDisabled(True)
         self.ui.saveAndCloseButton.setDisabled(True)
         self.hasChanges = False
 
     def saveChangesAndClose(self):
-        data = Tool.load_json(Config.vars_path)  
+        data = Tool.load_json(Config.vars_path)
         for key, item in self.parameters.items():
-            value = item.text().split("%")[0]
-            if value.isdigit():
-                data["parameters"][key] = [
-                    data["parameters"][key][0],
-                    value,
-                    "percents",
-                ]
+            raw = item.text().strip().replace(",", ".")
+            if not raw:
+                QMessageBox.warning(self, "Ошибка", f"Поле {data['parameters'][key][0]} пустое")
+                return
+            if raw[-1] in Config.types:
+                symbol = raw[-1]
+                value_part = raw[:-1]
+                calc_type = Config.types[symbol]
             else:
+                value_part = raw
+                calc_type = data["parameters"][key][2]
+            try:
+                value = str(float(value_part))
+            except ValueError:
                 error = QMessageBox(self)
                 error.setWindowTitle("Ошибка")
-                error.setText(f"Введены некорректные данные: {value}")
+                error.setText(f"Введены некорректные данные: {raw}")
                 error.exec()
-        
-         
-        Tool.save_json_atomic(Config.vars_path, data) 
+                return
+
+            data["parameters"][key] = [
+                data["parameters"][key][0],
+                value,
+                calc_type,
+            ]
+
+        Tool.save_json_atomic(Config.vars_path, data)
         self.ui.saveButton.setDisabled(True)
         self.ui.saveAndCloseButton.setDisabled(True)
         self.hasChanges = False
@@ -187,7 +216,6 @@ class mainWindow(QMainWindow):
     def closeEvent(self, event):
         self.windowClosed.emit()
         super().closeEvent(event)
-        self.close()
 
     def funcExitSystem(self):
         self.close()

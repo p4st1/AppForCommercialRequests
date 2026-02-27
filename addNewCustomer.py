@@ -25,33 +25,43 @@ class Dialog:
 class mainWindow(QMainWindow):
     windowClosed = Signal()
 
-    def __init__(self, parent=None, exist=[]):
+    def __init__(self, parent=None, exist=None):
         super(mainWindow, self).__init__(parent)
         
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         
         self.logoURL = 'None'
+        self.edit_customer_id = None
         
         self.ui.acceptButton.clicked.connect(self.addNewSupplier)
         
         if exist:
+            self.edit_customer_id = exist[0]
             self.ui.nameLine.setText(f'{exist[2]} {exist[1]} {exist[3]}')
             self.ui.emailLine.setText(exist[5])
             self.ui.companyNameLine.setText(exist[7])
             self.ui.phoneNumLine.setText(exist[6])
             self.ui.postLine.setText(exist[8])
             self.ui.condLine.setText(exist[9])
+            if exist[10] == 'женский':
+                self.ui.sexComboBox.setCurrentIndex(1)
 
+    @staticmethod
+    def split_full_name(full_name: str):
+        parts = full_name.split()
+        surname = parts[0] if len(parts) > 0 else ''
+        name = parts[1] if len(parts) > 1 else ''
+        patronymic = " ".join(parts[2:]) if len(parts) > 2 else ''
+        return surname, name, patronymic
 
     def addNewSupplier(self):
         db = Database()
-        db.open(Config.db_path)
+        if db.open(Config.db_path) == -1:
+            QMessageBox.critical(self, "Ошибка", "Не удалось открыть базу данных")
+            return
         
-        if self.ui.nameLine.text():
-            surname, name, patronymic = self.ui.nameLine.text().split()
-        else:
-            surname, name, patronymic = '', '', ''
+        surname, name, patronymic = self.split_full_name(self.ui.nameLine.text().strip())
 
         fullAddress = ''
         if self.ui.mailIndexLine.text():
@@ -111,8 +121,16 @@ class mainWindow(QMainWindow):
             conditions,
             sex
                 )
-    
-        db.createCustomer(data)
+
+        if not companyName:
+            QMessageBox.warning(self, "Ошибка", "Заполните поле \"Название компании\"")
+            db.close()
+            return
+
+        if self.edit_customer_id is not None:
+            db.updateCustomer(self.edit_customer_id, data)
+        else:
+            db.createCustomer(data)
         db.save()
         db.close()
         self.close()
@@ -128,7 +146,6 @@ class mainWindow(QMainWindow):
     def closeEvent(self, event):
         self.windowClosed.emit()
         super().closeEvent(event)
-        self.close()
 
     def funcExitSystem(self):
         self.close()
