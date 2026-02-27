@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 import shutil
 import sqlite3
+import re
+from tools import DatabaseTools as Tool
 
 
 class Database:
@@ -18,15 +20,7 @@ class Database:
 
     def create(self):
         cursor = self._require_cursor()
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS offers(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                offer_number INTEGER NOT NULL,
-                date TEXT NOT NULL
-            )
-            """
-        )
+        self._create_offers_table()
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS customers(
@@ -51,6 +45,28 @@ class Database:
             """
         )
 
+    def _create_offers_table(self):
+        cursor = self._require_cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS offers(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                offer_number INTEGER NOT NULL DEFAULT 0,
+                date TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT '',
+                event_type TEXT NOT NULL DEFAULT 'docx',
+                customer_company TEXT NOT NULL DEFAULT '',
+                customer_name TEXT NOT NULL DEFAULT '',
+                items_count INTEGER NOT NULL DEFAULT 0,
+                total_amount REAL,
+                currency TEXT NOT NULL DEFAULT '',
+                file_path TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                payload_json TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+
     def _get_columns(self, table_name: str) -> list[str]:
         cursor = self._require_cursor()
         cursor.execute(f"PRAGMA table_info({table_name})")
@@ -63,15 +79,7 @@ class Database:
             return
 
         cursor.execute("ALTER TABLE offers RENAME TO offers_legacy")
-        cursor.execute(
-            """
-            CREATE TABLE offers(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                offer_number INTEGER NOT NULL,
-                date TEXT NOT NULL
-            )
-            """
-        )
+        self._create_offers_table()
 
         cursor.execute("PRAGMA table_info(offers_legacy)")
         legacy_columns = {row[1] for row in cursor.fetchall()}
@@ -91,20 +99,77 @@ class Database:
 
                 # Если в старой схеме id был валидным положительным числом, используем его
                 # как исходный номер предложения в этот день.
-                try:
-                    parsed_id = int(old_id)
+                old_id_text = str(old_id or "").strip()
+                if old_id_text.isdigit():
+                    parsed_id = int(old_id_text)
                     if parsed_id > 0:
                         offer_number = max(offer_number, parsed_id)
                         counters[text_date] = offer_number
-                except (TypeError, ValueError):
-                    pass
 
                 cursor.execute(
-                    "INSERT INTO offers (offer_number, date) VALUES (?, ?)",
-                    (offer_number, text_date),
+                    """
+                    INSERT INTO offers (
+                        offer_number,
+                        date,
+                        created_at,
+                        event_type
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (offer_number, text_date, f"{text_date} 00:00:00", "docx"),
                 )
 
         cursor.execute("DROP TABLE offers_legacy")
+
+    def _ensure_offers_columns(self):
+        cursor = self._require_cursor()
+        columns = set(self._get_columns("offers"))
+        required_columns = {
+            "created_at": "TEXT NOT NULL DEFAULT ''",
+            "event_type": "TEXT NOT NULL DEFAULT 'docx'",
+            "customer_company": "TEXT NOT NULL DEFAULT ''",
+            "customer_name": "TEXT NOT NULL DEFAULT ''",
+            "items_count": "INTEGER NOT NULL DEFAULT 0",
+            "total_amount": "REAL",
+            "currency": "TEXT NOT NULL DEFAULT ''",
+            "file_path": "TEXT NOT NULL DEFAULT ''",
+            "notes": "TEXT NOT NULL DEFAULT ''",
+            "payload_json": "TEXT NOT NULL DEFAULT ''",
+        }
+
+        for name, definition in required_columns.items():
+            if name in columns:
+                continue
+            cursor.execute(f"ALTER TABLE offers ADD COLUMN {name} {definition}")
+
+        cursor.execute(
+            """
+            UPDATE offers
+            SET created_at = CASE
+                WHEN LENGTH(date) = 10 THEN date || ' 00:00:00'
+                ELSE COALESCE(created_at, '')
+            END
+            WHERE COALESCE(created_at, '') = ''
+            """
+        )
+        cursor.execute(
+            """
+            UPDATE offers
+            SET event_type = 'docx'
+            WHERE COALESCE(event_type, '') = ''
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_offers_created_at
+            ON offers(created_at)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_offers_date
+            ON offers(date)
+            """
+        )
 
     def open(self, filename: str):
         try:
@@ -112,9 +177,15 @@ class Database:
             self.cursor = self.connection.cursor()
             self.create()
             self._migrate_offers()
+            self._ensure_offers_columns()
             self.save()
             return 0
-        except Exception:
+        except Exception as e:
+            Tool.log_exception(
+                f"Не удалось открыть БД: {filename}",
+                e,
+                include_traceback=True,
+            )
             self.connection = None
             self.cursor = None
             return -1
@@ -137,19 +208,130 @@ class Database:
             normalized[9] = "мужской"
         return tuple(normalized)
 
-    def createOffer(self):
+    def _next_offer_number(self, date_value: str) -> int:
         cursor = self._require_cursor()
-        today = datetime.now().strftime("%Y-%m-%d")
         cursor.execute(
-            "SELECT COALESCE(MAX(offer_number), 0) + 1 FROM offers WHERE date = ?",
-            (today,),
+            """
+            SELECT COALESCE(MAX(offer_number), 0) + 1
+            FROM offers
+            WHERE date = ? AND event_type = 'docx'
+            """,
+            (date_value,),
         )
-        next_offer = int(cursor.fetchone()[0])
+        return int(cursor.fetchone()[0])
+
+    def getNextOfferNumber(self, date_value: str | None = None) -> int:
+        date_to_use = date_value or datetime.now().strftime("%Y-%m-%d")
+        return self._next_offer_number(date_to_use)
+
+    def addHistoryEvent(
+        self,
+        event_type: str,
+        customer_company: str = "",
+        customer_name: str = "",
+        items_count: int = 0,
+        total_amount: float | None = None,
+        currency: str = "",
+        file_path: str = "",
+        notes: str = "",
+        payload_json: str = "",
+    ) -> int:
+        cursor = self._require_cursor()
+        now = datetime.now()
+        date_value = now.strftime("%Y-%m-%d")
+        created_at = now.strftime("%Y-%m-%d %H:%M:%S")
+        normalized_type = str(event_type or "").strip().lower() or "other"
+        offer_number = self._next_offer_number(date_value) if normalized_type == "docx" else 0
+        items_value = max(0, int(items_count or 0))
+        total_value = None if total_amount is None else float(total_amount)
+
         cursor.execute(
-            "INSERT INTO offers (offer_number, date) VALUES (?, ?)",
-            (next_offer, today),
+            """
+            INSERT INTO offers (
+                offer_number,
+                date,
+                created_at,
+                event_type,
+                customer_company,
+                customer_name,
+                items_count,
+                total_amount,
+                currency,
+                file_path,
+                notes,
+                payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                offer_number,
+                date_value,
+                created_at,
+                normalized_type,
+                str(customer_company or "").strip(),
+                str(customer_name or "").strip(),
+                items_value,
+                total_value,
+                str(currency or "").strip(),
+                str(file_path or "").strip(),
+                str(notes or "").strip(),
+                str(payload_json or ""),
+            ),
         )
-        return next_offer
+        return offer_number
+
+    def createOffer(
+        self,
+        customer_company: str = "",
+        customer_name: str = "",
+        items_count: int = 0,
+        total_amount: float | None = None,
+        currency: str = "",
+        file_path: str = "",
+        notes: str = "",
+        payload_json: str = "",
+    ) -> int:
+        return self.addHistoryEvent(
+            event_type="docx",
+            customer_company=customer_company,
+            customer_name=customer_name,
+            items_count=items_count,
+            total_amount=total_amount,
+            currency=currency,
+            file_path=file_path,
+            notes=notes,
+            payload_json=payload_json,
+        )
+
+    def getOffersHistory(self, limit: int = 500):
+        cursor = self._require_cursor()
+        safe_limit = max(1, int(limit))
+        cursor.execute(
+            """
+            SELECT
+                id,
+                offer_number,
+                date,
+                created_at,
+                event_type,
+                customer_company,
+                customer_name,
+                items_count,
+                total_amount,
+                currency,
+                file_path,
+                notes,
+                payload_json
+            FROM offers
+            ORDER BY datetime(created_at) DESC, id DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+        return cursor.fetchall()
+
+    def deleteHistoryEvent(self, event_id: int):
+        cursor = self._require_cursor()
+        cursor.execute("DELETE FROM offers WHERE id = ?", (int(event_id),))
 
     def createCustomer(self, data):
         payload = self._normalize_customer_payload(data)
@@ -171,6 +353,58 @@ class Database:
             """,
             payload,
         )
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        return str(value or "").strip().casefold()
+
+    @staticmethod
+    def _normalize_phone(value: str) -> str:
+        digits = re.sub(r"\D+", "", str(value or ""))
+        if len(digits) > 10:
+            return digits[-10:]
+        return digits
+
+    def findPotentialCustomerDuplicate(
+        self,
+        *,
+        company_name: str,
+        email: str = "",
+        phone: str = "",
+        full_name: str = "",
+        exclude_customer_id: int | None = None,
+    ):
+        company_norm = self._normalize_text(company_name)
+        if not company_norm:
+            return None
+
+        email_norm = self._normalize_text(email)
+        phone_norm = self._normalize_phone(phone)
+        full_name_norm = self._normalize_text(full_name)
+
+        for customer in self.getAllCustomers():
+            customer_id = int(customer[0])
+            if exclude_customer_id is not None and customer_id == int(exclude_customer_id):
+                continue
+
+            existing_company_norm = self._normalize_text(customer[7])
+            if existing_company_norm != company_norm:
+                continue
+
+            existing_email_norm = self._normalize_text(customer[5])
+            existing_phone_norm = self._normalize_phone(customer[6])
+            existing_full_name_norm = self._normalize_text(
+                " ".join(part for part in [customer[2], customer[1], customer[3]] if str(part).strip())
+            )
+
+            same_email = bool(email_norm and existing_email_norm == email_norm)
+            same_phone = bool(phone_norm and existing_phone_norm == phone_norm)
+            same_full_name = bool(full_name_norm and existing_full_name_norm == full_name_norm)
+            no_identifiers = not email_norm and not phone_norm and not full_name_norm
+
+            if same_email or same_phone or same_full_name or no_identifiers:
+                return customer
+        return None
 
     def updateCustomer(self, customer_id: int, data):
         payload = self._normalize_customer_payload(data)
@@ -277,7 +511,12 @@ class Database:
                 target_db.upsertCustomer(customer)
             target_db.save()
             return 0
-        except Exception:
+        except Exception as e:
+            Tool.log_exception(
+                f"Ошибка импорта БД из {source} в {target}",
+                e,
+                include_traceback=True,
+            )
             return -1
         finally:
             if source_conn is not None:

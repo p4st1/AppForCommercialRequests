@@ -5,8 +5,6 @@ from ui_settingsAppGui import Ui_MainWindow
 from config import Config
 from ui_theme import apply_unified_theme
 from pathlib import Path
-import sys
-import os
 
 
 class mainWindow(QMainWindow):
@@ -14,18 +12,18 @@ class mainWindow(QMainWindow):
 
     def __init__(self, parent=None):
         super(mainWindow, self).__init__(parent)
-        
+
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         apply_unified_theme(self)
-        
 
-        
+
+
         self.ui.closeTableCheckBox.setChecked(Config.settings['closeTable'])
         self.ui.autoFillCheckBox.setChecked(Config.settings['autoFill'])
         self.ui.openLastTable.setChecked(Config.settings['openLastTab'])
         self.ui.openUpdateTab.setChecked(Config.settings['openUpdateTab'])
-        
+
         self.ui.autoFillCheckBox.toggled.connect(self.autoFillChange)
         self.ui.closeTableCheckBox.toggled.connect(self.closeTableChange)
         self.ui.openLastTable.toggled.connect(self.openLastTableChange)
@@ -42,25 +40,25 @@ class mainWindow(QMainWindow):
 
         self.ui.ExcelDirLine.setText(str(excel_dir))
         self.ui.dirOpenButton_2.clicked.connect(self.selectDirectory2)
-        
+
         self.ui.excelIndent.setValue(int(Config.config['ExcelIndent']))
         self.ui.excelIndent.valueChanged.connect(self.ExcelIndentChange)
-    
+
     def ExcelIndentChange(self, value):
         Config.config['ExcelIndent'] = str(value)
-        
+
     def openUpdateTabChange(self, signal):
         Config.settings['openUpdateTab'] = signal
-         
+
     def openLastTableChange(self, signal):
-        Config.settings['openLastTab'] = signal 
-    
+        Config.settings['openLastTab'] = signal
+
     def autoFillChange(self, signal):
         Config.settings['autoFill'] = signal
-        
+
     def closeTableChange(self, signal):
         Config.settings['closeTable'] = signal
-            
+
     def selectDirectory(self):
         current_dir = Config.config.get('pathToSaveCP', str(Path.home()))
         directory = QFileDialog.getExistingDirectory(
@@ -69,14 +67,14 @@ class mainWindow(QMainWindow):
             current_dir,
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
-        
+
         if directory:
             Config.config['pathToSaveCP'] = directory
             if not Config.config.get('pathToSaveExcel'):
                 Config.config['pathToSaveExcel'] = directory
                 self.ui.ExcelDirLine.setText(directory)
             self.ui.CPdirLine.setText(directory)
-    
+
     def selectDirectory2(self):
         current_dir = Config.config.get('pathToSaveExcel', Config.config.get('pathToSaveCP', str(Path.home())))
         directory = QFileDialog.getExistingDirectory(
@@ -85,18 +83,13 @@ class mainWindow(QMainWindow):
             current_dir,
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
-        
+
         if directory:
             Config.config['pathToSaveExcel'] = directory
             self.ui.ExcelDirLine.setText(directory)
-            
-    def resourcePath(self, relativePath):
-        try:
-            base_path = sys._MEIPASS
-        except Exception:
-            base_path = os.path.abspath(".")
 
-        return os.path.join(base_path, relativePath)
+    def resourcePath(self, relativePath):
+        return Tool.resourcePath(relativePath)
 
     def closeEvent(self, event):
         default_dir = Path.home() / "Documents"

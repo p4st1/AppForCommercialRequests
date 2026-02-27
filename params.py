@@ -5,8 +5,6 @@ from ui_createParamsGui import Ui_MainWindow as Ui_addNewParamWindow
 from tools import DatabaseTools as Tool
 from config import Config
 from ui_theme import apply_unified_theme
-import sys
-import os
 
 
 class Dialog:
@@ -61,14 +59,9 @@ class addNewParamGUI(QMainWindow):
         ]
         Tool.save_json_atomic(Config.vars_path, self.paramsData)
         self.close()
-    
-    def resourcePath(self, relativePath):
-        try:
-            base_path = sys._MEIPASS
-        except Exception:
-            base_path = os.path.abspath(".")
 
-        return os.path.join(base_path, relativePath)
+    def resourcePath(self, relativePath):
+        return Tool.resourcePath(relativePath)
 
     def closeEvent(self, event):
         super().closeEvent(event)
@@ -79,6 +72,7 @@ class addNewParamGUI(QMainWindow):
 
 class mainWindow(QMainWindow):
     windowClosed = Signal()
+    paramsSaved = Signal()
 
     def __init__(self, parent=None):
         super(mainWindow, self).__init__(parent)
@@ -89,7 +83,7 @@ class mainWindow(QMainWindow):
         self.parameters = {}
         self.hasChanges = False
 
-        self.paramsData = Tool.load_json(Config.vars_path)  
+        self.paramsData = Tool.load_json(Config.vars_path)
 
         self.ui.saveButton.setDisabled(True)
         self.ui.saveAndCloseButton.setDisabled(True)
@@ -147,6 +141,7 @@ class mainWindow(QMainWindow):
         self.ui.saveButton.setDisabled(True)
         self.ui.saveAndCloseButton.setDisabled(True)
         self.hasChanges = False
+        self.paramsSaved.emit()
 
     def saveChangesAndClose(self):
         data = Tool.load_json(Config.vars_path)
@@ -181,6 +176,7 @@ class mainWindow(QMainWindow):
         self.ui.saveButton.setDisabled(True)
         self.ui.saveAndCloseButton.setDisabled(True)
         self.hasChanges = False
+        self.paramsSaved.emit()
         self.close()
 
     def onTextValueChanged(self, arg):
@@ -209,12 +205,7 @@ class mainWindow(QMainWindow):
             self.close()
 
     def resourcePath(self, relativePath):
-        try:
-            base_path = sys._MEIPASS
-        except Exception:
-            base_path = os.path.abspath(".")
-
-        return os.path.join(base_path, relativePath)
+        return Tool.resourcePath(relativePath)
 
     def closeEvent(self, event):
         self.windowClosed.emit()

@@ -9,26 +9,30 @@ from openpyxl.styles import Border, Side, Alignment
 from config import Config
 import shutil
 import os
-    
+
 class createTextFile:
     def __init__(self, docxData):
-        Tools.write_log(f"test feature: {Config.settings['testFeature']}")               
+        self.output_path = ""
+        self.success = False
+        self.error_message = ""
+
+        Tools.write_log(f"test feature: {Config.settings['testFeature']}")
         Tools.write_log(f"Docx path to save: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
         Tools.write_log('INIT DOCX...')
-        
+
         tableData = docxData[0][1]
         customerData = docxData[1][0]
         extraData = docxData[2]
         dbData = docxData[3]
         lastCol = docxData[4]
         condData = docxData[5]
-        
+
         sum1, sum2, = 0, 0
-        
+
         tool = ExtraTools()
-        
+
         minDays, maxDays = 10 ** 4, 0
-        
+
         for i in tableData:
             currency1, amount1 = Tools.parsePrice(i[6].replace(',', '.'))
             currency2, amount2 = Tools.parsePrice(i[7].replace(',', '.'))
@@ -38,21 +42,22 @@ class createTextFile:
             if int(i[8].split()[0]) > maxDays:
                 maxDays = int(i[8].split()[0])
             if int(i[8].split()[0]) < minDays:
-                minDays = int(i[8].split()[0]) 
-        
+                minDays = int(i[8].split()[0])
+
         if minDays == maxDays:
             period = f'до {minDays}'
         else:
             period = f'от {minDays} до {maxDays}'
-            
+
         currency = Config.currency[symbCurrency]
-        
+
         if docxData[4]:
             TEMPLATE_PATH = Config.template_docx_path
         else:
             TEMPLATE_PATH = Config.template_docx_path_short
 
         OUTPUT_PATH = f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_{docxData[3]}_от_{datetime.now().strftime('%d.%m.%Y')}_.docx"
+        self.output_path = OUTPUT_PATH
 
         VAT_RATE = Decimal("0.20")
 
@@ -60,14 +65,14 @@ class createTextFile:
             'мужской': ("ый", 'у'),
             'женский': ("ая", 'ой')
         }
-           
+
         if Config.settings['testFeature']:
             post = Tools.formWord(customerData[8], 2)
             initials = f"{Tools.formWord(customerData[2], 2)} {customerData[1][0]}. {customerData[3][0]}."
         else:
             post = customerData[8]
             initials = f"{customerData[2]} {customerData[1][0]}. {customerData[3][0]}."
-            
+
         PLACEHOLDERS = {
             "<<COMPANY>>": "ООО «АЛЬФА КАППА ИНЖИНИРИНГ»",
             "<<INN>>": "9731121825",
@@ -111,7 +116,7 @@ class createTextFile:
             "{{Total_diff_text}}": f"({tool.decimal2text(sum2 - sum1,int_units=currency[1],exp_units=currency[2])})",
 
             "{{NDS}}": f"{Tools.load_json(Config.vars_path)['parameters']['1'][1]}",
-            
+
             "{{Conditions}}": f"{customerData[9]}",
             "{{Garanty_period}}": f"{extraData[1]}",
             "{{MinDays}}": f"{period}",
@@ -124,18 +129,17 @@ class createTextFile:
         ITEMS = [
 
         ]
-        
-        print(tableData)
+
         for item in tableData:
-            ITEMS.append({"name": item[1], 
-                          "sku": item[2], 
-                          "unit": item[3], 
-                          "qty": item[4], 
+            ITEMS.append({"name": item[1],
+                          "sku": item[2],
+                          "unit": item[3],
+                          "qty": item[4],
                           "price": Decimal(Tools.parsePrice(item[5])[1].replace(',', '.').replace(' ', '')),
                           "sum_wo": Decimal(Tools.parsePrice(item[6])[1].replace(',', '.').replace(' ', '')),
                           "sum_w": Decimal(Tools.parsePrice(item[7])[1].replace(',', '.').replace(' ', '')),
                           "days": item[8]})
-        
+
         ROW_TOKENS = {
             "<<I>>": None,
             "<<Name>>": None,
@@ -146,7 +150,7 @@ class createTextFile:
             "<<Sum_wo>>": None,
             "<<Sum_w>>": None,
         }
-        
+
         if docxData[4]:
             ROW_TOKENS["<<Days>>"] = None
 
@@ -154,7 +158,7 @@ class createTextFile:
             "<<TOTAL_WO>>": None,
             "<<TOTAL_W>>": None,
         }
-            
+
         def _fmt_dec_comma(v: Decimal) -> str:
             x = v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             return f"{x:.2f}".replace(".", ",")
@@ -389,29 +393,34 @@ class createTextFile:
             mapping["<<TOTAL_WO_CNY>>"] = fmt_money_no_symbol(total_wo)
             mapping["<<VAT_CNY>>"] = fmt_money_no_symbol(round(vat_sum, 2))
             mapping["<<TOTAL_W_CNY>>"] = fmt_money_no_symbol(total_w)
-            
+
             replace_placeholders_everywhere(doc, mapping)
 
             doc.save(OUTPUT_PATH)
-        
+
         try:
             main()
             Tools.write_log("creating docx File...")
             Tools.write_log(f"saving docx to: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
-            
+            self.success = True
+
         except Exception as e:
             Tools.write_log(f"Unnable to save Docx: {e}")
-            print(e)
+            self.error_message = str(e)
 
 class createExcelFile:
     def __init__(self, data):
+        self.output_path = ""
+        self.success = False
+        self.error_message = ""
+
         indent = int(Config.config['ExcelIndent'])
         newFilePath = self.save_with_number(f"{Tools.resourcePath(Config.config['pathToSaveExcel'])}/таблица_от_{datetime.now().strftime('%d_%m_%Y')}.xlsx")
+        self.output_path = newFilePath
         shutil.copy2(Config.template_path, newFilePath)
         wb = load_workbook(newFilePath)
         workSheet = wb.active
-        
-        print(data)
+
         dataTable = data[0]
         params = data[1]
         for row in range(len(dataTable)):
@@ -425,17 +434,17 @@ class createExcelFile:
             workSheet[f'F{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
             workSheet[f'G{row + 2 + indent}'] = f'=F{row + 2 + indent}*E{row + 2 + indent}'
             workSheet[f'G{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
-        
+
         workSheet[f'G{len(dataTable) + 2 + indent}'] = f'=SUM(G{2 + indent}:G{len(dataTable) + 1 + indent})'
-        workSheet[f'G{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00' 
-        
+        workSheet[f'G{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
+
         for row in range(len(dataTable)):
             if data[1][0] == 0:
                 workSheet[f'H{row + 2 + indent}'] = f'=G{row + 2 + indent}*{data[1][1]}'
             if data[1][0] == 1:
                 workSheet[f'H{row + 2 + indent}'] = f'=G{row + 2 + indent}+{int(data[1][1])}/G{len(dataTable) + 2 + indent}*G{row + 2 + indent}'
-            workSheet[f'H{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00' 
-            
+            workSheet[f'H{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
+
         workSheet[f'H{len(dataTable) + 2 + indent}'] = f'=SUM(H{2 + indent}:H{len(dataTable) + 1 + indent})'
         workSheet[f'H{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
         workSheet[f'I{len(dataTable) + 2 + indent}'] = f'=SUM(I{2 + indent}:I{len(dataTable) + 1 + indent})'
@@ -443,7 +452,7 @@ class createExcelFile:
         workSheet[f'H{len(dataTable) + 3 + indent}'] = f'=H{len(dataTable) + 2 + indent}-G{len(dataTable) + 2 + indent}'
         workSheet[f'H{len(dataTable) + 3 + indent}'].number_format = f'"{currency}"#,##0.00'
         workSheet[f'H{len(dataTable) + 4 + indent}'] = f'=H{len(dataTable) + 3 + indent}/G{len(dataTable) + 2 + indent}'
-        
+
         for row in range(len(dataTable)):
             workSheet[f'I{row + 2 + indent}'] = f'=H{row + 2 + indent}*{data[2]}'
             workSheet[f'I{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
@@ -457,63 +466,64 @@ class createExcelFile:
             workSheet[f'M{row + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
             workSheet[f'N{row + 2 + indent}'] = dataTable[row][6]
             workSheet[f'O{row + 2 + indent}'] = dataTable[row][7]
-        
+
         workSheet[f'K{len(dataTable) + 2 + indent}'] = f'ИТОГО:'
         workSheet[f'L{len(dataTable) + 2 + indent}'] = f'=SUM(L{2 + indent}:L{len(dataTable) + 1 + indent})'
         workSheet[f'L{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
         workSheet[f'M{len(dataTable) + 2 + indent}'] = f'=SUM(M{2 + indent}:M{len(dataTable) + 1 + indent})'
         workSheet[f'M{len(dataTable) + 2 + indent}'].number_format = f'"{currency}"#,##0.00'
-        
+
         workSheet[f'K{len(dataTable) + 5 + indent}'] = f'Прибыль'
         workSheet[f'K{len(dataTable) + 6 + indent}'] = f'Прибыль %'
         workSheet[f'L{len(dataTable) + 5 + indent}'] = f'=L{len(dataTable) + 2 + indent}-I{len(dataTable) + 2 + indent}'
         workSheet[f'L{len(dataTable) + 5 + indent}'].number_format = f'"{currency}"#,##0.00'
         workSheet[f'L{len(dataTable) + 6 + indent}'] = f'=L{len(dataTable) + 5 + indent}/I{len(dataTable) + 2 + indent}'
         workSheet[f'L{len(dataTable) + 6 + indent}'].number_format = f'0%'
-        
+
         border = Border(
             left=Side(style='thin'),
             right=Side(style='thin'),
             top=Side(style='thin'),
             bottom=Side(style='thin')
         )
-        
+
         for row in workSheet.iter_rows():
             for cell in row:
                 if self.cell_has_data(cell):
                     cell.border = border
                     cell.alignment = Alignment(horizontal='center', vertical='center')
-        
+
         workSheet.move_range(f"A1:O1", rows=indent)
-        
+
         try:
-            
+
             Tools.write_log("creating Excel File...")
             Tools.write_log(f"Excel path to save: {newFilePath}")
             Tools.write_log(f"Final path to save: {newFilePath}")
             wb.save(newFilePath)
+            self.success = True
         except Exception as e:
             Tools.write_log(f"Unnable to save Excel: {e}")
-            print(e)
-        
+            self.error_message = str(e)
+
     def cell_has_data(self, cell):
         if cell.value is not None and cell.value != "":
                 return True
         return False
-    
+
     def save_with_number(self, file_path):
         directory, filename = os.path.split(file_path)
         name, ext = os.path.splitext(filename)
-        
+
         if not os.path.exists(file_path):
             return file_path
-        
+
         counter = 1
         while True:
             new_filename = f"{name}({counter}){ext}"
             new_filepath = os.path.join(directory, new_filename)
-            
+
             if not os.path.exists(new_filepath):
                 return new_filepath
-            
+
             counter += 1

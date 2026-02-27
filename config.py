@@ -25,7 +25,7 @@ class Config:
             '*': 'multiply',
             '/': 'division'
         }
-    
+
     isTableOpened = False
 
     settings = DEFAULT_SETTINGS.copy()
@@ -39,7 +39,7 @@ class Config:
     template_docx_path_short = ''
     log_path = ''
     logo_path = ''
-    
+
     currencySymb = ('¥', '$', '₽')
     currency = {
         '¥': ('CNY',
@@ -49,7 +49,7 @@ class Config:
         '$': ('USD',
                ((u'доллар', u'доллара', u'долларов'), 'm'),
                ((u'цент', u'цента', u'центов'), 'f')
-        ), 
+        ),
         '₽': ('RUB',
                ((u'рубль', u'рубля', u'рублей'), 'm'),
                ((u'копейка', u'копейки', u'копеек'), 'f')
@@ -59,5 +59,5 @@ class Config:
               ((u'евроцент', u'евроцента', u'евроцентов'), 'f')
         )
     }
-    
+
     testFeature = False

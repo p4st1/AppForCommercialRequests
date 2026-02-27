@@ -1,11 +1,23 @@
 from PySide6.QtWidgets import (
+    QApplication,
     QMainWindow,
     QFileDialog,
     QMessageBox,
+    QTableWidget,
     QTableWidgetItem,
     QAbstractItemView,
+    QStyledItemDelegate,
+    QMenu,
+    QInputDialog,
+    QHeaderView,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QLineEdit,
 )
-from PySide6.QtGui import QIcon, QDesktopServices
+from PySide6.QtGui import QIcon, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtCore import Qt, QUrl, QSignalBlocker
 from createDocument import mainWindow as createDocWindow
 from create import createExcelFile as exportExcelFile
@@ -22,12 +34,50 @@ from pathlib import Path
 import pandas as pd
 import shutil
 import re
-import sys
-import os
+import json
+
+
+class FormulaDelegate(QStyledItemDelegate):
+    def __init__(self, parent, formula_provider):
+        super().__init__(parent)
+        self._formula_provider = formula_provider
+
+    def setEditorData(self, editor, index):
+        formula = self._formula_provider(index.row(), index.column())
+        if formula is not None and hasattr(editor, "setText"):
+            editor.setText(formula)
+            return
+        super().setEditorData(editor, index)
 
 
 class mainWindow(QMainWindow):
-    EDITABLE_COLUMNS = {0, 1, 2, 3, 4, 5, 14}
+    BASE_EDITABLE_COLUMNS = {0, 1, 2, 3, 4, 5, 14}
+    FORMULA_EDITABLE_COLUMNS = {8, 9, 10, 11, 13}
+    EDITABLE_COLUMNS = BASE_EDITABLE_COLUMNS | FORMULA_EDITABLE_COLUMNS
+    SUMMARY_SOURCE_COLUMNS = (0, 1, 2, 3, 4, 10, 11, 12, 13)
+    SUMMARY_HEADERS = (
+        "№",
+        "Наименование",
+        "Каталожный товар",
+        "Ед. изм.",
+        "Кол-во",
+        "Цена за ед. без НДС",
+        "Итого без НДС",
+        "Итого с НДС",
+        "Срок поставки",
+    )
+    HISTORY_HEADERS = (
+        "Дата/время",
+        "Событие",
+        "№ КП",
+        "Компания",
+        "Контакт",
+        "Позиций",
+        "Сумма",
+        "Файл",
+    )
+    HISTORY_META_COLUMN = 0
+    HISTORY_FILE_COLUMN = 7
 
     def __init__(self):
         super().__init__()
@@ -36,6 +86,7 @@ class mainWindow(QMainWindow):
         self.ui.setupUi(self)
         self.setWindowIcon(QIcon(self.resourcePath("assets/app.ico")))
         self.applyEnterpriseStyle()
+        self._load_updates_tab_text()
 
         self.tableData = {
             "amount": [],
@@ -45,12 +96,17 @@ class mainWindow(QMainWindow):
             "termDelivery": [],
             "logistic": [],
         }
+        self.formulaExpressions = {col: [] for col in self.FORMULA_EDITABLE_COLUMNS}
         self.rows = 0
         self.formulaCustom = 1.0
         self.formulaMarkup = 1.0
         self.formulaLogistic = 1.0
         self.termDeliveryDays = 0
         self.mixedCurrencyWarningShown = False
+        self.columnFilters = {}
+        self._baseHeaderLabels = {}
+        self.quickSearchText = ""
+        self._shortcuts = []
 
         self.loadConfig()
         self.ensureOutputDirs()
@@ -101,7 +157,16 @@ class mainWindow(QMainWindow):
         self.ui.closeTableButton.clicked.connect(self.closeTable)
         self.ui.KpTable.itemChanged.connect(self.tableItemChanged)
         self.ui.KpTable.setEditTriggers(QAbstractItemView.EditTrigger.AllEditTriggers)
+        self.ui.KpTable.setItemDelegate(FormulaDelegate(self.ui.KpTable, self._get_formula_for_editor))
         self.ui.KpTable.resizeColumnsToContents()
+        self._setup_table_quick_search()
+        self._setup_shortcuts()
+        self._init_table_filters()
+        self._setup_total_tab_table()
+        self._update_total_tab_table()
+        self._ensure_history_tab()
+        self._setup_history_tab_table()
+        self.updateHistoryTable()
 
         if Config.settings["openLastTab"] and Config.config["lastTable"]:
             last_table = Config.config["lastTable"]
@@ -119,10 +184,30 @@ class mainWindow(QMainWindow):
     def applyEnterpriseStyle(self):
         apply_unified_theme(self)
 
+    def _load_updates_tab_text(self):
+        updates_path = Path(self.resourcePath("assets/updates.txt"))
+        if not updates_path.exists():
+            return
+        try:
+            updates_text = updates_path.read_text(encoding="utf-8")
+        except Exception as e:
+            Tool.log_exception(
+                f"Не удалось загрузить текст обновлений: {updates_path}",
+                e,
+                include_traceback=False,
+            )
+            return
+        self.ui.textUpdates.setPlainText(updates_text)
+
     def loadConfig(self):
         try:
             data = Tool.load_json(Config.cfg_path)
-        except Exception:
+        except Exception as e:
+            Tool.log_exception(
+                f"Не удалось загрузить конфигурацию: {Config.cfg_path}",
+                e,
+                include_traceback=False,
+            )
             data = {}
         normalized = Tool.merge_config_with_defaults(data)
         Config.config = normalized["config"]
@@ -155,6 +240,762 @@ class mainWindow(QMainWindow):
         else:
             flags &= ~Qt.ItemFlag.ItemIsEditable
         item.setFlags(flags)
+
+    def _setup_total_tab_table(self):
+        table = self.ui.tableWidget_3
+        table.setColumnCount(len(self.SUMMARY_HEADERS))
+        table.setHorizontalHeaderLabels(self.SUMMARY_HEADERS)
+        table.setRowCount(0)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.setAlternatingRowColors(True)
+        table.setSortingEnabled(False)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(False)
+
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for col in range(2, len(self.SUMMARY_HEADERS)):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+
+    def _update_total_tab_table(self):
+        table = self.ui.tableWidget_3
+        rows = self.getTableData() if self.ui.KpTable.rowCount() > 0 else []
+
+        blocker = QSignalBlocker(table)
+        table.clearContents()
+        table.setRowCount(len(rows))
+        for row_idx, row_data in enumerate(rows):
+            for col_idx, value in enumerate(row_data):
+                table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
+        del blocker
+        table.resizeRowsToContents()
+
+    def _ensure_history_tab(self):
+        if hasattr(self.ui, "historyTable"):
+            return
+
+        self.ui.historyTab = QWidget(self.ui.tabWidget)
+        self.ui.historyTab.setObjectName("historyTab")
+
+        root_layout = QVBoxLayout(self.ui.historyTab)
+        root_layout.setSpacing(8)
+        root_layout.setContentsMargins(8, 8, 8, 8)
+
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        title_label = QLabel("История создания КП и экспортов", self.ui.historyTab)
+        self.ui.historyRefreshButton = QPushButton("Обновить", self.ui.historyTab)
+        header_layout.addWidget(title_label)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.ui.historyRefreshButton)
+
+        self.ui.historyTable = QTableWidget(self.ui.historyTab)
+        self.ui.historyTable.setObjectName("historyTable")
+
+        root_layout.addLayout(header_layout)
+        root_layout.addWidget(self.ui.historyTable)
+        self.ui.tabWidget.addTab(self.ui.historyTab, "История")
+        self.ui.historyRefreshButton.clicked.connect(self.updateHistoryTable)
+        self.ui.historyTable.itemDoubleClicked.connect(self._openHistoryFile)
+        self.ui.historyTable.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.ui.historyTable.customContextMenuRequested.connect(self._show_history_context_menu)
+
+    def _setup_history_tab_table(self):
+        if not hasattr(self.ui, "historyTable"):
+            return
+
+        table = self.ui.historyTable
+        table.setColumnCount(len(self.HISTORY_HEADERS))
+        table.setHorizontalHeaderLabels(self.HISTORY_HEADERS)
+        table.setRowCount(0)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.setAlternatingRowColors(True)
+        table.setSortingEnabled(False)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(False)
+
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
+
+    @staticmethod
+    def _history_event_name(event_type: str) -> str:
+        mapping = {
+            "docx": "КП (DOCX)",
+            "excel": "Таблица (Excel)",
+        }
+        key = str(event_type or "").strip().lower()
+        return mapping.get(key, key or "Событие")
+
+    def _format_history_total(self, total_amount, currency: str) -> str:
+        if total_amount in (None, ""):
+            return "—"
+        try:
+            value = float(total_amount)
+        except (TypeError, ValueError):
+            return "—"
+        return Tool.formatPrice(self._fmt_number(value), str(currency or ""))
+
+    def _history_row_meta(self, row: int) -> dict:
+        if row < 0:
+            return {}
+        item = self.ui.historyTable.item(row, self.HISTORY_META_COLUMN)
+        if item is None:
+            return {}
+        meta = item.data(Qt.ItemDataRole.UserRole)
+        return meta if isinstance(meta, dict) else {}
+
+    def _open_history_file_path(self, file_path: str):
+        value = str(file_path or "").strip()
+        if not value:
+            return
+        path = Path(value)
+        if not path.exists():
+            self.error("Ошибка", f"Файл не найден:\n{value}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def _open_history_file_dir(self, file_path: str):
+        value = str(file_path or "").strip()
+        if not value:
+            return
+        path = Path(value)
+        directory = path.parent
+        if not directory.exists():
+            self.error("Ошибка", f"Папка не найдена:\n{directory}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
+
+    def _copy_history_file_path(self, file_path: str):
+        value = str(file_path or "").strip()
+        if not value:
+            return
+        QApplication.clipboard().setText(value)
+        if self.statusBar() is not None:
+            self.statusBar().showMessage("Путь к файлу скопирован", 2500)
+
+    def _repeat_history_doc(self, row: int):
+        meta = self._history_row_meta(row)
+        if str(meta.get("event_type", "")).strip().lower() != "docx":
+            self.error("Ошибка", "Повторить можно только создание КП (DOCX)")
+            return
+
+        payload_text = str(meta.get("payload_json", "") or "").strip()
+        if not payload_text:
+            self.error("Ошибка", "Для этой записи не сохранена исходная таблица")
+            return
+
+        try:
+            payload = json.loads(payload_text)
+        except Exception as e:
+            Tool.log_exception(
+                "Не удалось прочитать payload истории",
+                e,
+                include_traceback=False,
+            )
+            self.error("Ошибка", "Не удалось прочитать данные таблицы из истории")
+            return
+
+        rows = payload.get("table_data", [])
+        if not isinstance(rows, list) or not rows:
+            self.error("Ошибка", "В истории нет валидной таблицы для повторного создания")
+            return
+
+        normalized_rows = []
+        for row_data in rows:
+            if not isinstance(row_data, list):
+                continue
+            normalized_rows.append([str(value) for value in row_data[: len(self.SUMMARY_HEADERS)]])
+
+        if not normalized_rows:
+            self.error("Ошибка", "В истории нет валидной таблицы для повторного создания")
+            return
+
+        self.openCreateDocWindow((len(normalized_rows), normalized_rows))
+
+    def _delete_history_event(self, row: int):
+        meta = self._history_row_meta(row)
+        event_id = meta.get("id")
+        if not event_id:
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Удаление записи",
+            "Удалить выбранную запись из истории?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            self.db.deleteHistoryEvent(int(event_id))
+            self.db.save()
+            self.updateHistoryTable()
+        except Exception as e:
+            self.error("Ошибка", f"Не удалось удалить запись:\n{e}")
+
+    def _show_history_context_menu(self, pos):
+        table = self.ui.historyTable
+        clicked_item = table.itemAt(pos)
+        row = clicked_item.row() if clicked_item is not None else -1
+        meta = self._history_row_meta(row) if row >= 0 else {}
+        file_path = str(meta.get("file_path", "") or "").strip()
+        event_type = str(meta.get("event_type", "") or "").strip().lower()
+
+        if row >= 0:
+            table.selectRow(row)
+
+        menu = QMenu(self)
+        refresh_action = menu.addAction("Обновить")
+
+        repeat_action = None
+        open_file_action = None
+        open_folder_action = None
+        copy_path_action = None
+        delete_action = None
+
+        if row >= 0:
+            menu.addSeparator()
+            if event_type == "docx":
+                repeat_action = menu.addAction("Повторить создание КП")
+            if file_path:
+                open_file_action = menu.addAction("Открыть файл")
+                open_folder_action = menu.addAction("Открыть папку файла")
+                copy_path_action = menu.addAction("Скопировать путь")
+            delete_action = menu.addAction("Удалить запись")
+
+        action = menu.exec(table.viewport().mapToGlobal(pos))
+        if action is None:
+            return
+        if action == refresh_action:
+            self.updateHistoryTable()
+            return
+        if action == repeat_action:
+            self._repeat_history_doc(row)
+            return
+        if action == open_file_action:
+            self._open_history_file_path(file_path)
+            return
+        if action == open_folder_action:
+            self._open_history_file_dir(file_path)
+            return
+        if action == copy_path_action:
+            self._copy_history_file_path(file_path)
+            return
+        if action == delete_action:
+            self._delete_history_event(row)
+
+    def updateHistoryTable(self):
+        if not hasattr(self.ui, "historyTable"):
+            return
+
+        try:
+            rows = self.db.getOffersHistory(limit=1000)
+        except Exception as e:
+            Tool.write_log(f"Ошибка загрузки истории: {e}")
+            return
+
+        table = self.ui.historyTable
+        blocker = QSignalBlocker(table)
+        table.clearContents()
+        table.setRowCount(len(rows))
+
+        for row_idx, row in enumerate(rows):
+            (
+                _entry_id,
+                offer_number,
+                date_value,
+                created_at,
+                event_type,
+                customer_company,
+                customer_name,
+                items_count,
+                total_amount,
+                currency,
+                file_path,
+                _notes,
+                payload_json,
+            ) = row
+
+            date_text = str(created_at or "").strip() or str(date_value or "").strip()
+            event_text = self._history_event_name(event_type)
+            offer_text = str(offer_number) if int(offer_number or 0) > 0 else "—"
+            company_text = str(customer_company or "").strip() or "—"
+            contact_text = str(customer_name or "").strip() or "—"
+            items_text = str(max(0, int(items_count or 0)))
+            total_text = self._format_history_total(total_amount, str(currency or ""))
+            file_path_text = str(file_path or "").strip()
+            file_text = Path(file_path_text).name if file_path_text else "—"
+            meta = {
+                "id": int(_entry_id),
+                "event_type": str(event_type or "").strip().lower(),
+                "file_path": file_path_text,
+                "payload_json": str(payload_json or ""),
+            }
+
+            values = [
+                date_text,
+                event_text,
+                offer_text,
+                company_text,
+                contact_text,
+                items_text,
+                total_text,
+                file_text,
+            ]
+
+            for col_idx, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                item.setFlags(
+                    (item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+                    & ~Qt.ItemFlag.ItemIsEditable
+                )
+                if col_idx == self.HISTORY_META_COLUMN:
+                    item.setData(Qt.ItemDataRole.UserRole, meta)
+                if col_idx == self.HISTORY_FILE_COLUMN and file_path_text:
+                    item.setData(Qt.ItemDataRole.UserRole, file_path_text)
+                    item.setToolTip(file_path_text)
+                table.setItem(row_idx, col_idx, item)
+
+        del blocker
+        table.resizeRowsToContents()
+
+    def _openHistoryFile(self, item):
+        if item is None or not hasattr(self.ui, "historyTable"):
+            return
+
+        row = item.row()
+        meta = self._history_row_meta(row)
+        file_path = str(meta.get("file_path", "") or "").strip()
+        self._open_history_file_path(file_path)
+
+    def _get_formula_for_editor(self, row, col):
+        if col not in self.FORMULA_EDITABLE_COLUMNS:
+            return None
+        formulas = self.formulaExpressions.get(col, [])
+        if row < 0 or row >= len(formulas):
+            return None
+        return formulas[row]
+
+    @staticmethod
+    def _default_formula(col):
+        defaults = {
+            8: "Custom*Logistic",
+            9: "Customs/Amount",
+            10: "UnitSalePrice*Markup",
+            11: "RealPrice*Amount",
+            13: "SupplierTerm+TermDelivery",
+        }
+        return defaults[col]
+
+    def _column_title(self, col):
+        if col in self._baseHeaderLabels:
+            return self._baseHeaderLabels[col]
+        item = self.ui.KpTable.horizontalHeaderItem(col)
+        return item.text() if item is not None else str(col)
+
+    def _setup_table_quick_search(self):
+        self.tableQuickSearchLine = QLineEdit(self)
+        self.tableQuickSearchLine.setPlaceholderText("Быстрый поиск по таблице (Ctrl+F)")
+        self.tableQuickSearchClearButton = QPushButton("Сброс", self)
+        self.tableQuickSearchClearButton.setMinimumWidth(82)
+
+        search_layout = QHBoxLayout()
+        search_layout.setContentsMargins(0, 0, 0, 6)
+        search_layout.addWidget(self.tableQuickSearchLine, 1)
+        search_layout.addWidget(self.tableQuickSearchClearButton, 0)
+        self.ui.verticalLayout_2.insertLayout(0, search_layout)
+
+        self.tableQuickSearchLine.textChanged.connect(self._on_table_quick_search_changed)
+        self.tableQuickSearchClearButton.clicked.connect(self.tableQuickSearchLine.clear)
+
+    def _on_table_quick_search_changed(self, text):
+        self.quickSearchText = str(text or "").strip().casefold()
+        self._apply_table_filters()
+
+    def _focus_table_quick_search(self):
+        self.ui.tabWidget.setCurrentWidget(self.ui.tab)
+        self.tableQuickSearchLine.setFocus()
+        self.tableQuickSearchLine.selectAll()
+
+    def _setup_shortcuts(self):
+        self.ui.openTableMenuButton.setShortcut(QKeySequence("Ctrl+O"))
+        self.ui.helpMenuButton.setShortcut(QKeySequence("F1"))
+        self.ui.createDocMenuButton.setShortcut(QKeySequence("Ctrl+Shift+E"))
+
+        def _bind(shortcut_text, callback, parent=None, context=None):
+            shortcut = QShortcut(QKeySequence(shortcut_text), parent or self)
+            if context is not None:
+                shortcut.setContext(context)
+            shortcut.activated.connect(callback)
+            self._shortcuts.append(shortcut)
+            return shortcut
+
+        _bind("F1", self.show_help)
+        _bind("Ctrl+O", self.openTable)
+        _bind("Ctrl+Shift+E", self.exportDocs)
+        _bind("Ctrl+F", self._focus_table_quick_search)
+        _bind(
+            "Ctrl+D",
+            self._duplicate_selected_rows,
+            parent=self.ui.KpTable,
+            context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
+        )
+        _bind(
+            "Delete",
+            self._delete_selected_rows,
+            parent=self.ui.KpTable,
+            context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
+        )
+
+    def _selected_table_rows(self):
+        table = self.ui.KpTable
+        rows = set()
+        selection_model = table.selectionModel()
+        if selection_model is not None:
+            rows.update(index.row() for index in selection_model.selectedRows())
+            if not rows:
+                rows.update(index.row() for index in selection_model.selectedIndexes())
+        current_row = table.currentRow()
+        if current_row >= 0:
+            rows.add(current_row)
+        return sorted(row for row in rows if 0 <= row < table.rowCount())
+
+    def _duplicate_selected_rows(self):
+        if not Config.isTableOpened or self.ui.KpTable.rowCount() == 0:
+            return
+
+        selected_rows = self._selected_table_rows()
+        if not selected_rows:
+            return
+
+        table = self.ui.KpTable
+        blocker = QSignalBlocker(table)
+        offset = 0
+        for source_row in selected_rows:
+            source_index = source_row + offset
+            insert_index = source_index + 1
+            table.insertRow(insert_index)
+
+            for col in range(table.columnCount()):
+                src_item = table.item(source_index, col)
+                src_text = src_item.text() if src_item is not None else ""
+                self._set_table_item(insert_index, col, src_text, editable=(col in self.EDITABLE_COLUMNS))
+
+            for key in ("amount", "currency", "unitPrice", "totalPrice", "termDelivery", "logistic"):
+                self.tableData[key].insert(insert_index, self.tableData[key][source_index])
+            for col in self.FORMULA_EDITABLE_COLUMNS:
+                self.formulaExpressions[col].insert(insert_index, self.formulaExpressions[col][source_index])
+
+            offset += 1
+        del blocker
+
+        self.rows = table.rowCount()
+        self.mixedCurrencyWarningShown = False
+        self.logisticCalculate()
+        self.calculating()
+        self._apply_table_filters()
+        self._update_total_tab_table()
+
+    def _delete_selected_rows(self):
+        if not Config.isTableOpened or self.ui.KpTable.rowCount() == 0:
+            return
+
+        selected_rows = self._selected_table_rows()
+        if not selected_rows:
+            return
+
+        table = self.ui.KpTable
+        blocker = QSignalBlocker(table)
+        for row in sorted(selected_rows, reverse=True):
+            if 0 <= row < table.rowCount():
+                table.removeRow(row)
+            for key in ("amount", "currency", "unitPrice", "totalPrice", "termDelivery", "logistic"):
+                if 0 <= row < len(self.tableData[key]):
+                    del self.tableData[key][row]
+            for col in self.FORMULA_EDITABLE_COLUMNS:
+                formulas = self.formulaExpressions.get(col, [])
+                if 0 <= row < len(formulas):
+                    del formulas[row]
+        del blocker
+
+        self.rows = table.rowCount()
+        self.mixedCurrencyWarningShown = False
+        if self.rows == 0:
+            self.closeTable()
+            return
+
+        self.logisticCalculate()
+        self.calculating()
+        self._apply_table_filters()
+        self._update_total_tab_table()
+
+    def _init_table_filters(self):
+        table = self.ui.KpTable
+        self._baseHeaderLabels = {}
+        for col in range(table.columnCount()):
+            item = table.horizontalHeaderItem(col)
+            self._baseHeaderLabels[col] = item.text() if item is not None else str(col + 1)
+
+        header = table.horizontalHeader()
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_filter_menu)
+        self._refresh_filter_headers()
+
+    def _column_values(self, col):
+        values = set()
+        for row in range(self.ui.KpTable.rowCount()):
+            item = self.ui.KpTable.item(row, col)
+            values.add((item.text() if item is not None else "").strip())
+        return sorted((value for value in values if value != ""), key=lambda value: value.casefold())
+
+    def _refresh_filter_headers(self):
+        for col, base_label in self._baseHeaderLabels.items():
+            item = self.ui.KpTable.horizontalHeaderItem(col)
+            if item is None:
+                continue
+            if col in self.columnFilters:
+                item.setText(f"{base_label} [Ф]")
+            else:
+                item.setText(base_label)
+
+    @staticmethod
+    def _match_filter_value(row_value, filter_spec):
+        mode = filter_spec.get("mode", "equals")
+        filter_value = str(filter_spec.get("value", "")).strip()
+        row_text = str(row_value or "").strip()
+        row_norm = row_text.casefold()
+        filter_norm = filter_value.casefold()
+
+        if mode == "equals":
+            return row_norm == filter_norm
+        if mode == "contains":
+            return filter_norm in row_norm
+        if mode == "starts_with":
+            return row_norm.startswith(filter_norm)
+        if mode == "ends_with":
+            return row_norm.endswith(filter_norm)
+        if mode == "empty":
+            return row_text == ""
+        return True
+
+    def _set_text_filter(self, col, mode, prompt):
+        current_filter = self.columnFilters.get(col, {})
+        current_value = ""
+        if current_filter.get("mode") == mode:
+            current_value = str(current_filter.get("value", ""))
+
+        value, ok = QInputDialog.getText(self, "Текстовый фильтр", prompt, text=current_value)
+        if not ok:
+            return False
+
+        value = value.strip()
+        if not value:
+            self.error("Ошибка", "Введите текст для фильтра")
+            return False
+
+        self.columnFilters[col] = {"mode": mode, "value": value}
+        return True
+
+    def _apply_table_filters(self):
+        table = self.ui.KpTable
+        for row in range(table.rowCount()):
+            is_visible = True
+            for col, filter_spec in self.columnFilters.items():
+                item = table.item(row, col)
+                row_value = (item.text() if item is not None else "").strip()
+                if not self._match_filter_value(row_value, filter_spec):
+                    is_visible = False
+                    break
+            if is_visible and self.quickSearchText:
+                row_has_match = False
+                for col in range(table.columnCount()):
+                    item = table.item(row, col)
+                    row_text = (item.text() if item is not None else "").casefold()
+                    if self.quickSearchText in row_text:
+                        row_has_match = True
+                        break
+                is_visible = row_has_match
+            table.setRowHidden(row, not is_visible)
+
+    def _clear_all_filters(self):
+        self.columnFilters.clear()
+        self._refresh_filter_headers()
+        self._apply_table_filters()
+
+    def _show_filter_menu(self, pos):
+        header = self.ui.KpTable.horizontalHeader()
+        col = header.logicalIndexAt(pos)
+        if col < 0:
+            return
+
+        menu = QMenu(self)
+        column_name = self._baseHeaderLabels.get(col, self._column_title(col))
+        title_action = menu.addAction(f"Фильтр: {column_name}")
+        title_action.setEnabled(False)
+        menu.addSeparator()
+
+        clear_column_action = menu.addAction("Сбросить фильтр по столбцу")
+        clear_column_action.setEnabled(col in self.columnFilters)
+        clear_all_action = menu.addAction("Сбросить все фильтры")
+        clear_all_action.setEnabled(bool(self.columnFilters))
+        menu.addSeparator()
+
+        contains_action = menu.addAction("Текстовый фильтр: содержит...")
+        starts_with_action = menu.addAction("Текстовый фильтр: начинается с...")
+        ends_with_action = menu.addAction("Текстовый фильтр: заканчивается на...")
+        equals_text_action = menu.addAction("Текстовый фильтр: равно...")
+        menu.addSeparator()
+
+        all_values_action = menu.addAction("Все значения")
+        empty_value_action = menu.addAction("(Пустые)")
+        menu.addSeparator()
+
+        value_actions = {}
+        values = self._column_values(col)
+        current_filter = self.columnFilters.get(col, {})
+        current_mode = current_filter.get("mode")
+        current_value = str(current_filter.get("value", "")).strip()
+        current_value_norm = current_value.casefold()
+        visible_limit = 150
+        for value in values[:visible_limit]:
+            action = menu.addAction(value)
+            if current_mode == "equals" and value.casefold() == current_value_norm:
+                action.setCheckable(True)
+                action.setChecked(True)
+            value_actions[action] = value
+
+        if current_mode == "empty":
+            empty_value_action.setCheckable(True)
+            empty_value_action.setChecked(True)
+
+        if len(values) > visible_limit:
+            menu.addSeparator()
+            extra_action = menu.addAction(f"Показано {visible_limit} из {len(values)} значений")
+            extra_action.setEnabled(False)
+
+        selected_action = menu.exec(header.mapToGlobal(pos))
+        if selected_action is None:
+            return
+        if selected_action == clear_column_action:
+            self.columnFilters.pop(col, None)
+        elif selected_action == clear_all_action:
+            self.columnFilters.clear()
+        elif selected_action == contains_action:
+            if not self._set_text_filter(col, "contains", f'{column_name}: содержит текст'):
+                return
+        elif selected_action == starts_with_action:
+            if not self._set_text_filter(col, "starts_with", f'{column_name}: начинается с'):
+                return
+        elif selected_action == ends_with_action:
+            if not self._set_text_filter(col, "ends_with", f'{column_name}: заканчивается на'):
+                return
+        elif selected_action == equals_text_action:
+            if not self._set_text_filter(col, "equals", f'{column_name}: равно тексту'):
+                return
+        elif selected_action == all_values_action:
+            self.columnFilters.pop(col, None)
+        elif selected_action == empty_value_action:
+            self.columnFilters[col] = {"mode": "empty", "value": ""}
+        elif selected_action in value_actions:
+            self.columnFilters[col] = {"mode": "equals", "value": value_actions[selected_action]}
+        else:
+            return
+
+        self._refresh_filter_headers()
+        self._apply_table_filters()
+
+    @staticmethod
+    def _normalize_param_name(value):
+        return str(value or "").strip().casefold()
+
+    def _load_formula_parameters(self):
+        params_data = Tool.load_json(Config.vars_path)
+        parameters = {}
+        for values in params_data.get("parameters", {}).values():
+            if len(values) < 3:
+                continue
+            variable, value, calc_type = values[0], values[1], values[2]
+            key = self._normalize_param_name(variable)
+            if not key:
+                continue
+            parameters[key] = (str(value).replace(",", "."), str(calc_type))
+        return parameters
+
+    def _eval_formula(self, formula, context, row, col, parameters):
+        expression = str(formula or "").strip().replace(",", ".")
+        if expression.startswith("="):
+            expression = expression[1:].strip()
+        if not expression:
+            raise ValueError(
+                f'Строка {row + 1}, столбец "{self._column_title(col)}": формула не может быть пустой'
+            )
+
+        def _replace_named_variable(match):
+            token = match.group(1).strip()
+            key = self._normalize_param_name(token)
+            if key not in parameters:
+                raise ValueError(
+                    f'Строка {row + 1}, столбец "{self._column_title(col)}": '
+                    f'неизвестная переменная "${token}$"'
+                )
+            value, calc_type = parameters[key]
+            if calc_type == "percents":
+                return f"({value})/100"
+            if calc_type == "multiply":
+                return f"*({value})"
+            if calc_type == "division":
+                return f"/({value})"
+            return f"({value})"
+
+        expression = re.sub(r"\$([^$]+)\$", _replace_named_variable, expression).strip()
+        while expression and expression[0] in "+*/":
+            expression = expression[1:].strip()
+        if not expression:
+            raise ValueError(
+                f'Строка {row + 1}, столбец "{self._column_title(col)}": формула не может быть пустой'
+            )
+
+        def _replace_token(match):
+            token = match.group(0)
+            key = token.lower()
+            if key not in context:
+                key = key.replace("_", "")
+            if key not in context:
+                raise ValueError(
+                    f'Строка {row + 1}, столбец "{self._column_title(col)}": неизвестная переменная "{token}"'
+                )
+            return str(context[key])
+
+        token_pattern = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+        math_expression = token_pattern.sub(_replace_token, expression)
+        try:
+            return float(Tool._safe_eval(math_expression))
+        except Exception as e:
+            if isinstance(e, ValueError):
+                raise
+            raise ValueError(
+                f'Строка {row + 1}, столбец "{self._column_title(col)}": некорректная формула'
+            ) from e
+
+    def _init_formula_expressions(self):
+        self.formulaExpressions = {col: [] for col in self.FORMULA_EDITABLE_COLUMNS}
+        for _ in range(self.rows):
+            for col in self.FORMULA_EDITABLE_COLUMNS:
+                self.formulaExpressions[col].append(self._default_formula(col))
 
     def _update_total_price_cell(self, row):
         amount = self.tableData["amount"][row]
@@ -197,6 +1038,23 @@ class mainWindow(QMainWindow):
             return
 
         text = item.text().strip()
+        needs_manual_summary_refresh = col in {0, 1, 2, 3}
+        if col in self.FORMULA_EDITABLE_COLUMNS:
+            old_formula = self.formulaExpressions[col][row]
+            try:
+                if not text:
+                    raise ValueError(
+                        f'Строка {row + 1}, столбец "{self._column_title(col)}": формула не может быть пустой'
+                    )
+                self.formulaExpressions[col][row] = text
+                self.calculating()
+            except ValueError as e:
+                self.formulaExpressions[col][row] = old_formula
+                self.calculating()
+                self.error("Ошибка", str(e))
+            self._apply_table_filters()
+            return
+
         try:
             if col == 4:
                 parsed_amount = Tool.parse_int(text, f"Кол-во (строка {row + 1})", allow_zero=False)
@@ -237,6 +1095,9 @@ class mainWindow(QMainWindow):
             blocker = QSignalBlocker(self.ui.KpTable)
             self._restore_edited_cell(row, col)
             del blocker
+        self._apply_table_filters()
+        if needs_manual_summary_refresh:
+            self._update_total_tab_table()
 
     def testFeature(self, checked):
         QMessageBox.about(
@@ -271,7 +1132,7 @@ class mainWindow(QMainWindow):
         try:
             QDesktopServices.openUrl(QUrl(url))
         except Exception as e:
-            Tool.write_log(f"{e}")
+            Tool.log_exception(f"Не удалось открыть URL: {url}", e, include_traceback=False)
 
     def show_help(self):
         help_text = """
@@ -304,6 +1165,10 @@ class mainWindow(QMainWindow):
         <ul>
             <li><span class="hotkey">F1</span> - открыть справку</li>
             <li><span class="hotkey">Ctrl+O</span> - открыть таблицу</li>
+            <li><span class="hotkey">Ctrl+F</span> - поиск по таблице</li>
+            <li><span class="hotkey">Ctrl+D</span> - дублировать выбранные строки</li>
+            <li><span class="hotkey">Delete</span> - удалить выбранные строки</li>
+            <li><span class="hotkey">Ctrl+Shift+E</span> - скачать КП</li>
         </ul>
 
         <h3>Поддержка</h3>
@@ -417,8 +1282,11 @@ class mainWindow(QMainWindow):
             return
 
         if Config.isTableOpened:
-            self.logisticCalculate()
-            self.calculating()
+            try:
+                self.logisticCalculate()
+                self.calculating()
+            except ValueError as e:
+                self.error("Ошибка", str(e))
 
     @staticmethod
     def _normalize_header(text):
@@ -657,10 +1525,12 @@ class mainWindow(QMainWindow):
         del blocker
 
         self.rows = len(parsed_rows)
+        self._init_formula_expressions()
         self.mixedCurrencyWarningShown = False
         self.logisticCalculate()
         self.calculating()
         self.ui.KpTable.resizeColumnsToContents()
+        self._apply_table_filters()
 
         Config.config["lastTable"] = filename
         self.saveConfig()
@@ -683,13 +1553,23 @@ class mainWindow(QMainWindow):
     def openCreateDocWindow(self, tableData):
         window = createDocWindow(self, tableData=tableData)
         window.show()
+        window.windowClosed.connect(self.updateHistoryTable)
         if Config.settings["closeTable"]:
             window.windowClosed.connect(self.closeTable)
             self.ui.KpTable.setRowCount(0)
 
     def openParamsWindow(self):
         window = paramsWindow(self)
+        window.paramsSaved.connect(self._recalculate_after_params_save)
         window.show()
+
+    def _recalculate_after_params_save(self):
+        if not Config.isTableOpened:
+            return
+        try:
+            self.calculating()
+        except ValueError as e:
+            self.error("Ошибка", str(e))
 
     def openSettingsWindow(self):
         window = settingsWindow(self)
@@ -713,7 +1593,15 @@ class mainWindow(QMainWindow):
             "termDelivery": [],
             "logistic": [],
         }
+        self.formulaExpressions = {col: [] for col in self.FORMULA_EDITABLE_COLUMNS}
         self.rows = 0
+        self.quickSearchText = ""
+        if hasattr(self, "tableQuickSearchLine"):
+            blocker_search = QSignalBlocker(self.tableQuickSearchLine)
+            self.tableQuickSearchLine.clear()
+            del blocker_search
+        self._clear_all_filters()
+        self._update_total_tab_table()
 
     def _vat_multiplier(self):
         params_data = Tool.load_json(Config.vars_path)
@@ -724,7 +1612,12 @@ class mainWindow(QMainWindow):
             if name == "НДС":
                 try:
                     rate = float(str(value).replace(",", "."))
-                except ValueError:
+                except ValueError as e:
+                    Tool.log_exception(
+                        f"Некорректное значение НДС: {value}",
+                        e,
+                        include_traceback=False,
+                    )
                     return 1.0
                 if calc_type == "percents":
                     return 1 + rate / 100
@@ -735,41 +1628,123 @@ class mainWindow(QMainWindow):
         if not self.tableData["amount"] or not self.tableData["logistic"]:
             return
 
+        for col in self.FORMULA_EDITABLE_COLUMNS:
+            if len(self.formulaExpressions.get(col, [])) != self.rows:
+                self._init_formula_expressions()
+                break
+
+        named_parameters = self._load_formula_parameters()
         vat_multiplier = self._vat_multiplier()
         blocker = QSignalBlocker(self.ui.KpTable)
         for row_num in range(self.rows):
             amount = self.tableData["amount"][row_num]
+            unit_price = self.tableData["unitPrice"][row_num]
+            total_price = self.tableData["totalPrice"][row_num]
             currency = self.tableData["currency"][row_num]
             logistic_value = self.tableData["logistic"][row_num]
-            customs_sum = round(logistic_value * self.formulaCustom, 2)
-            unit_sale_price = round(customs_sum / amount, 2)
-            real_price = round(unit_sale_price * self.formulaMarkup, 2)
-            total_without_vat = round(real_price * amount, 2)
+            supplier_term = self.tableData["termDelivery"][row_num]
+            context = {
+                "amount": float(amount),
+                "qty": float(amount),
+                "unitprice": float(unit_price),
+                "price": float(unit_price),
+                "totalprice": float(total_price),
+                "logistic": float(logistic_value),
+                "custom": float(self.formulaCustom),
+                "markup": float(self.formulaMarkup),
+                "vat": float(vat_multiplier),
+                "supplierterm": float(supplier_term),
+                "termdelivery": float(self.termDeliveryDays),
+            }
+
+            customs_sum = round(
+                self._eval_formula(self.formulaExpressions[8][row_num], context, row_num, 8, named_parameters),
+                2,
+            )
+            if customs_sum < 0:
+                raise ValueError(
+                    f'Строка {row_num + 1}, столбец "{self._column_title(8)}": '
+                    "результат формулы не может быть отрицательным"
+                )
+            context["customs"] = float(customs_sum)
+
+            unit_sale_price = round(
+                self._eval_formula(self.formulaExpressions[9][row_num], context, row_num, 9, named_parameters),
+                2,
+            )
+            if unit_sale_price < 0:
+                raise ValueError(
+                    f'Строка {row_num + 1}, столбец "{self._column_title(9)}": '
+                    "результат формулы не может быть отрицательным"
+                )
+            context["unitsaleprice"] = float(unit_sale_price)
+
+            real_price = round(
+                self._eval_formula(self.formulaExpressions[10][row_num], context, row_num, 10, named_parameters),
+                2,
+            )
+            if real_price < 0:
+                raise ValueError(
+                    f'Строка {row_num + 1}, столбец "{self._column_title(10)}": '
+                    "результат формулы не может быть отрицательным"
+                )
+            context["realprice"] = float(real_price)
+
+            total_without_vat = round(
+                self._eval_formula(self.formulaExpressions[11][row_num], context, row_num, 11, named_parameters),
+                2,
+            )
+            if total_without_vat < 0:
+                raise ValueError(
+                    f'Строка {row_num + 1}, столбец "{self._column_title(11)}": '
+                    "результат формулы не может быть отрицательным"
+                )
+            context["totalwithoutvat"] = float(total_without_vat)
+
             total_with_vat = round(total_without_vat * vat_multiplier, 2)
+            if total_with_vat < 0:
+                raise ValueError(
+                    f'Строка {row_num + 1}, столбец "{self._column_title(12)}": '
+                    "результат формулы не может быть отрицательным"
+                )
+            context["totalwithvat"] = float(total_with_vat)
+
+            total_delivery_days = int(
+                round(
+                    self._eval_formula(
+                        self.formulaExpressions[13][row_num], context, row_num, 13, named_parameters
+                    )
+                )
+            )
+            if total_delivery_days < 0:
+                raise ValueError(
+                    f'Строка {row_num + 1}, столбец "{self._column_title(13)}": '
+                    "результат формулы не может быть отрицательным"
+                )
 
             self._set_table_item(
                 row_num,
                 8,
                 Tool.formatPrice(str(customs_sum), currency),
-                editable=False,
+                editable=True,
             )
             self._set_table_item(
                 row_num,
                 9,
                 Tool.formatPrice(str(unit_sale_price), currency),
-                editable=False,
+                editable=True,
             )
             self._set_table_item(
                 row_num,
                 10,
                 Tool.formatPrice(str(real_price), currency),
-                editable=False,
+                editable=True,
             )
             self._set_table_item(
                 row_num,
                 11,
                 Tool.formatPrice(str(total_without_vat), currency),
-                editable=False,
+                editable=True,
             )
             self._set_table_item(
                 row_num,
@@ -780,15 +1755,20 @@ class mainWindow(QMainWindow):
             self._set_table_item(
                 row_num,
                 13,
-                f"{self.tableData['termDelivery'][row_num] + self.termDeliveryDays} дней",
-                editable=False,
+                f"{total_delivery_days} дней",
+                editable=True,
             )
         del blocker
+        self._apply_table_filters()
+        self._update_total_tab_table()
 
     def logisticVarChanged(self, _):
         if Config.isTableOpened:
-            self.logisticCalculate()
-            self.calculating()
+            try:
+                self.logisticCalculate()
+                self.calculating()
+            except ValueError as e:
+                self.error("Ошибка", str(e))
 
     def logisticCalculate(self):
         if not self.tableData["totalPrice"]:
@@ -833,16 +1813,14 @@ class mainWindow(QMainWindow):
             )
             self.tableData["logistic"].append(f)
         del blocker
+        self._apply_table_filters()
 
     def getTableData(self):
         table_data = []
         row_count = self.ui.KpTable.rowCount()
         for row in range(row_count):
             row_data = []
-            for col in range(5):
-                item = self.ui.KpTable.item(row, col)
-                row_data.append(item.text() if item is not None else "")
-            for col in range(10, 14):
+            for col in self.SUMMARY_SOURCE_COLUMNS:
                 item = self.ui.KpTable.item(row, col)
                 row_data.append(item.text() if item is not None else "")
             table_data.append(row_data)
@@ -871,6 +1849,27 @@ class mainWindow(QMainWindow):
 
     def _has_mixed_currencies(self):
         return len(set(self.tableData.get("currency", []))) > 1
+
+    def _table_column_total(self, col: int):
+        total = 0.0
+        currency = ""
+        for row in range(self.ui.KpTable.rowCount()):
+            item = self.ui.KpTable.item(row, col)
+            if item is None:
+                continue
+            symb, amount_text = Tool.parsePrice(item.text())
+            if symb and not currency:
+                currency = symb
+            try:
+                total += float(str(amount_text).replace(" ", "").replace(",", "."))
+            except ValueError as e:
+                Tool.log_exception(
+                    f"Не удалось распарсить сумму в строке {row + 1}: {amount_text}",
+                    e,
+                    include_traceback=False,
+                )
+                continue
+        return round(total, 2), currency
 
     def exportDocs(self):
         if not Config.isTableOpened:
@@ -912,7 +1911,7 @@ class mainWindow(QMainWindow):
                 row_data.append(item.text() if item is not None else "")
             tableData.append(row_data)
 
-        exportExcelFile(
+        export_result = exportExcelFile(
             (
                 tableData,
                 (
@@ -924,13 +1923,25 @@ class mainWindow(QMainWindow):
                 sum(self.tableData["totalPrice"]),
             )
         )
+        if not getattr(export_result, "success", False):
+            error_text = getattr(export_result, "error_message", "") or "Не удалось создать Excel"
+            self.error("Ошибка", error_text)
+            return
+
+        total_amount, currency = self._table_column_total(12)
+        self.db.addHistoryEvent(
+            event_type="excel",
+            items_count=row_count,
+            total_amount=total_amount,
+            currency=currency,
+            file_path=getattr(export_result, "output_path", ""),
+            notes="Экспорт расчетной таблицы",
+        )
+        self.db.save()
+        self.updateHistoryTable()
 
     def resourcePath(self, relativePath):
-        try:
-            base_path = sys._MEIPASS
-        except Exception:
-            base_path = os.path.abspath(".")
-        return os.path.join(base_path, relativePath)
+        return Tool.resourcePath(relativePath)
 
     def closeEvent(self, event):
         Config.config["logisticNum"] = self.ui.logisticNum.text()
