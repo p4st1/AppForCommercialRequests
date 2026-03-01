@@ -38,11 +38,14 @@ import json
 
 
 class FormulaDelegate(QStyledItemDelegate):
-    def __init__(self, parent, formula_provider):
+    def __init__(self, parent, formula_provider, before_edit_callback=None):
         super().__init__(parent)
         self._formula_provider = formula_provider
+        self._before_edit_callback = before_edit_callback
 
     def setEditorData(self, editor, index):
+        if self._before_edit_callback is not None:
+            self._before_edit_callback(index.row(), index.column())
         formula = self._formula_provider(index.row(), index.column())
         if formula is not None and hasattr(editor, "setText"):
             editor.setText(formula)
@@ -54,6 +57,7 @@ class mainWindow(QMainWindow):
     BASE_EDITABLE_COLUMNS = {0, 1, 2, 3, 4, 5, 14}
     FORMULA_EDITABLE_COLUMNS = {8, 9, 10, 11, 13}
     EDITABLE_COLUMNS = BASE_EDITABLE_COLUMNS | FORMULA_EDITABLE_COLUMNS
+    MAX_UNDO_STATES = 30
     SUMMARY_SOURCE_COLUMNS = (0, 1, 2, 3, 4, 10, 11, 12, 13)
     SUMMARY_HEADERS = (
         "№",
@@ -107,6 +111,9 @@ class mainWindow(QMainWindow):
         self._baseHeaderLabels = {}
         self.quickSearchText = ""
         self._shortcuts = []
+        self._undo_stack = []
+        self._is_restoring_undo = False
+        self._pending_edit_undo_state = None
 
         self.loadConfig()
         self.ensureOutputDirs()
@@ -157,7 +164,13 @@ class mainWindow(QMainWindow):
         self.ui.closeTableButton.clicked.connect(self.closeTable)
         self.ui.KpTable.itemChanged.connect(self.tableItemChanged)
         self.ui.KpTable.setEditTriggers(QAbstractItemView.EditTrigger.AllEditTriggers)
-        self.ui.KpTable.setItemDelegate(FormulaDelegate(self.ui.KpTable, self._get_formula_for_editor))
+        self.ui.KpTable.setItemDelegate(
+            FormulaDelegate(
+                self.ui.KpTable,
+                self._get_formula_for_editor,
+                self._capture_state_before_cell_edit,
+            )
+        )
         self.ui.KpTable.resizeColumnsToContents()
         self._setup_table_quick_search()
         self._setup_shortcuts()
@@ -660,6 +673,10 @@ class mainWindow(QMainWindow):
             parent=self.ui.KpTable,
             context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
         )
+        undo_shortcut = QShortcut(QKeySequence(QKeySequence.StandardKey.Undo), self.ui.KpTable)
+        undo_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+        undo_shortcut.activated.connect(self._undo_last_table_change)
+        self._shortcuts.append(undo_shortcut)
 
     def _selected_table_rows(self):
         table = self.ui.KpTable
@@ -674,6 +691,93 @@ class mainWindow(QMainWindow):
             rows.add(current_row)
         return sorted(row for row in rows if 0 <= row < table.rowCount())
 
+    def _capture_table_state(self):
+        table = self.ui.KpTable
+        table_rows = []
+        for row in range(table.rowCount()):
+            row_values = []
+            for col in range(table.columnCount()):
+                item = table.item(row, col)
+                row_values.append(item.text() if item is not None else "")
+            table_rows.append(row_values)
+
+        return {
+            "table_rows": table_rows,
+            "table_data": {key: list(values) for key, values in self.tableData.items()},
+            "formula_expressions": {
+                col: list(self.formulaExpressions.get(col, [])) for col in self.FORMULA_EDITABLE_COLUMNS
+            },
+            "mixed_currency_warning": bool(self.mixedCurrencyWarningShown),
+        }
+
+    def _push_undo_state(self):
+        if not Config.isTableOpened or self._is_restoring_undo:
+            return
+        self._pending_edit_undo_state = None
+        self._undo_stack.append(self._capture_table_state())
+        if len(self._undo_stack) > self.MAX_UNDO_STATES:
+            self._undo_stack.pop(0)
+
+    def _restore_table_state(self, state):
+        self._pending_edit_undo_state = None
+        table_rows = state.get("table_rows", [])
+        table = self.ui.KpTable
+        self._is_restoring_undo = True
+        try:
+            blocker = QSignalBlocker(table)
+            table.setRowCount(len(table_rows))
+            for row, row_values in enumerate(table_rows):
+                for col in range(table.columnCount()):
+                    value = row_values[col] if col < len(row_values) else ""
+                    self._set_table_item(row, col, value, editable=(col in self.EDITABLE_COLUMNS))
+            del blocker
+        finally:
+            self._is_restoring_undo = False
+
+        table_data_state = state.get("table_data", {})
+        self.tableData = {
+            "amount": list(table_data_state.get("amount", [])),
+            "currency": list(table_data_state.get("currency", [])),
+            "unitPrice": list(table_data_state.get("unitPrice", [])),
+            "totalPrice": list(table_data_state.get("totalPrice", [])),
+            "termDelivery": list(table_data_state.get("termDelivery", [])),
+            "logistic": list(table_data_state.get("logistic", [])),
+        }
+        formula_state = state.get("formula_expressions", {})
+        self.formulaExpressions = {
+            col: list(formula_state.get(col, [])) for col in self.FORMULA_EDITABLE_COLUMNS
+        }
+        self.rows = len(table_rows)
+        self.mixedCurrencyWarningShown = bool(state.get("mixed_currency_warning", False))
+        Config.isTableOpened = self.rows > 0
+        self._apply_table_filters()
+        self._update_total_tab_table()
+
+    def _undo_last_table_change(self):
+        if not self._undo_stack:
+            return
+        state = self._undo_stack.pop()
+        self._restore_table_state(state)
+
+    def _clear_undo_history(self):
+        self._undo_stack.clear()
+        self._pending_edit_undo_state = None
+
+    def _capture_state_before_cell_edit(self, row, col):
+        if not Config.isTableOpened or self._is_restoring_undo:
+            return
+        if row < 0 or col not in self.EDITABLE_COLUMNS:
+            return
+        self._pending_edit_undo_state = self._capture_table_state()
+
+    def _push_pending_edit_undo_state(self):
+        if self._pending_edit_undo_state is None:
+            return
+        self._undo_stack.append(self._pending_edit_undo_state)
+        self._pending_edit_undo_state = None
+        if len(self._undo_stack) > self.MAX_UNDO_STATES:
+            self._undo_stack.pop(0)
+
     def _duplicate_selected_rows(self):
         if not Config.isTableOpened or self.ui.KpTable.rowCount() == 0:
             return
@@ -681,6 +785,8 @@ class mainWindow(QMainWindow):
         selected_rows = self._selected_table_rows()
         if not selected_rows:
             return
+
+        self._push_undo_state()
 
         table = self.ui.KpTable
         blocker = QSignalBlocker(table)
@@ -718,6 +824,8 @@ class mainWindow(QMainWindow):
         if not selected_rows:
             return
 
+        self._push_undo_state()
+
         table = self.ui.KpTable
         blocker = QSignalBlocker(table)
         for row in sorted(selected_rows, reverse=True):
@@ -735,7 +843,7 @@ class mainWindow(QMainWindow):
         self.rows = table.rowCount()
         self.mixedCurrencyWarningShown = False
         if self.rows == 0:
-            self.closeTable()
+            self.closeTable(clear_undo=False)
             return
 
         self.logisticCalculate()
@@ -1037,6 +1145,8 @@ class mainWindow(QMainWindow):
         if row < 0 or row >= self.rows or col not in self.EDITABLE_COLUMNS:
             return
 
+        self._push_pending_edit_undo_state()
+
         text = item.text().strip()
         needs_manual_summary_refresh = col in {0, 1, 2, 3}
         if col in self.FORMULA_EDITABLE_COLUMNS:
@@ -1167,6 +1277,7 @@ class mainWindow(QMainWindow):
             <li><span class="hotkey">Ctrl+O</span> - открыть таблицу</li>
             <li><span class="hotkey">Ctrl+F</span> - поиск по таблице</li>
             <li><span class="hotkey">Ctrl+D</span> - дублировать выбранные строки</li>
+            <li><span class="hotkey">Ctrl+Z / Cmd+Z</span> - отменить последнее изменение таблицы</li>
             <li><span class="hotkey">Delete</span> - удалить выбранные строки</li>
             <li><span class="hotkey">Ctrl+Shift+E</span> - скачать КП</li>
         </ul>
@@ -1526,6 +1637,7 @@ class mainWindow(QMainWindow):
 
         self.rows = len(parsed_rows)
         self._init_formula_expressions()
+        self._clear_undo_history()
         self.mixedCurrencyWarningShown = False
         self.logisticCalculate()
         self.calculating()
@@ -1579,7 +1691,7 @@ class mainWindow(QMainWindow):
         window = customersWindow(self)
         window.show()
 
-    def closeTable(self):
+    def closeTable(self, _checked=False, clear_undo=True):
         Config.isTableOpened = False
         blocker = QSignalBlocker(self.ui.KpTable)
         self.ui.KpTable.clearContents()
@@ -1600,6 +1712,8 @@ class mainWindow(QMainWindow):
             blocker_search = QSignalBlocker(self.tableQuickSearchLine)
             self.tableQuickSearchLine.clear()
             del blocker_search
+        if clear_undo:
+            self._clear_undo_history()
         self._clear_all_filters()
         self._update_total_tab_table()
 
