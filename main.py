@@ -198,6 +198,10 @@ class mainWindow(QMainWindow):
         self._ensure_history_tab()
         self._ensure_web_tab()
         self._setup_history_tab_table()
+        self._full_table_panel_widgets = list(
+            dict.fromkeys(self._collect_layout_widgets(self.ui.funcButtons))
+        )
+        self.ui.tabWidget.currentChanged.connect(self._on_main_tab_changed)
         self.updateHistoryTable()
 
         if Config.settings["openLastTab"] and Config.config["lastTable"]:
@@ -212,9 +216,30 @@ class mainWindow(QMainWindow):
             self.ui.tabWidget.setCurrentIndex(2)
         else:
             self.ui.tabWidget.setCurrentIndex(1)
+        self._on_main_tab_changed(self.ui.tabWidget.currentIndex())
 
     def applyEnterpriseStyle(self):
         apply_unified_theme(self)
+
+    def _collect_layout_widgets(self, layout):
+        widgets = []
+        if layout is None:
+            return widgets
+        for index in range(layout.count()):
+            item = layout.itemAt(index)
+            widget = item.widget()
+            if widget is not None:
+                widgets.append(widget)
+                continue
+            child_layout = item.layout()
+            if child_layout is not None:
+                widgets.extend(self._collect_layout_widgets(child_layout))
+        return widgets
+
+    def _on_main_tab_changed(self, _index):
+        show_panel = self.ui.tabWidget.currentWidget() is self.ui.tab
+        for widget in self._full_table_panel_widgets:
+            widget.setVisible(show_panel)
 
     def _load_updates_tab_text(self):
         updates_path = Path(self.resourcePath("assets/updates.txt"))
