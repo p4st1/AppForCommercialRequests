@@ -4,6 +4,7 @@ class Config:
         "autoFill": True,
         "openUpdateTab": True,
         "openLastTab": True,
+        "saveWebAuthData": False,
         "testFeature": False,
     }
 
@@ -18,6 +19,9 @@ class Config:
         "pathToDB": "",
         "ExcelIndent": "0",
         "lastTable": "",
+        "webAuthLogin": "",
+        "webAuthPassword": "",
+        "webAuthMaxAttempts": "25",
     }
 
     types = {
