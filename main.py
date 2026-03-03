@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTextEdit,
 )
-from PySide6.QtGui import QIcon, QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtGui import QIcon, QDesktopServices, QKeySequence, QShortcut, QColor
 from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QTimer
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from createDocument import mainWindow as createDocWindow
@@ -132,6 +132,10 @@ class mainWindow(QMainWindow):
         self._web_auth_frame_urls_tried = set()
         self._web_auth_seen_login_form = False
         self._web_auth_seen_login_dialog = False
+        self._formula_fill_highlight_cells = []
+        self._formula_fill_highlight_timer = QTimer(self)
+        self._formula_fill_highlight_timer.setSingleShot(True)
+        self._formula_fill_highlight_timer.timeout.connect(self._clear_formula_fill_highlight)
 
         self.loadConfig()
         self.ensureOutputDirs()
@@ -1634,6 +1638,80 @@ class mainWindow(QMainWindow):
         item = self.ui.KpTable.horizontalHeaderItem(col)
         return item.text() if item is not None else str(col)
 
+    @staticmethod
+    def _format_row_ranges(rows):
+        normalized = sorted(set(int(row) for row in rows if int(row) >= 0))
+        if not normalized:
+            return ""
+
+        one_based = [row + 1 for row in normalized]
+        ranges = []
+        start = one_based[0]
+        end = one_based[0]
+
+        for value in one_based[1:]:
+            if value == end + 1:
+                end = value
+                continue
+            ranges.append((start, end))
+            start = value
+            end = value
+        ranges.append((start, end))
+
+        return ", ".join(f"{left}-{right}" if left != right else str(left) for left, right in ranges)
+
+    def _clear_formula_fill_highlight(self):
+        if hasattr(self, "_formula_fill_highlight_timer"):
+            self._formula_fill_highlight_timer.stop()
+        if not self._formula_fill_highlight_cells:
+            return
+
+        table = self.ui.KpTable
+        blocker = QSignalBlocker(table)
+        for row, col, previous_background in self._formula_fill_highlight_cells:
+            if row < 0 or col < 0 or row >= table.rowCount() or col >= table.columnCount():
+                continue
+            item = table.item(row, col)
+            if item is None:
+                continue
+            item.setData(Qt.ItemDataRole.BackgroundRole, previous_background)
+        del blocker
+        self._formula_fill_highlight_cells = []
+
+    def _show_formula_fill_feedback(self, col, rows, source_row=None):
+        table = self.ui.KpTable
+        self._clear_formula_fill_highlight()
+
+        highlighted = []
+        highlight_color = QColor("#FFE9A8")
+        blocker = QSignalBlocker(table)
+        for row in sorted(set(rows)):
+            if row < 0 or row >= table.rowCount():
+                continue
+            item = table.item(row, col)
+            if item is None:
+                continue
+            previous_background = item.data(Qt.ItemDataRole.BackgroundRole)
+            item.setData(Qt.ItemDataRole.BackgroundRole, highlight_color)
+            highlighted.append((row, col, previous_background))
+        del blocker
+
+        self._formula_fill_highlight_cells = highlighted
+        if highlighted:
+            self._formula_fill_highlight_timer.start(1200)
+
+        status_bar = self.statusBar()
+        if status_bar is None:
+            return
+        rows_label = self._format_row_ranges(rows)
+        if not rows_label:
+            return
+        source_text = f" из строки {source_row + 1}" if source_row is not None and source_row >= 0 else ""
+        status_bar.showMessage(
+            f'Формула в столбце "{self._column_title(col)}" протянута{source_text} по строкам: {rows_label}',
+            2500,
+        )
+
     def _setup_table_quick_search(self):
         self.tableQuickSearchLine = QLineEdit(self)
         self.tableQuickSearchLine.setPlaceholderText("Быстрый поиск по таблице (Ctrl+F)")
@@ -1751,6 +1829,8 @@ class mainWindow(QMainWindow):
             for row in target_rows:
                 self.formulaExpressions[col][row] = text
             self.calculating()
+            if len(target_rows) > 1:
+                self._show_formula_fill_feedback(col, target_rows, source_row=source_row)
             return True
         except ValueError as e:
             for row, previous_value in old_formulas.items():
@@ -1811,6 +1891,7 @@ class mainWindow(QMainWindow):
             self._undo_stack.pop(0)
 
     def _restore_table_state(self, state):
+        self._clear_formula_fill_highlight()
         self._pending_edit_undo_state = None
         table_rows = state.get("table_rows", [])
         table = self.ui.KpTable
@@ -2778,6 +2859,7 @@ class mainWindow(QMainWindow):
 
     def closeTable(self, _checked=False, clear_undo=True):
         Config.isTableOpened = False
+        self._clear_formula_fill_highlight()
         blocker = QSignalBlocker(self.ui.KpTable)
         self.ui.KpTable.clearContents()
         self.ui.KpTable.setRowCount(0)
