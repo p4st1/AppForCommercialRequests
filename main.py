@@ -181,7 +181,10 @@ class mainWindow(QMainWindow):
         self.ui.termDeliveryLine.editingFinished.connect(self.processFormula)
         self.ui.closeTableButton.clicked.connect(self.closeTable)
         self.ui.KpTable.itemChanged.connect(self.tableItemChanged)
-        self.ui.KpTable.setEditTriggers(QAbstractItemView.EditTrigger.AllEditTriggers)
+        self.ui.KpTable.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+        )
         self.ui.KpTable.setItemDelegate(
             FormulaDelegate(
                 self.ui.KpTable,
