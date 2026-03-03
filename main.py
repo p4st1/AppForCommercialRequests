@@ -545,6 +545,7 @@ class mainWindow(QMainWindow):
             )
         ):
             self._set_web_status(f"Авторизация выполнена: {current_url}")
+            self._navigate_to_bid_submission_tab()
             self._stop_web_authorization()
             return
         self._schedule_web_auth_retry(delay_ms=400 if ok else 1000)
@@ -572,6 +573,7 @@ class mainWindow(QMainWindow):
                 self._set_web_status(
                     f"Авторизация выполнена: {current_url}" if current_url else "Авторизация выполнена"
                 )
+                self._navigate_to_bid_submission_tab()
             elif self._web_auth_submitted:
                 self._set_web_status("Форма входа отправлена. Проверьте, что вход выполнен.")
             elif self._web_auth_seen_login_form or self._web_auth_seen_login_dialog:
@@ -1047,6 +1049,115 @@ class mainWindow(QMainWindow):
         script = script.replace("__PASSWORD__", json.dumps(password))
         return script
 
+    @staticmethod
+    def _build_bid_submission_navigation_script():
+        return """
+(() => {
+  const targetPath = '/trades';
+  const targetPage = 'purchases.trades.filters.BID_SUBMISSION';
+  const normalizeText = (value) => String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\\s+/g, ' ')
+    .trim();
+  const isTargetUrl = (value) => {
+    if (!value) return false;
+    try {
+      const parsed = new URL(value, window.location.href);
+      return parsed.pathname === targetPath
+        && String(parsed.searchParams.get('page') || '') === targetPage;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  if (isTargetUrl(window.location.href)) {
+    return { ok: true, already_on_target: true };
+  }
+
+  const selectors = [
+    'a.navigation-anchor[href]',
+    'a[mat-list-item][href]',
+    'um-navigation-item a[href]',
+    'a[href]'
+  ];
+  const links = [];
+  const seenNodes = [];
+  for (const selector of selectors) {
+    let nodes = [];
+    try { nodes = Array.from(document.querySelectorAll(selector)); } catch (e) { nodes = []; }
+    for (const node of nodes) {
+      if (!node || seenNodes.includes(node)) continue;
+      seenNodes.push(node);
+      links.push(node);
+    }
+  }
+
+  let textMatch = null;
+  for (const link of links) {
+    const href = String(link.getAttribute('href') || '').trim();
+    if (isTargetUrl(href)) {
+      link.click();
+      return { ok: true, clicked: true, href };
+    }
+    const text = normalizeText(
+      link.innerText
+      || link.textContent
+      || link.getAttribute('aria-label')
+      || link.getAttribute('title')
+      || ''
+    );
+    if (text.includes('прием заявок')) {
+      textMatch = link;
+    }
+  }
+
+  if (textMatch) {
+    const href = String(textMatch.getAttribute('href') || '').trim();
+    textMatch.click();
+    return { ok: true, clicked: true, href };
+  }
+
+  const fallbackUrl = `${targetPath}?page=${encodeURIComponent(targetPage)}`;
+  try {
+    const parsedCurrent = new URL(window.location.href);
+    parsedCurrent.pathname = targetPath;
+    parsedCurrent.search = `page=${encodeURIComponent(targetPage)}`;
+    window.location.assign(parsedCurrent.toString());
+    return { ok: true, redirected: true, target_url: parsedCurrent.toString() };
+  } catch (e) {
+    window.location.assign(fallbackUrl);
+    return { ok: true, redirected: true, target_url: fallbackUrl };
+  }
+})();
+"""
+
+    def _navigate_to_bid_submission_tab(self):
+        if not hasattr(self.ui, "webView"):
+            return
+        self._set_web_status("Авторизация выполнена. Переход во вкладку «Приём заявок»...")
+        script = self._build_bid_submission_navigation_script()
+        self.ui.webView.page().runJavaScript(script, self._on_bid_submission_navigation_completed)
+
+    def _on_bid_submission_navigation_completed(self, result):
+        if not isinstance(result, dict):
+            return
+
+        if result.get("already_on_target"):
+            self._set_web_status("Уже открыта вкладка «Приём заявок».")
+            return
+
+        if result.get("clicked"):
+            self._set_web_status("Переход во вкладку «Приём заявок» выполнен.")
+            return
+
+        if result.get("redirected"):
+            target_url = str(result.get("target_url", "")).strip()
+            if target_url:
+                self._set_web_status(f"Открывается вкладка «Приём заявок»: {target_url}")
+                return
+            self._set_web_status("Открывается вкладка «Приём заявок».")
+
     def _run_web_auth_attempt(self):
         if not self._web_auth_active or self._web_auth_js_running:
             return
@@ -1118,6 +1229,7 @@ class mainWindow(QMainWindow):
 
         if already_authorized:
             self._set_web_status(message or "Вход уже выполнен")
+            self._navigate_to_bid_submission_tab()
             self._stop_web_authorization()
             return
 
@@ -1137,6 +1249,7 @@ class mainWindow(QMainWindow):
             self._set_web_status(
                 f"Авторизация выполнена: {current_url}" if current_url else "Авторизация выполнена"
             )
+            self._navigate_to_bid_submission_tab()
             self._stop_web_authorization()
             return
 
@@ -1170,6 +1283,7 @@ class mainWindow(QMainWindow):
                 )
             else:
                 self._set_web_status("Авторизация выполнена")
+            self._navigate_to_bid_submission_tab()
             self._stop_web_authorization()
             return
 
