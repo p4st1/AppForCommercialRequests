@@ -185,10 +185,13 @@ class mainWindow(QMainWindow):
         self.ui.termDeliveryLine.editingFinished.connect(self.processFormula)
         self.ui.closeTableButton.clicked.connect(self.closeTable)
         self.ui.KpTable.itemChanged.connect(self.tableItemChanged)
+        self.ui.KpTable.itemSelectionChanged.connect(self._fill_formula_on_ctrl_selection)
         self.ui.KpTable.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.EditKeyPressed
         )
+        self.ui.KpTable.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.ui.KpTable.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.ui.KpTable.setItemDelegate(
             FormulaDelegate(
                 self.ui.KpTable,
@@ -1868,6 +1871,40 @@ class mainWindow(QMainWindow):
         self._apply_formula_to_rows(source_col, selected_rows, source_formula, source_row=source_row)
         self._apply_table_filters()
 
+    def _fill_formula_on_ctrl_selection(self):
+        if not Config.isTableOpened or self.rows <= 0:
+            return
+        if self._is_restoring_undo:
+            return
+
+        modifiers = QApplication.keyboardModifiers()
+        if not (modifiers & Qt.KeyboardModifier.ControlModifier):
+            return
+
+        table = self.ui.KpTable
+        source_row = table.currentRow()
+        source_col = table.currentColumn()
+        if source_col not in self.FORMULA_EDITABLE_COLUMNS:
+            return
+        if source_row < 0 or source_row >= self.rows:
+            return
+
+        selected_rows = self._selected_rows_in_column(source_col)
+        selected_rows = sorted(set(selected_rows))
+        if len(selected_rows) <= 1:
+            return
+
+        source_formula = str(self.formulaExpressions[source_col][source_row] or "").strip()
+        if not source_formula:
+            return
+
+        if all(self.formulaExpressions[source_col][row] == source_formula for row in selected_rows):
+            return
+
+        self._push_undo_state()
+        if self._apply_formula_to_rows(source_col, selected_rows, source_formula, source_row=source_row):
+            self._apply_table_filters()
+
     def _capture_table_state(self):
         table = self.ui.KpTable
         table_rows = []
@@ -2448,6 +2485,7 @@ class mainWindow(QMainWindow):
             <li><span class="hotkey">Ctrl+F</span> - поиск по таблице</li>
             <li><span class="hotkey">Ctrl+D</span> - дублировать выбранные строки</li>
             <li><span class="hotkey">Ctrl+Enter</span> - протянуть формулу по выделенным строкам</li>
+            <li><span class="hotkey">Ctrl + выделение ячеек</span> - протянуть формулу из активной ячейки</li>
             <li><span class="hotkey">Ctrl+Z / Cmd+Z</span> - отменить последнее изменение таблицы</li>
             <li><span class="hotkey">Delete</span> - удалить выбранные строки</li>
             <li><span class="hotkey">Ctrl+Shift+E</span> - скачать КП</li>
