@@ -1684,6 +1684,18 @@ class mainWindow(QMainWindow):
             parent=self.ui.KpTable,
             context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
         )
+        _bind(
+            "Ctrl+Return",
+            self._fill_formula_to_selection,
+            parent=self.ui.KpTable,
+            context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
+        )
+        _bind(
+            "Ctrl+Enter",
+            self._fill_formula_to_selection,
+            parent=self.ui.KpTable,
+            context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
+        )
         undo_shortcut = QShortcut(QKeySequence(QKeySequence.StandardKey.Undo), self.ui.KpTable)
         undo_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
         undo_shortcut.activated.connect(self._undo_last_table_change)
@@ -1701,6 +1713,72 @@ class mainWindow(QMainWindow):
         if current_row >= 0:
             rows.add(current_row)
         return sorted(row for row in rows if 0 <= row < table.rowCount())
+
+    def _selected_rows_in_column(self, col):
+        table = self.ui.KpTable
+        rows = set()
+        selection_model = table.selectionModel()
+        if selection_model is not None:
+            rows.update(index.row() for index in selection_model.selectedIndexes() if index.column() == col)
+        current_row = table.currentRow()
+        current_col = table.currentColumn()
+        if current_col == col and current_row >= 0:
+            rows.add(current_row)
+        return sorted(row for row in rows if 0 <= row < self.rows)
+
+    def _apply_formula_to_rows(self, col, rows, formula_text, source_row=None):
+        target_rows = sorted(set(rows))
+        if col not in self.FORMULA_EDITABLE_COLUMNS or not target_rows:
+            return False
+
+        text = str(formula_text or "").strip()
+        if not text:
+            if source_row is not None:
+                message = f'Строка {source_row + 1}, столбец "{self._column_title(col)}": формула не может быть пустой'
+            else:
+                message = f'Столбец "{self._column_title(col)}": формула не может быть пустой'
+            self.error(
+                "Ошибка",
+                message,
+            )
+            return False
+
+        old_formulas = {row: self.formulaExpressions[col][row] for row in target_rows}
+        try:
+            for row in target_rows:
+                self.formulaExpressions[col][row] = text
+            self.calculating()
+            return True
+        except ValueError as e:
+            for row, previous_value in old_formulas.items():
+                self.formulaExpressions[col][row] = previous_value
+            self.calculating()
+            self.error("Ошибка", str(e))
+            return False
+
+    def _fill_formula_to_selection(self):
+        if not Config.isTableOpened or self.rows <= 0:
+            return
+
+        table = self.ui.KpTable
+        source_col = table.currentColumn()
+        source_row = table.currentRow()
+        if source_col not in self.FORMULA_EDITABLE_COLUMNS:
+            return
+        if source_row < 0 or source_row >= self.rows:
+            return
+
+        selected_rows = self._selected_rows_in_column(source_col)
+        if source_row not in selected_rows:
+            selected_rows.append(source_row)
+        selected_rows = sorted(set(selected_rows))
+        if len(selected_rows) <= 1:
+            return
+
+        self._push_undo_state()
+        source_formula = self.formulaExpressions[source_col][source_row]
+        self._apply_formula_to_rows(source_col, selected_rows, source_formula, source_row=source_row)
+        self._apply_table_filters()
 
     def _capture_table_state(self):
         table = self.ui.KpTable
@@ -2161,18 +2239,10 @@ class mainWindow(QMainWindow):
         text = item.text().strip()
         needs_manual_summary_refresh = col in {0, 1, 2, 3}
         if col in self.FORMULA_EDITABLE_COLUMNS:
-            old_formula = self.formulaExpressions[col][row]
-            try:
-                if not text:
-                    raise ValueError(
-                        f'Строка {row + 1}, столбец "{self._column_title(col)}": формула не может быть пустой'
-                    )
-                self.formulaExpressions[col][row] = text
-                self.calculating()
-            except ValueError as e:
-                self.formulaExpressions[col][row] = old_formula
-                self.calculating()
-                self.error("Ошибка", str(e))
+            target_rows = self._selected_rows_in_column(col)
+            if row not in target_rows:
+                target_rows.append(row)
+            self._apply_formula_to_rows(col, target_rows, text, source_row=row)
             self._apply_table_filters()
             return
 
@@ -2288,6 +2358,7 @@ class mainWindow(QMainWindow):
             <li><span class="hotkey">Ctrl+O</span> - открыть таблицу</li>
             <li><span class="hotkey">Ctrl+F</span> - поиск по таблице</li>
             <li><span class="hotkey">Ctrl+D</span> - дублировать выбранные строки</li>
+            <li><span class="hotkey">Ctrl+Enter</span> - протянуть формулу по выделенным строкам</li>
             <li><span class="hotkey">Ctrl+Z / Cmd+Z</span> - отменить последнее изменение таблицы</li>
             <li><span class="hotkey">Delete</span> - удалить выбранные строки</li>
             <li><span class="hotkey">Ctrl+Shift+E</span> - скачать КП</li>

@@ -2127,7 +2127,7 @@ QPushButton:pressed {
 }</string>
           </property>
           <property name="text">
-           <string>Скачать Excel</string>
+           <string>Скачать расчеты</string>
           </property>
          </widget>
         </item>
