@@ -1953,12 +1953,11 @@ class Ui_MainWindow(object):
         self.termDeliveryLine.setText("")
         self.termDeliveryLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u0427\u0438\u0441\u043b\u043e (\u0432 \u0441\u0443\u0442\u043a\u0430\u0445)", None))
         self.createDocButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u041a\u041f", None))
-        self.createDocFromExcelButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u041a\u041f \u0438\u0437 Excel", None))
-        self.createExcelButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c Excel", None))
+        self.createDocFromExcelButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u041a\u041f \u0438\u0437 \u0440\u0430\u0441\u0447\u0435\u0442\u043e\u0432", None))
+        self.createExcelButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u0440\u0430\u0441\u0447\u0435\u0442\u044b", None))
         self.FileMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u0424\u0430\u0439\u043b", None))
         self.EditMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u0420\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c", None))
         self.SettingsMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438", None))
         self.WindowMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u043a\u043d\u043e", None))
         self.HelpMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043c\u043e\u0449\u044c", None))
     # retranslateUi
-

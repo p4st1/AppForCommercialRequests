@@ -2092,7 +2092,7 @@ QPushButton:pressed {
 }</string>
           </property>
           <property name="text">
-           <string>Скачать КП из Excel</string>
+           <string>Скачать КП из расчетов</string>
           </property>
          </widget>
         </item>
