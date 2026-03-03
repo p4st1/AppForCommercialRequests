@@ -1801,6 +1801,10 @@ class mainWindow(QMainWindow):
         selection_model = table.selectionModel()
         if selection_model is not None:
             rows.update(index.row() for index in selection_model.selectedIndexes() if index.column() == col)
+            if not rows:
+                rows.update(index.row() for index in selection_model.selectedRows())
+            if not rows:
+                rows.update(index.row() for index in selection_model.selectedIndexes())
         current_row = table.currentRow()
         current_col = table.currentColumn()
         if current_col == col and current_row >= 0:
@@ -1844,20 +1848,21 @@ class mainWindow(QMainWindow):
             return
 
         table = self.ui.KpTable
+        status_bar = self.statusBar()
         source_col = table.currentColumn()
-        source_row = table.currentRow()
         if source_col not in self.FORMULA_EDITABLE_COLUMNS:
-            return
-        if source_row < 0 or source_row >= self.rows:
+            if status_bar is not None:
+                status_bar.showMessage("Выберите ячейку в столбце с формулой для протягивания", 2500)
             return
 
         selected_rows = self._selected_rows_in_column(source_col)
-        if source_row not in selected_rows:
-            selected_rows.append(source_row)
         selected_rows = sorted(set(selected_rows))
         if len(selected_rows) <= 1:
+            if status_bar is not None:
+                status_bar.showMessage("Для протягивания формулы выделите минимум две строки", 2500)
             return
 
+        source_row = selected_rows[0]
         self._push_undo_state()
         source_formula = self.formulaExpressions[source_col][source_row]
         self._apply_formula_to_rows(source_col, selected_rows, source_formula, source_row=source_row)
