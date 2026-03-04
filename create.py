@@ -628,6 +628,10 @@ class createExcelFile:
                         continue
                     if isinstance(formulas, list):
                         formula_expressions[col_idx] = [str(formula or "") for formula in formulas]
+            logistic_formulas_raw = data.get("logistic_formulas", [])
+            logistic_formulas = []
+            if isinstance(logistic_formulas_raw, list):
+                logistic_formulas = [str(formula or "").strip() for formula in logistic_formulas_raw]
             named_parameters = self._normalize_named_parameters(data.get("named_parameters", {}))
             if not named_parameters:
                 named_parameters = self._load_named_parameters()
@@ -648,6 +652,7 @@ class createExcelFile:
             )
             vat_multiplier = self._load_vat_multiplier()
             formula_expressions = {}
+            logistic_formulas = []
             named_parameters = self._load_named_parameters()
 
         if not table_rows:
@@ -662,6 +667,7 @@ class createExcelFile:
             "markup_value": markup_value,
             "term_delivery": term_delivery,
             "vat_multiplier": vat_multiplier,
+            "logistic_formulas": logistic_formulas,
             "formula_expressions": formula_expressions,
             "named_parameters": named_parameters,
         }
@@ -834,13 +840,28 @@ class createExcelFile:
             work_sheet[f"G{excel_row}"] = f"=F{excel_row}*E{excel_row}"
             work_sheet[f"G{excel_row}"].number_format = self._currency_format(row_currency or currency)
 
-            if payload["logistic_mode"] == 1:
-                logistic_expression = (
-                    f"IF(G{total_row}=0,0,G{excel_row}+{logistic_value_text}/G{total_row}*G{excel_row})"
+            logistic_formula_source = ""
+            if row_index < len(payload["logistic_formulas"]):
+                logistic_formula_source = str(payload["logistic_formulas"][row_index] or "").strip()
+
+            if logistic_formula_source:
+                logistic_excel_formula = self._formula_to_excel(
+                    logistic_formula_source,
+                    self._formula_context_by_column(excel_row, payload)[8],
+                    payload["named_parameters"],
+                    row_index,
+                    7,
                 )
             else:
-                logistic_expression = f"G{excel_row}*{logistic_value_text}"
-            work_sheet[f"H{excel_row}"] = self._wrap_round(f"={logistic_expression}", 2)
+                if payload["logistic_mode"] == 1:
+                    logistic_expression = (
+                        f"IF(G{total_row}=0,0,G{excel_row}+{logistic_value_text}/G{total_row}*G{excel_row})"
+                    )
+                else:
+                    logistic_expression = f"G{excel_row}*{logistic_value_text}"
+                logistic_excel_formula = f"={logistic_expression}"
+
+            work_sheet[f"H{excel_row}"] = self._wrap_round(logistic_excel_formula, 2)
             work_sheet[f"H{excel_row}"].number_format = self._currency_format(row_currency or currency)
 
             work_sheet[f"O{excel_row}"] = supplier_term

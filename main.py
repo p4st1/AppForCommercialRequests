@@ -3232,7 +3232,9 @@ class mainWindow(QMainWindow):
             logistic_var = 0
 
         logistic_num = self.formulaLogistic
+        logistic_num_text = self._fmt_number(logistic_num)
         total_sum = sum(self.tableData["totalPrice"])
+        total_sum_text = self._fmt_number(total_sum)
         self.tableData["logistic"] = []
 
         blocker = QSignalBlocker(self.ui.KpTable)
@@ -3241,10 +3243,13 @@ class mainWindow(QMainWindow):
             if logistic_var == 1:
                 if total_sum <= 0:
                     f = 0
+                    formula_text = "0"
                 else:
                     f = round(base_total + logistic_num / total_sum * base_total, 2)
+                    formula_text = f"TotalPrice+{logistic_num_text}/{total_sum_text}*TotalPrice"
             else:
                 f = round(base_total * logistic_num, 2)
+                formula_text = f"TotalPrice*{logistic_num_text}"
             currency = self.tableData["currency"][row_num]
             self._set_table_item(
                 row_num,
@@ -3252,6 +3257,9 @@ class mainWindow(QMainWindow):
                 Tool.formatPrice(str(f), currency),
                 editable=False,
             )
+            logistic_item = self.ui.KpTable.item(row_num, 7)
+            if logistic_item is not None:
+                logistic_item.setData(Qt.ItemDataRole.UserRole, formula_text)
             self.tableData["logistic"].append(f)
         del blocker
         self._apply_table_filters()
@@ -3344,6 +3352,7 @@ class mainWindow(QMainWindow):
             return
 
         tableData = []
+        logistic_formulas = []
         row_count = self.ui.KpTable.rowCount()
         column_count = self.ui.KpTable.columnCount()
 
@@ -3353,6 +3362,11 @@ class mainWindow(QMainWindow):
                 item = self.ui.KpTable.item(row, col)
                 row_data.append(item.text() if item is not None else "")
             tableData.append(row_data)
+            logistic_item = self.ui.KpTable.item(row, 7)
+            logistic_formula = logistic_item.data(Qt.ItemDataRole.UserRole) if logistic_item is not None else ""
+            if isinstance(logistic_formula, dict):
+                logistic_formula = logistic_formula.get("formula", "")
+            logistic_formulas.append(str(logistic_formula or ""))
 
         export_result = exportExcelFile(
             {
@@ -3365,6 +3379,7 @@ class mainWindow(QMainWindow):
                 "term_delivery": parsed["termDelivery"],
                 "vat_multiplier": self._vat_multiplier(),
                 "named_parameters": self._load_formula_parameters(),
+                "logistic_formulas": logistic_formulas,
                 "formula_expressions": {
                     col: list(self.formulaExpressions.get(col, [])) for col in self.FORMULA_EDITABLE_COLUMNS
                 },
