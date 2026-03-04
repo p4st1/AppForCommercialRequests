@@ -58,7 +58,9 @@ class createTextFile:
         else:
             TEMPLATE_PATH = Config.template_docx_path_short
 
-        OUTPUT_PATH = f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_{docxData[3]}_от_{datetime.now().strftime('%d.%m.%Y')}_.docx"
+        lot_number = str(extraData[0]).strip() if len(extraData) > 0 else ""
+        today_date = datetime.now().strftime('%d_%m_%Y')
+        OUTPUT_PATH = f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_{lot_number}_{today_date}.docx"
         self.output_path = OUTPUT_PATH
 
         VAT_RATE = Decimal("0.20")
