@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'maingui.ui'
+## Form generated from reading UI file 'mainGui.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.8.0
+## Created by: Qt User Interface Compiler version 6.10.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -17,11 +17,11 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
 from PySide6.QtWidgets import (QAbstractScrollArea, QApplication, QComboBox, QFrame,
-    QGridLayout, QHeaderView, QLabel, QLineEdit,
-    QMainWindow, QMenu, QMenuBar, QPushButton,
-    QSizePolicy, QSpacerItem, QStatusBar, QTabWidget,
-    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout,
-    QWidget)
+    QGridLayout, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QMainWindow, QMenu, QMenuBar,
+    QPushButton, QSizePolicy, QSpacerItem, QStatusBar,
+    QTabWidget, QTableWidget, QTableWidgetItem, QTextEdit,
+    QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -1300,6 +1300,11 @@ class Ui_MainWindow(object):
         self.verticalLayout_10 = QVBoxLayout()
         self.verticalLayout_10.setObjectName(u"verticalLayout_10")
         self.verticalLayout_10.setContentsMargins(-1, -1, 0, -1)
+        self.horizontalLayout_markupRequest = QHBoxLayout()
+        self.horizontalLayout_markupRequest.setSpacing(8)
+        self.horizontalLayout_markupRequest.setObjectName(u"horizontalLayout_markupRequest")
+        self.verticalLayout_markupBlock = QVBoxLayout()
+        self.verticalLayout_markupBlock.setObjectName(u"verticalLayout_markupBlock")
         self.label_3 = QLabel(self.centralwidget)
         self.label_3.setObjectName(u"label_3")
         self.label_3.setStyleSheet(u"QLabel {\n"
@@ -1310,7 +1315,7 @@ class Ui_MainWindow(object):
 "")
         self.label_3.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.verticalLayout_10.addWidget(self.label_3)
+        self.verticalLayout_markupBlock.addWidget(self.label_3)
 
         self.markupLine = QLineEdit(self.centralwidget)
         self.markupLine.setObjectName(u"markupLine")
@@ -1330,7 +1335,47 @@ class Ui_MainWindow(object):
 "    selection-background-color: #e3f2fd;\n"
 "}")
 
-        self.verticalLayout_10.addWidget(self.markupLine)
+        self.verticalLayout_markupBlock.addWidget(self.markupLine)
+
+
+        self.horizontalLayout_markupRequest.addLayout(self.verticalLayout_markupBlock)
+
+        self.verticalLayout_requestNumberBlock = QVBoxLayout()
+        self.verticalLayout_requestNumberBlock.setObjectName(u"verticalLayout_requestNumberBlock")
+        self.requestNumberLabel = QLabel(self.centralwidget)
+        self.requestNumberLabel.setObjectName(u"requestNumberLabel")
+        self.requestNumberLabel.setStyleSheet(u"QLabel {\n"
+"	color:  #2c3e50;\n"
+"	font-weight: 600;\n"
+"	 font-size: 12px;\n"
+"}\n"
+"")
+        self.requestNumberLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.verticalLayout_requestNumberBlock.addWidget(self.requestNumberLabel)
+
+        self.requestNumberLine = QLineEdit(self.centralwidget)
+        self.requestNumberLine.setObjectName(u"requestNumberLine")
+        sizePolicy3.setHeightForWidth(self.requestNumberLine.sizePolicy().hasHeightForWidth())
+        self.requestNumberLine.setSizePolicy(sizePolicy3)
+        self.requestNumberLine.setStyleSheet(u"QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {\n"
+"    background-color: white;\n"
+"    border: 1px solid #dee2e6;\n"
+"    border-radius: 6px;\n"
+"    padding: 4px 8px;\n"
+"    font-size: 12px;\n"
+"    color: #2c3e50;\n"
+"    min-height: 8px;\n"
+"    selection-background-color: #e3f2fd;\n"
+"}")
+
+        self.verticalLayout_requestNumberBlock.addWidget(self.requestNumberLine)
+
+
+        self.horizontalLayout_markupRequest.addLayout(self.verticalLayout_requestNumberBlock)
+
+
+        self.verticalLayout_10.addLayout(self.horizontalLayout_markupRequest)
 
         self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
 
@@ -1938,6 +1983,9 @@ class Ui_MainWindow(object):
         self.label_3.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0446\u0435\u043d\u043a\u0430", None))
         self.markupLine.setText("")
         self.markupLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u0427\u0438\u0441\u043b\u043e", None))
+        self.requestNumberLabel.setText(QCoreApplication.translate("MainWindow", u"\u041d\u043e\u043c\u0435\u0440 \u0437\u0430\u044f\u0432\u043a\u0438", None))
+        self.requestNumberLine.setText("")
+        self.requestNumberLine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u043f\u0440\u0438\u043c\u0435\u0440: 24-2026", None))
         self.label_5.setText(QCoreApplication.translate("MainWindow", u"\u041b\u043e\u0433\u0438\u0441\u0442\u0438\u043a\u0430", None))
         self.logisticVar.setItemText(0, QCoreApplication.translate("MainWindow", u"\u043a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442", None))
         self.logisticVar.setItemText(1, QCoreApplication.translate("MainWindow", u"\u0440\u0430\u0441\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0438\u0435", None))
@@ -1961,3 +2009,4 @@ class Ui_MainWindow(object):
         self.WindowMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u043a\u043d\u043e", None))
         self.HelpMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043c\u043e\u0449\u044c", None))
     # retranslateUi
+

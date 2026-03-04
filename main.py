@@ -149,6 +149,7 @@ class mainWindow(QMainWindow):
             self.ui.customLine.setText(Config.config["customNum"])
             self.ui.termDeliveryLine.setText(Config.config["termDelivery"])
             self.ui.markupLine.setText(Config.config["markup"])
+            self.ui.requestNumberLine.setText(Config.config.get("requestNumber", ""))
             self.ui.logisticVar.setCurrentIndex(int(Config.config["logisticVar"]))
 
         self.ui.openTableButton.clicked.connect(self.openTable)
@@ -2556,6 +2557,7 @@ class mainWindow(QMainWindow):
             self.ui.customLine.setText(Config.config["customNum"])
             self.ui.termDeliveryLine.setText(Config.config["termDelivery"])
             self.ui.markupLine.setText(Config.config["markup"])
+            self.ui.requestNumberLine.setText(Config.config.get("requestNumber", ""))
             self.ui.logisticVar.setCurrentIndex(int(Config.config["logisticVar"]))
         self.processFormula()
 
@@ -2987,6 +2989,7 @@ class mainWindow(QMainWindow):
 
     def openCreateDocWindow(self, tableData):
         window = createDocWindow(self, tableData=tableData)
+        window.ui.numLine.setText(self.ui.requestNumberLine.text().strip())
         window.show()
         window.windowClosed.connect(self.updateHistoryTable)
         if Config.settings["closeTable"]:
@@ -3386,6 +3389,7 @@ class mainWindow(QMainWindow):
         Config.config["customNum"] = self.ui.customLine.text()
         Config.config["termDelivery"] = self.ui.termDeliveryLine.text()
         Config.config["markup"] = self.ui.markupLine.text()
+        Config.config["requestNumber"] = self.ui.requestNumberLine.text().strip()
         Config.config["logisticVar"] = str(self.ui.logisticVar.currentIndex())
         self.ensureOutputDirs()
         self.saveConfig()

@@ -89,6 +89,7 @@ class DatabaseTools:
         config["customNum"] = str(config.get("customNum", "1"))
         config["termDelivery"] = str(config.get("termDelivery", "0"))
         config["markup"] = str(config.get("markup", "1"))
+        config["requestNumber"] = str(config.get("requestNumber", "")).strip()
         config["ExcelIndent"] = str(config.get("ExcelIndent", "0"))
         config["lastTable"] = str(config.get("lastTable", "")).strip()
         config["pathToSaveCP"] = str(config.get("pathToSaveCP", "")).strip()

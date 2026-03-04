@@ -14,6 +14,7 @@ class Config:
         "customNum": "1",
         "termDelivery": "0",
         "markup": "1",
+        "requestNumber": "",
         "pathToSaveCP": "",
         "pathToSaveExcel": "",
         "pathToDB": "",
