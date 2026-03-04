@@ -3339,31 +3339,36 @@ class mainWindow(QMainWindow):
             )
             return
 
+        parsed = self._parse_input_parameters(show_error=True)
+        if parsed is None:
+            return
+
         tableData = []
         row_count = self.ui.KpTable.rowCount()
+        column_count = self.ui.KpTable.columnCount()
 
         for row in range(row_count):
             row_data = []
-            for col in range(6):
-                item = self.ui.KpTable.item(row, col)
-                row_data.append(item.text() if item is not None else "")
-            for col in range(13, 15):
+            for col in range(column_count):
                 item = self.ui.KpTable.item(row, col)
                 row_data.append(item.text() if item is not None else "")
             tableData.append(row_data)
 
         export_result = exportExcelFile(
-            (
-                tableData,
-                (
-                    self.ui.logisticVar.currentIndex(),
-                    self.ui.logisticNum.text(),
-                    self.ui.markupLine.text(),
-                ),
-                self.ui.customLine.text(),
-                sum(self.tableData["totalPrice"]),
-                self.ui.requestNumberLine.text().strip(),
-            )
+            {
+                "table_rows": tableData,
+                "request_number": self.ui.requestNumberLine.text().strip(),
+                "logistic_mode": self.ui.logisticVar.currentIndex(),
+                "logistic_value": parsed["logistic"],
+                "custom_value": parsed["custom"],
+                "markup_value": parsed["markup"],
+                "term_delivery": parsed["termDelivery"],
+                "vat_multiplier": self._vat_multiplier(),
+                "named_parameters": self._load_formula_parameters(),
+                "formula_expressions": {
+                    col: list(self.formulaExpressions.get(col, [])) for col in self.FORMULA_EDITABLE_COLUMNS
+                },
+            }
         )
         if not getattr(export_result, "success", False):
             error_text = getattr(export_result, "error_message", "") or "Не удалось создать Excel"
