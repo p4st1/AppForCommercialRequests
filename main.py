@@ -3362,6 +3362,7 @@ class mainWindow(QMainWindow):
                 ),
                 self.ui.customLine.text(),
                 sum(self.tableData["totalPrice"]),
+                self.ui.requestNumberLine.text().strip(),
             )
         )
         if not getattr(export_result, "success", False):

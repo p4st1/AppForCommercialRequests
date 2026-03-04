@@ -462,7 +462,11 @@ class createExcelFile:
         self.error_message = ""
 
         indent = int(Config.config['ExcelIndent'])
-        newFilePath = self.save_with_number(f"{Tools.resourcePath(Config.config['pathToSaveExcel'])}/таблица_от_{datetime.now().strftime('%d_%m_%Y')}.xlsx")
+        request_number = str(data[4]).strip() if len(data) > 4 else str(Config.config.get("requestNumber", "")).strip()
+        today_date = datetime.now().strftime('%d_%m_%Y')
+        newFilePath = self.save_with_number(
+            f"{Tools.resourcePath(Config.config['pathToSaveExcel'])}/Расчеты_{request_number}_{today_date}_.xlsx"
+        )
         self.output_path = newFilePath
         shutil.copy2(Config.template_path, newFilePath)
         wb = load_workbook(newFilePath)
