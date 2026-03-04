@@ -203,7 +203,8 @@ class createTextFile:
 
         def _table_spans_multiple_pages(items: list[dict]) -> bool:
             # Эмпирическая емкость первой страницы с учетом текста до таблицы.
-            capacity = 18 if docxData[4] else 14
+            # Для "полного" шаблона (с колонкой срока) емкость ниже, т.к. колонки уже.
+            capacity = 14 if docxData[4] else 18
             return _estimate_table_visual_rows(items) > capacity
 
 
@@ -213,8 +214,8 @@ class createTextFile:
 
             extra_top_indent_pt = 14
             for sec in doc.sections:
-                current_margin = int(sec.top_margin or 0)
-                sec.top_margin = current_margin + int(Pt(extra_top_indent_pt))
+                current_margin = sec.top_margin if sec.top_margin is not None else Pt(0)
+                sec.top_margin = current_margin + Pt(extra_top_indent_pt)
 
 
         def _replace_in_paragraph_runs(paragraph, mapping: dict[str, str]) -> bool:
