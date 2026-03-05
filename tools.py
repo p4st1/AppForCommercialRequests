@@ -89,10 +89,19 @@ class DatabaseTools:
         config["customNum"] = str(config.get("customNum", "1"))
         config["termDelivery"] = str(config.get("termDelivery", "0"))
         config["markup"] = str(config.get("markup", "1"))
+        config["requestNumber"] = str(config.get("requestNumber", "")).strip()
         config["ExcelIndent"] = str(config.get("ExcelIndent", "0"))
         config["lastTable"] = str(config.get("lastTable", "")).strip()
         config["pathToSaveCP"] = str(config.get("pathToSaveCP", "")).strip()
         config["pathToSaveExcel"] = str(config.get("pathToSaveExcel", "")).strip()
+        config["webAuthLogin"] = str(config.get("webAuthLogin", "") or "").strip()
+        config["webAuthPassword"] = str(config.get("webAuthPassword", "") or "")
+        try:
+            web_auth_attempts = int(str(config.get("webAuthMaxAttempts", "25")).strip())
+        except (TypeError, ValueError):
+            web_auth_attempts = 25
+        web_auth_attempts = max(5, min(120, web_auth_attempts))
+        config["webAuthMaxAttempts"] = str(web_auth_attempts)
 
         settings = Config.DEFAULT_SETTINGS.copy()
         if isinstance(raw_settings, dict):

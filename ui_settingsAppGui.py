@@ -550,6 +550,43 @@ class Ui_MainWindow(object):
 
         self.verticalLayout.addWidget(self.openUpdateTab)
 
+        self.saveWebAuthDataCheckBox = QCheckBox(self.scrollAreaWidgetContents)
+        self.saveWebAuthDataCheckBox.setObjectName(u"saveWebAuthDataCheckBox")
+        self.saveWebAuthDataCheckBox.setStyleSheet(u"color: #2c3e50;\n"
+"font-size: 16px;\n"
+"padding: 2px;")
+
+        self.verticalLayout.addWidget(self.saveWebAuthDataCheckBox)
+
+        self.advancedLabel = QLabel(self.scrollAreaWidgetContents)
+        self.advancedLabel.setObjectName(u"advancedLabel")
+        self.advancedLabel.setFont(font)
+
+        self.verticalLayout.addWidget(self.advancedLabel)
+
+        self.advancedLayout = QHBoxLayout()
+        self.advancedLayout.setSpacing(10)
+        self.advancedLayout.setObjectName(u"advancedLayout")
+        self.advancedLayout.setContentsMargins(7, 0, -1, -1)
+        self.webAuthAttemptsLabel = QLabel(self.scrollAreaWidgetContents)
+        self.webAuthAttemptsLabel.setObjectName(u"webAuthAttemptsLabel")
+        self.webAuthAttemptsLabel.setStyleSheet(u"color: #2c3e50;\n"
+"font-size: 16px;\n"
+"padding: 2px;")
+
+        self.advancedLayout.addWidget(self.webAuthAttemptsLabel)
+
+        self.webAuthAttemptsSpinBox = QSpinBox(self.scrollAreaWidgetContents)
+        self.webAuthAttemptsSpinBox.setObjectName(u"webAuthAttemptsSpinBox")
+        self.webAuthAttemptsSpinBox.setMinimum(5)
+        self.webAuthAttemptsSpinBox.setMaximum(120)
+        self.webAuthAttemptsSpinBox.setValue(25)
+
+        self.advancedLayout.addWidget(self.webAuthAttemptsSpinBox)
+
+
+        self.verticalLayout.addLayout(self.advancedLayout)
+
         self.line = QFrame(self.scrollAreaWidgetContents)
         self.line.setObjectName(u"line")
         self.line.setStyleSheet(u"QFrame {\n"
@@ -1198,6 +1235,9 @@ class Ui_MainWindow(object):
         self.closeTableCheckBox.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443 \u043f\u0440\u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0438 \u041a\u041f", None))
         self.openLastTable.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0442\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0443\u044e \u0442\u0430\u0431\u043b\u0438\u0446\u0443", None))
         self.openUpdateTab.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u0438 \u043e\u0442\u043a\u0440\u044b\u0442\u0438\u0438 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f, \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0442\u044c \u0432\u043a\u043b\u0430\u0434\u043a\u0443 \"\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f\"", None))
+        self.saveWebAuthDataCheckBox.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435 \u043f\u0440\u0438 \u0430\u0432\u0442\u043e\u0440\u0438\u0437\u0430\u0446\u0438\u0438", None))
+        self.advancedLabel.setText(QCoreApplication.translate("MainWindow", u"\u0414\u043b\u044f \u043f\u0440\u043e\u0434\u0432\u0438\u043d\u0443\u0442\u044b\u0445", None))
+        self.webAuthAttemptsLabel.setText(QCoreApplication.translate("MainWindow", u"\u041b\u0438\u043c\u0438\u0442 \u043f\u043e\u043f\u044b\u0442\u043e\u043a \u0432\u0435\u0431-\u0430\u0432\u0442\u043e\u0440\u0438\u0437\u0430\u0446\u0438\u0438", None))
         self.label_3.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f \u041a\u041f", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"\u0414\u0438\u0440\u0435\u043a\u0442\u043e\u0440\u0438\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f \u041a\u041f", None))
         self.dirOpenButton.setText(QCoreApplication.translate("MainWindow", u"\u0412\u044b\u0431\u0440\u0430\u0442\u044c", None))

@@ -591,6 +591,69 @@ padding: 2px;</string>
            </widget>
           </item>
           <item>
+           <widget class="QCheckBox" name="saveWebAuthDataCheckBox">
+            <property name="styleSheet">
+             <string notr="true">color: #2c3e50;
+font-size: 16px;
+padding: 2px;</string>
+            </property>
+            <property name="text">
+             <string>Сохранять данные при авторизации</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="advancedLabel">
+            <property name="font">
+             <font>
+              <pointsize>-1</pointsize>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="text">
+             <string>Для продвинутых</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="advancedLayout">
+            <property name="spacing">
+             <number>10</number>
+            </property>
+            <property name="leftMargin">
+             <number>7</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="webAuthAttemptsLabel">
+              <property name="styleSheet">
+               <string notr="true">color: #2c3e50;
+font-size: 16px;
+padding: 2px;</string>
+              </property>
+              <property name="text">
+               <string>Лимит попыток веб-авторизации</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="webAuthAttemptsSpinBox">
+              <property name="minimum">
+               <number>5</number>
+              </property>
+              <property name="maximum">
+               <number>120</number>
+              </property>
+              <property name="value">
+               <number>25</number>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
            <widget class="Line" name="line">
             <property name="styleSheet">
              <string notr="true">QFrame {

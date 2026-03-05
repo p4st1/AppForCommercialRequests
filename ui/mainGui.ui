@@ -1522,33 +1522,40 @@ li.checked::marker { content: &quot;\2612&quot;; }
          <number>0</number>
         </property>
         <item>
-         <widget class="QLabel" name="label_3">
-          <property name="styleSheet">
-           <string notr="true">QLabel {
+         <layout class="QHBoxLayout" name="horizontalLayout_markupRequest">
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <item>
+           <layout class="QVBoxLayout" name="verticalLayout_markupBlock">
+            <item>
+             <widget class="QLabel" name="label_3">
+              <property name="styleSheet">
+               <string notr="true">QLabel {
 	color:  #2c3e50;
 	font-weight: 600;
 	 font-size: 12px;
 }
 </string>
-          </property>
-          <property name="text">
-           <string>Наценка</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLineEdit" name="markupLine">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+              </property>
+              <property name="text">
+               <string>Наценка</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="markupLine">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
     background-color: white;
     border: 1px solid #dee2e6;
     border-radius: 6px;
@@ -1558,14 +1565,68 @@ li.checked::marker { content: &quot;\2612&quot;; }
     min-height: 8px;
     selection-background-color: #e3f2fd;
 }</string>
-          </property>
-          <property name="text">
-           <string/>
-          </property>
-          <property name="placeholderText">
-           <string>Число</string>
-          </property>
-         </widget>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+              <property name="placeholderText">
+               <string>Число</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QVBoxLayout" name="verticalLayout_requestNumberBlock">
+            <item>
+             <widget class="QLabel" name="requestNumberLabel">
+              <property name="styleSheet">
+               <string notr="true">QLabel {
+	color:  #2c3e50;
+	font-weight: 600;
+	 font-size: 12px;
+}
+</string>
+              </property>
+              <property name="text">
+               <string>Номер заявки</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="requestNumberLine">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox {
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #2c3e50;
+    min-height: 8px;
+    selection-background-color: #e3f2fd;
+}</string>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+              <property name="placeholderText">
+               <string>Например: 24-2026</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
         </item>
         <item>
          <spacer name="verticalSpacer_3">
@@ -2092,7 +2153,7 @@ QPushButton:pressed {
 }</string>
           </property>
           <property name="text">
-           <string>Скачать КП из Excel</string>
+           <string>Скачать КП из расчетов</string>
           </property>
          </widget>
         </item>
@@ -2127,7 +2188,7 @@ QPushButton:pressed {
 }</string>
           </property>
           <property name="text">
-           <string>Скачать Excel</string>
+           <string>Скачать расчеты</string>
           </property>
          </widget>
         </item>

@@ -16,9 +16,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QLabel,
     QLineEdit,
+    QSplitter,
+    QTextEdit,
 )
-from PySide6.QtGui import QIcon, QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtCore import Qt, QUrl, QSignalBlocker
+from PySide6.QtGui import QIcon, QDesktopServices, QKeySequence, QShortcut, QColor
+from PySide6.QtCore import Qt, QUrl, QSignalBlocker, QTimer
+from PySide6.QtWebEngineWidgets import QWebEngineView
 from createDocument import mainWindow as createDocWindow
 from create import createExcelFile as exportExcelFile
 from customers import mainWindow as customersWindow
@@ -31,6 +34,8 @@ from ui_mainGui import Ui_MainWindow
 from ui_theme import apply_unified_theme
 from datetime import datetime
 from pathlib import Path
+from lxml import html as lxml_html
+from lxml.etree import ParserError
 import pandas as pd
 import shutil
 import re
@@ -114,6 +119,23 @@ class mainWindow(QMainWindow):
         self._undo_stack = []
         self._is_restoring_undo = False
         self._pending_edit_undo_state = None
+        self._web_auth_active = False
+        self._web_auth_login = ""
+        self._web_auth_password = ""
+        self._web_auth_attempts_left = 0
+        self._web_auth_total_attempts = 0
+        self._web_auth_js_running = False
+        self._web_auth_submitted = False
+        self._web_auth_start_url = ""
+        self._web_auth_origin_url = ""
+        self._web_auth_switched_to_frame = False
+        self._web_auth_frame_urls_tried = set()
+        self._web_auth_seen_login_form = False
+        self._web_auth_seen_login_dialog = False
+        self._formula_fill_highlight_cells = []
+        self._formula_fill_highlight_timer = QTimer(self)
+        self._formula_fill_highlight_timer.setSingleShot(True)
+        self._formula_fill_highlight_timer.timeout.connect(self._clear_formula_fill_highlight)
 
         self.loadConfig()
         self.ensureOutputDirs()
@@ -127,6 +149,7 @@ class mainWindow(QMainWindow):
             self.ui.customLine.setText(Config.config["customNum"])
             self.ui.termDeliveryLine.setText(Config.config["termDelivery"])
             self.ui.markupLine.setText(Config.config["markup"])
+            self.ui.requestNumberLine.setText(Config.config.get("requestNumber", ""))
             self.ui.logisticVar.setCurrentIndex(int(Config.config["logisticVar"]))
 
         self.ui.openTableButton.clicked.connect(self.openTable)
@@ -163,7 +186,13 @@ class mainWindow(QMainWindow):
         self.ui.termDeliveryLine.editingFinished.connect(self.processFormula)
         self.ui.closeTableButton.clicked.connect(self.closeTable)
         self.ui.KpTable.itemChanged.connect(self.tableItemChanged)
-        self.ui.KpTable.setEditTriggers(QAbstractItemView.EditTrigger.AllEditTriggers)
+        self.ui.KpTable.itemSelectionChanged.connect(self._fill_formula_on_ctrl_selection)
+        self.ui.KpTable.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+        self.ui.KpTable.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.ui.KpTable.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.ui.KpTable.setItemDelegate(
             FormulaDelegate(
                 self.ui.KpTable,
@@ -178,7 +207,12 @@ class mainWindow(QMainWindow):
         self._setup_total_tab_table()
         self._update_total_tab_table()
         self._ensure_history_tab()
+        self._ensure_web_tab()
         self._setup_history_tab_table()
+        self._full_table_panel_widgets = list(
+            dict.fromkeys(self._collect_layout_widgets(self.ui.funcButtons))
+        )
+        self.ui.tabWidget.currentChanged.connect(self._on_main_tab_changed)
         self.updateHistoryTable()
 
         if Config.settings["openLastTab"] and Config.config["lastTable"]:
@@ -193,9 +227,30 @@ class mainWindow(QMainWindow):
             self.ui.tabWidget.setCurrentIndex(2)
         else:
             self.ui.tabWidget.setCurrentIndex(1)
+        self._on_main_tab_changed(self.ui.tabWidget.currentIndex())
 
     def applyEnterpriseStyle(self):
         apply_unified_theme(self)
+
+    def _collect_layout_widgets(self, layout):
+        widgets = []
+        if layout is None:
+            return widgets
+        for index in range(layout.count()):
+            item = layout.itemAt(index)
+            widget = item.widget()
+            if widget is not None:
+                widgets.append(widget)
+                continue
+            child_layout = item.layout()
+            if child_layout is not None:
+                widgets.extend(self._collect_layout_widgets(child_layout))
+        return widgets
+
+    def _on_main_tab_changed(self, _index):
+        show_panel = self.ui.tabWidget.currentWidget() is self.ui.tab
+        for widget in self._full_table_panel_widgets:
+            widget.setVisible(show_panel)
 
     def _load_updates_tab_text(self):
         updates_path = Path(self.resourcePath("assets/updates.txt"))
@@ -315,6 +370,1087 @@ class mainWindow(QMainWindow):
         self.ui.historyTable.itemDoubleClicked.connect(self._openHistoryFile)
         self.ui.historyTable.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.ui.historyTable.customContextMenuRequested.connect(self._show_history_context_menu)
+
+    def _ensure_web_tab(self):
+        if hasattr(self.ui, "webView"):
+            return
+
+        self.ui.webTab = QWidget(self.ui.tabWidget)
+        self.ui.webTab.setObjectName("webTab")
+
+        root_layout = QVBoxLayout(self.ui.webTab)
+        root_layout.setSpacing(8)
+        root_layout.setContentsMargins(8, 8, 8, 8)
+
+        controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.ui.webUrlLine = QLineEdit(self.ui.webTab)
+        self.ui.webUrlLine.setPlaceholderText("URL страницы")
+        self.ui.webUrlLine.setText("https://etp.metal-it.ru/frame/index.html")
+
+        self.ui.webLoginLine = QLineEdit(self.ui.webTab)
+        self.ui.webLoginLine.setPlaceholderText("Логин")
+        self.ui.webLoginLine.setMinimumWidth(170)
+
+        self.ui.webPasswordLine = QLineEdit(self.ui.webTab)
+        self.ui.webPasswordLine.setPlaceholderText("Пароль")
+        self.ui.webPasswordLine.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ui.webPasswordLine.setMinimumWidth(170)
+        saved_login, saved_password = self._get_saved_web_auth_credentials()
+        self.ui.webLoginLine.setText(saved_login)
+        self.ui.webPasswordLine.setText(saved_password)
+
+        self.ui.webOpenButton = QPushButton("Открыть", self.ui.webTab)
+        self.ui.webAuthButton = QPushButton("Авторизоваться", self.ui.webTab)
+        self.ui.webParseButton = QPushButton("Распарсить", self.ui.webTab)
+
+        controls_layout.addWidget(self.ui.webUrlLine, 1)
+        controls_layout.addWidget(self.ui.webLoginLine)
+        controls_layout.addWidget(self.ui.webPasswordLine)
+        controls_layout.addWidget(self.ui.webOpenButton)
+        controls_layout.addWidget(self.ui.webAuthButton)
+        controls_layout.addWidget(self.ui.webParseButton)
+
+        self.ui.webStatusLabel = QLabel("Готово", self.ui.webTab)
+        self.ui.webStatusLabel.setWordWrap(True)
+        self.ui.webStatusLabel.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        splitter = QSplitter(Qt.Orientation.Vertical, self.ui.webTab)
+        self.ui.webView = QWebEngineView(splitter)
+        self.ui.webParserOutput = QTextEdit(splitter)
+        self.ui.webParserOutput.setReadOnly(True)
+        self.ui.webParserOutput.setPlaceholderText("Результат парсинга появится здесь")
+        splitter.setStretchFactor(0, 5)
+        splitter.setStretchFactor(1, 2)
+
+        root_layout.addLayout(controls_layout)
+        root_layout.addWidget(self.ui.webStatusLabel)
+        root_layout.addWidget(splitter)
+
+        self.ui.tabWidget.addTab(self.ui.webTab, "Веб")
+
+        self.ui.webOpenButton.clicked.connect(self._open_web_page)
+        self.ui.webAuthButton.clicked.connect(self._authorize_web_page)
+        self.ui.webParseButton.clicked.connect(self._parse_web_page)
+        self.ui.webUrlLine.returnPressed.connect(self._open_web_page)
+        self.ui.webPasswordLine.returnPressed.connect(self._authorize_web_page)
+        self.ui.webLoginLine.editingFinished.connect(self._store_web_auth_credentials_from_ui)
+        self.ui.webPasswordLine.editingFinished.connect(self._store_web_auth_credentials_from_ui)
+        self.ui.webView.loadFinished.connect(self._on_web_page_loaded)
+        self._webAuthRetryTimer = QTimer(self)
+        self._webAuthRetryTimer.setSingleShot(True)
+        self._webAuthRetryTimer.timeout.connect(self._retry_web_authorization)
+
+        self._open_web_page()
+
+    def _set_web_status(self, text):
+        if hasattr(self.ui, "webStatusLabel"):
+            raw_text = str(text or "").strip()
+            # Keep long URLs readable and prevent status text from stretching the window.
+            def _shorten_url(match):
+                url = match.group(0)
+                if len(url) <= 120:
+                    return url
+                return f"{url[:72]}...{url[-32:]}"
+
+            display_text = re.sub(r"https?://\S+", _shorten_url, raw_text)
+            if len(display_text) > 220:
+                display_text = f"{display_text[:180]}...{display_text[-30:]}"
+
+            self.ui.webStatusLabel.setText(display_text)
+            self.ui.webStatusLabel.setToolTip(raw_text)
+
+    def _get_saved_web_auth_credentials(self):
+        if not Config.settings.get("saveWebAuthData", False):
+            return "", ""
+        login = str(Config.config.get("webAuthLogin", "") or "").strip()
+        password = str(Config.config.get("webAuthPassword", "") or "")
+        return login, password
+
+    def _get_web_auth_attempt_limit(self):
+        default_limit = 25
+        min_limit = 5
+        max_limit = 120
+        try:
+            parsed = int(str(Config.config.get("webAuthMaxAttempts", default_limit)).strip())
+        except (TypeError, ValueError):
+            parsed = default_limit
+        normalized = max(min_limit, min(max_limit, parsed))
+        Config.config["webAuthMaxAttempts"] = str(normalized)
+        return normalized
+
+    def _persist_web_auth_credentials(self, login, password):
+        if not Config.settings.get("saveWebAuthData", False):
+            return
+        normalized_login = str(login or "").strip()
+        normalized_password = str(password or "")
+        if (
+            Config.config.get("webAuthLogin", "") == normalized_login
+            and Config.config.get("webAuthPassword", "") == normalized_password
+        ):
+            return
+        Config.config["webAuthLogin"] = normalized_login
+        Config.config["webAuthPassword"] = normalized_password
+        self.saveConfig()
+
+    def _store_web_auth_credentials_from_ui(self):
+        if not Config.settings.get("saveWebAuthData", False):
+            return
+        if not hasattr(self.ui, "webLoginLine") or not hasattr(self.ui, "webPasswordLine"):
+            return
+        self._persist_web_auth_credentials(
+            self.ui.webLoginLine.text(),
+            self.ui.webPasswordLine.text(),
+        )
+
+    def _open_web_page(self):
+        if not hasattr(self.ui, "webView"):
+            return
+
+        self._stop_web_authorization()
+        url_text = str(self.ui.webUrlLine.text() or "").strip()
+        if not url_text:
+            self.error("Ошибка", "Введите URL страницы")
+            return
+
+        if "://" not in url_text:
+            url_text = f"https://{url_text}"
+            self.ui.webUrlLine.setText(url_text)
+
+        url = QUrl(url_text)
+        if not url.isValid() or url.scheme() not in {"http", "https"}:
+            self.error("Ошибка", "Введите корректный URL (http/https)")
+            return
+
+        self._set_web_status(f"Открытие страницы: {url.toString()}")
+        self.ui.webView.setUrl(url)
+
+    def _on_web_page_loaded(self, ok):
+        current_url = self.ui.webView.url().toString()
+        if ok:
+            self._set_web_status(f"Страница загружена: {current_url}")
+        else:
+            self._set_web_status(f"Не удалось загрузить страницу: {current_url}")
+
+        if not self._web_auth_active:
+            return
+        page_changed = self._is_web_auth_page_changed(current_url)
+        if (
+            ok
+            and page_changed
+            and (
+                self._web_auth_submitted
+                or self._web_auth_seen_login_form
+                or self._web_auth_seen_login_dialog
+            )
+        ):
+            self._set_web_status(f"Авторизация выполнена: {current_url}")
+            self._navigate_to_bid_submission_tab()
+            self._stop_web_authorization()
+            return
+        self._schedule_web_auth_retry(delay_ms=400 if ok else 1000)
+
+    def _stop_web_authorization(self):
+        self._web_auth_active = False
+        self._web_auth_js_running = False
+        self._web_auth_submitted = False
+        self._web_auth_attempts_left = 0
+        self._web_auth_total_attempts = 0
+        self._web_auth_origin_url = ""
+        self._web_auth_switched_to_frame = False
+        self._web_auth_frame_urls_tried = set()
+        self._web_auth_seen_login_form = False
+        self._web_auth_seen_login_dialog = False
+        if hasattr(self, "_webAuthRetryTimer"):
+            self._webAuthRetryTimer.stop()
+
+    def _schedule_web_auth_retry(self, delay_ms=700):
+        if not self._web_auth_active or self._web_auth_js_running:
+            return
+        if self._web_auth_attempts_left <= 0:
+            if self._is_web_auth_page_changed():
+                current_url = self.ui.webView.url().toString()
+                self._set_web_status(
+                    f"Авторизация выполнена: {current_url}" if current_url else "Авторизация выполнена"
+                )
+                self._navigate_to_bid_submission_tab()
+            elif self._web_auth_submitted:
+                self._set_web_status("Форма входа отправлена. Проверьте, что вход выполнен.")
+            elif self._web_auth_seen_login_form or self._web_auth_seen_login_dialog:
+                self._set_web_status("Авторизация завершена. Проверьте доступ к данным.")
+            else:
+                self._set_web_status("Авторизация не выполнена: форма входа не найдена.")
+                self.error("Ошибка", "Не удалось найти форму входа на странице.")
+            self._stop_web_authorization()
+            return
+        if hasattr(self, "_webAuthRetryTimer"):
+            self._webAuthRetryTimer.start(max(100, int(delay_ms)))
+
+    def _retry_web_authorization(self):
+        if not self._web_auth_active:
+            return
+        self._run_web_auth_attempt()
+
+    def _is_web_auth_page_changed(self, current_url=None):
+        start_url = str(self._web_auth_start_url or "").strip()
+        if not start_url:
+            return False
+        if current_url is None:
+            if not hasattr(self.ui, "webView"):
+                return False
+            current_url = self.ui.webView.url().toString()
+        current_text = str(current_url or "").strip()
+        if not current_text or current_text == start_url:
+            return False
+        if current_text in self._web_auth_frame_urls_tried:
+            return False
+        return True
+
+    def _pick_web_auth_frame_url(self, frame_sources):
+        if not isinstance(frame_sources, list):
+            return ""
+
+        current_url = self.ui.webView.url()
+        current_text = current_url.toString().strip()
+        scored = []
+        for raw_source in frame_sources:
+            source = str(raw_source or "").strip()
+            if not source:
+                continue
+            resolved = current_url.resolved(QUrl(source))
+            if not resolved.isValid() or resolved.scheme() not in {"http", "https"}:
+                continue
+            candidate = resolved.toString().strip()
+            if not candidate or candidate in self._web_auth_frame_urls_tried:
+                continue
+            if candidate == current_text:
+                continue
+            score = 0
+            low = candidate.casefold()
+            if any(token in low for token in ("login", "signin", "sign-in", "auth", "sso", "passport")):
+                score += 10
+            if any(token in low for token in ("frame", "index", "default")):
+                score += 1
+            scored.append((score, candidate))
+
+        if not scored:
+            return ""
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return scored[0][1]
+
+    def _open_web_auth_frame_candidate(self, frame_sources):
+        candidate = self._pick_web_auth_frame_url(frame_sources)
+        if not candidate:
+            return False
+
+        self._web_auth_frame_urls_tried.add(candidate)
+        self._web_auth_switched_to_frame = True
+        self._set_web_status(f"Форма входа в фрейме. Переход: {candidate}")
+        self.ui.webView.setUrl(QUrl(candidate))
+        return True
+
+    @staticmethod
+    def _build_web_auth_script(login, password):
+        script = """
+(() => {
+  const loginValue = __LOGIN__;
+  const passwordValue = __PASSWORD__;
+  const submitTextPattern = /войти|вход|login|sign\\s*in|submit|ok|авториз/i;
+  const loginOpenTextPattern = /войти|вход|login|sign\\s*in|авториз/i;
+  const loginEntryPattern = /войти|вход|login|sign\\s*in|авториз/i;
+  const accountTextPattern = /личный\\s*кабинет|мой\\s*кабинет|профил|my\\s*account|account|profile|dashboard/i;
+  const accountHrefPattern = /\\/(profile|account|cabinet|lk|dashboard)(\\/|$)|[#?](profile|account|cabinet|lk|dashboard)/i;
+  const nextButtonPattern = /далее|continue|next/i;
+  const frameSources = [];
+  try {
+    const frameNodes = Array.from(document.querySelectorAll('frame[src], iframe[src]'));
+    for (const frameNode of frameNodes) {
+      const src = String(frameNode.getAttribute('src') || '').trim();
+      if (src) frameSources.push(src);
+    }
+  } catch (e) {}
+
+  const docs = [];
+  const queue = [window];
+  const seen = [];
+  while (queue.length > 0) {
+    const win = queue.shift();
+    if (!win || seen.includes(win)) continue;
+    seen.push(win);
+    try {
+      if (win.document) docs.push(win.document);
+      const frames = win.frames || [];
+      for (let i = 0; i < frames.length; i += 1) {
+        try { queue.push(frames[i]); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  const isVisible = (element) => {
+    if (!element || element.disabled) return false;
+    try {
+      const style = element.ownerDocument.defaultView.getComputedStyle(element);
+      if (!style) return true;
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    } catch (e) {}
+    return true;
+  };
+
+  const pickFirst = (root, selectors) => {
+    if (!root) return null;
+    for (const selector of selectors) {
+      let nodes = [];
+      try { nodes = Array.from(root.querySelectorAll(selector)); } catch (e) { nodes = []; }
+      for (const node of nodes) {
+        if (isVisible(node)) return node;
+      }
+    }
+    return null;
+  };
+
+  const findLoginOpenButton = (doc) => {
+    if (!doc) return null;
+    const selectors = [
+      'button[mat-raised-button]',
+      'button.mat-raised-button',
+      'button',
+      'a'
+    ];
+    for (const selector of selectors) {
+      let nodes = [];
+      try { nodes = Array.from(doc.querySelectorAll(selector)); } catch (e) { nodes = []; }
+      for (const node of nodes) {
+        const text = String(
+          node.innerText
+          || node.textContent
+          || node.getAttribute('aria-label')
+          || node.getAttribute('title')
+          || node.value
+          || ''
+        ).trim();
+        if (!text) continue;
+        if (loginOpenTextPattern.test(text)) {
+          return node;
+        }
+      }
+    }
+    return null;
+  };
+
+  const clickLoginOpenButton = (doc) => {
+    const loginButton = findLoginOpenButton(doc);
+    if (loginButton) {
+      loginButton.click();
+      return true;
+    }
+    return false;
+  };
+
+  const hasLogoutMarker = docs.some((doc) => {
+    try {
+      const links = Array.from(doc.querySelectorAll('a[href], button, [role="button"]'));
+      return links.some((item) => {
+        const text = String(item.innerText || item.textContent || '').trim();
+        const href = String(item.getAttribute('href') || '').trim();
+        return /выйти|logout|log\\s*out|sign\\s*out/i.test(text) || /logout|signout/i.test(href);
+      });
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const hasAccountMarker = docs.some((doc) => {
+    try {
+      const nodes = Array.from(doc.querySelectorAll('a[href], button, [role="button"], [aria-label], [data-testid]'));
+      return nodes.some((item) => {
+        const text = String(item.innerText || item.textContent || item.getAttribute('aria-label') || '').trim();
+        const href = String(item.getAttribute('href') || '').trim();
+        if (text && accountTextPattern.test(text) && !loginEntryPattern.test(text)) {
+          return true;
+        }
+        if (href && accountHrefPattern.test(href) && !loginEntryPattern.test(text)) {
+          return true;
+        }
+        return false;
+      });
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const hasLoginDialog = docs.some((doc) => {
+    try {
+      return Boolean(doc.querySelector('mat-dialog-container form input[formcontrolname="password"]'));
+    } catch (e) {
+      return false;
+    }
+  });
+  const hasLoginEntryButton = docs.some((doc) => Boolean(findLoginOpenButton(doc)));
+  const loginUiPresent = hasLoginDialog || hasLoginEntryButton;
+  const sessionMarkerPresent = hasLogoutMarker || (hasAccountMarker && !loginUiPresent);
+
+  if (sessionMarkerPresent) {
+    return {
+      ok: true,
+      found_fields: false,
+      submitted: false,
+      already_authorized: true,
+      session_marker_present: true,
+      login_ui_present: loginUiPresent,
+      frame_sources: frameSources,
+      message: hasLogoutMarker ? 'Вход уже выполнен' : 'Обнаружены признаки активной сессии'
+    };
+  }
+
+  if (!hasLoginDialog) {
+    for (const doc of docs) {
+      if (clickLoginOpenButton(doc)) {
+        return {
+          ok: true,
+          found_fields: false,
+          submitted: false,
+          already_authorized: false,
+          dialog_opened: true,
+          captcha_required: false,
+          submit_disabled: false,
+          login_ui_present: true,
+          frame_sources: frameSources,
+          message: 'Открыто окно входа'
+        };
+      }
+    }
+  }
+
+  const loginSelectors = [
+    'input[formcontrolname="login"]',
+    'input[name="username"]',
+    'input[name="user"]',
+    'input[name="login"]',
+    'input[name="email"]',
+    'input[id*="user" i]',
+    'input[id*="login" i]',
+    'input[id*="email" i]',
+    'input[placeholder*="логин" i]',
+    'input[placeholder*="email" i]',
+    'input[autocomplete="username"]',
+    'input[type="email"]',
+    'input[type="text"]',
+    'input:not([type])'
+  ];
+  const passwordSelectors = [
+    'input[formcontrolname="password"]',
+    'input[name="password"]',
+    'input[name="pass"]',
+    'input[id*="pass" i]',
+    'input[placeholder*="парол" i]',
+    'input[autocomplete="current-password"]',
+    'input[type="password"]'
+  ];
+
+  let loginInput = null;
+  let passwordInput = null;
+  let sourceDoc = null;
+  for (const doc of docs) {
+    const pass = pickFirst(doc, passwordSelectors);
+    if (!pass) continue;
+    let login = pickFirst(doc, loginSelectors);
+    if (!login && pass.form) login = pickFirst(pass.form, loginSelectors);
+    if (!login) {
+      const root = pass.form || doc;
+      login = pickFirst(root, ['input[type="text"]', 'input[type="email"]', 'input:not([type])']);
+    }
+    if (login) {
+      loginInput = login;
+      passwordInput = pass;
+      sourceDoc = doc;
+      break;
+    }
+  }
+
+  if (!loginInput || !passwordInput) {
+    return {
+      ok: false,
+      found_fields: false,
+      submitted: false,
+      already_authorized: false,
+      dialog_opened: false,
+      captcha_required: false,
+      submit_disabled: false,
+      login_ui_present: loginUiPresent,
+      frame_sources: frameSources,
+      message: `Поля входа не найдены (проверено документов: ${docs.length})`
+    };
+  }
+
+  const setNativeValue = (input, value) => {
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value');
+      if (descriptor && typeof descriptor.set === 'function') {
+        descriptor.set.call(input, value);
+      } else {
+        input.value = value;
+      }
+    } catch (e) {
+      input.value = value;
+    }
+    input.focus();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+  };
+
+  setNativeValue(loginInput, loginValue);
+  setNativeValue(passwordInput, passwordValue);
+
+  const findSubmitControl = (root) => {
+    if (!root) return null;
+    const selectors = [
+      'button.mat-raised-button.mat-primary',
+      'button[type="submit"]',
+      'input[type="submit"]',
+      'button[name*="login" i]',
+      'button[id*="login" i]',
+      'button[id*="submit" i]',
+      'input[name*="login" i]',
+      'input[id*="login" i]',
+      'button',
+      'input[type="button"]'
+    ];
+    for (const selector of selectors) {
+      let nodes = [];
+      try { nodes = Array.from(root.querySelectorAll(selector)); } catch (e) { nodes = []; }
+      for (const node of nodes) {
+        if (!isVisible(node)) continue;
+        const text = String(node.innerText || node.textContent || node.value || node.getAttribute('aria-label') || '').trim();
+        if (selector === 'button.mat-raised-button.mat-primary') {
+          if (node.classList.contains('alt-auth-button')) continue;
+          if (!submitTextPattern.test(text) && !nextButtonPattern.test(text)) continue;
+        } else if (selector === 'button' || selector === 'input[type="button"]') {
+          if (!submitTextPattern.test(text) && !nextButtonPattern.test(text)) continue;
+        }
+        return node;
+      }
+    }
+    return null;
+  };
+
+  const tokenInput = sourceDoc
+    ? sourceDoc.querySelector('input[name="smart-token"]')
+    : null;
+  const smartToken = String((tokenInput && tokenInput.value) || '').trim();
+  const hasSmartCaptcha = sourceDoc
+    ? Boolean(sourceDoc.querySelector('um-smart-captcha, iframe[src*="smartcaptcha"], iframe[title*="SmartCaptcha"]'))
+    : false;
+  const captchaRequired = hasSmartCaptcha && smartToken.length === 0;
+
+  const form = passwordInput.form || loginInput.form || null;
+  const submitControl = findSubmitControl(form) || findSubmitControl(sourceDoc);
+  if (submitControl && submitControl.disabled) {
+    return {
+      ok: false,
+      found_fields: true,
+      submitted: false,
+      already_authorized: false,
+      dialog_opened: false,
+      captcha_required: captchaRequired,
+      submit_disabled: true,
+      login_ui_present: true,
+      frame_sources: frameSources,
+      message: captchaRequired
+        ? 'Кнопка входа неактивна: ожидается SmartCaptcha'
+        : 'Кнопка входа неактивна'
+    };
+  }
+
+  if (captchaRequired && !submitControl) {
+    return {
+      ok: false,
+      found_fields: true,
+      submitted: false,
+      already_authorized: false,
+      dialog_opened: false,
+      captcha_required: true,
+      submit_disabled: true,
+      login_ui_present: true,
+      frame_sources: frameSources,
+      message: 'Ожидание SmartCaptcha для продолжения входа'
+    };
+  }
+
+  if (submitControl) {
+    submitControl.click();
+    return {
+      ok: true,
+      found_fields: true,
+      submitted: true,
+      already_authorized: false,
+      dialog_opened: false,
+      captcha_required: false,
+      submit_disabled: false,
+      login_ui_present: true,
+      frame_sources: frameSources,
+      message: 'Форма входа отправлена кнопкой'
+    };
+  }
+
+  if (form) {
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+      return {
+        ok: true,
+        found_fields: true,
+        submitted: true,
+        already_authorized: false,
+        dialog_opened: false,
+        captcha_required: false,
+        submit_disabled: false,
+        login_ui_present: true,
+        frame_sources: frameSources,
+        message: 'Форма входа отправлена через requestSubmit()'
+      };
+    }
+    if (typeof form.submit === 'function') {
+      form.submit();
+      return {
+        ok: true,
+        found_fields: true,
+        submitted: true,
+        already_authorized: false,
+        dialog_opened: false,
+        captcha_required: false,
+        submit_disabled: false,
+        login_ui_present: true,
+        frame_sources: frameSources,
+        message: 'Форма входа отправлена через submit()'
+      };
+    }
+  }
+
+  passwordInput.focus();
+  const enterEventData = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true };
+  passwordInput.dispatchEvent(new KeyboardEvent('keydown', enterEventData));
+  passwordInput.dispatchEvent(new KeyboardEvent('keypress', enterEventData));
+  passwordInput.dispatchEvent(new KeyboardEvent('keyup', enterEventData));
+  return {
+    ok: true,
+    found_fields: true,
+    submitted: true,
+    already_authorized: false,
+    dialog_opened: false,
+    captcha_required: false,
+    submit_disabled: false,
+    login_ui_present: true,
+    frame_sources: frameSources,
+    message: 'Форма входа отправлена через Enter'
+  };
+})();
+"""
+        script = script.replace("__LOGIN__", json.dumps(login))
+        script = script.replace("__PASSWORD__", json.dumps(password))
+        return script
+
+    @staticmethod
+    def _build_bid_submission_navigation_script():
+        return """
+(() => {
+  const targetPath = '/trades';
+  const targetPage = 'purchases.trades.filters.BID_SUBMISSION';
+  const normalizeText = (value) => String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\\s+/g, ' ')
+    .trim();
+  const isTargetUrl = (value) => {
+    if (!value) return false;
+    try {
+      const parsed = new URL(value, window.location.href);
+      return parsed.pathname === targetPath
+        && String(parsed.searchParams.get('page') || '') === targetPage;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  if (isTargetUrl(window.location.href)) {
+    return { ok: true, already_on_target: true };
+  }
+
+  const selectors = [
+    'a.navigation-anchor[href]',
+    'a[mat-list-item][href]',
+    'um-navigation-item a[href]',
+    'a[href]'
+  ];
+  const links = [];
+  const seenNodes = [];
+  for (const selector of selectors) {
+    let nodes = [];
+    try { nodes = Array.from(document.querySelectorAll(selector)); } catch (e) { nodes = []; }
+    for (const node of nodes) {
+      if (!node || seenNodes.includes(node)) continue;
+      seenNodes.push(node);
+      links.push(node);
+    }
+  }
+
+  let textMatch = null;
+  for (const link of links) {
+    const href = String(link.getAttribute('href') || '').trim();
+    if (isTargetUrl(href)) {
+      link.click();
+      return { ok: true, clicked: true, href };
+    }
+    const text = normalizeText(
+      link.innerText
+      || link.textContent
+      || link.getAttribute('aria-label')
+      || link.getAttribute('title')
+      || ''
+    );
+    if (text.includes('прием заявок')) {
+      textMatch = link;
+    }
+  }
+
+  if (textMatch) {
+    const href = String(textMatch.getAttribute('href') || '').trim();
+    textMatch.click();
+    return { ok: true, clicked: true, href };
+  }
+
+  const fallbackUrl = `${targetPath}?page=${encodeURIComponent(targetPage)}`;
+  try {
+    const parsedCurrent = new URL(window.location.href);
+    parsedCurrent.pathname = targetPath;
+    parsedCurrent.search = `page=${encodeURIComponent(targetPage)}`;
+    window.location.assign(parsedCurrent.toString());
+    return { ok: true, redirected: true, target_url: parsedCurrent.toString() };
+  } catch (e) {
+    window.location.assign(fallbackUrl);
+    return { ok: true, redirected: true, target_url: fallbackUrl };
+  }
+})();
+"""
+
+    def _navigate_to_bid_submission_tab(self):
+        if not hasattr(self.ui, "webView"):
+            return
+        self._set_web_status("Авторизация выполнена. Переход во вкладку «Приём заявок»...")
+        script = self._build_bid_submission_navigation_script()
+        self.ui.webView.page().runJavaScript(script, self._on_bid_submission_navigation_completed)
+
+    def _on_bid_submission_navigation_completed(self, result):
+        if not isinstance(result, dict):
+            return
+
+        if result.get("already_on_target"):
+            self._set_web_status("Уже открыта вкладка «Приём заявок».")
+            return
+
+        if result.get("clicked"):
+            self._set_web_status("Переход во вкладку «Приём заявок» выполнен.")
+            return
+
+        if result.get("redirected"):
+            target_url = str(result.get("target_url", "")).strip()
+            if target_url:
+                self._set_web_status(f"Открывается вкладка «Приём заявок»: {target_url}")
+                return
+            self._set_web_status("Открывается вкладка «Приём заявок».")
+
+    def _run_web_auth_attempt(self):
+        if not self._web_auth_active or self._web_auth_js_running:
+            return
+        if self._web_auth_attempts_left <= 0:
+            self._schedule_web_auth_retry(0)
+            return
+
+        attempt_number = self._web_auth_total_attempts - self._web_auth_attempts_left + 1
+        self._web_auth_attempts_left -= 1
+        self._web_auth_js_running = True
+        self._set_web_status(
+            f"Попытка авторизации {attempt_number}/{self._web_auth_total_attempts}..."
+        )
+        script = self._build_web_auth_script(self._web_auth_login, self._web_auth_password)
+        self.ui.webView.page().runJavaScript(script, self._on_web_auth_completed)
+
+    def _authorize_web_page(self):
+        if not hasattr(self.ui, "webView"):
+            return
+
+        login = str(self.ui.webLoginLine.text() or "").strip()
+        password = str(self.ui.webPasswordLine.text() or "")
+        if not login or not password:
+            self.error("Ошибка", "Введите логин и пароль")
+            return
+        self._persist_web_auth_credentials(login, password)
+
+        self._stop_web_authorization()
+        self._web_auth_login = login
+        self._web_auth_password = password
+        self._web_auth_start_url = self.ui.webView.url().toString()
+        self._web_auth_origin_url = self._web_auth_start_url
+        self._web_auth_switched_to_frame = False
+        self._web_auth_frame_urls_tried = set()
+        self._web_auth_seen_login_form = False
+        self._web_auth_seen_login_dialog = False
+        self._web_auth_total_attempts = self._get_web_auth_attempt_limit()
+        self._web_auth_attempts_left = self._web_auth_total_attempts
+        self._web_auth_active = True
+        self._web_auth_submitted = False
+        self._run_web_auth_attempt()
+
+    def _on_web_auth_completed(self, result):
+        self._web_auth_js_running = False
+        if not self._web_auth_active:
+            return
+
+        if not isinstance(result, dict):
+            self._schedule_web_auth_retry(delay_ms=900)
+            return
+
+        message = str(result.get("message", "")).strip()
+        found_fields = bool(result.get("found_fields"))
+        submitted = bool(result.get("submitted"))
+        already_authorized = bool(result.get("already_authorized"))
+        dialog_opened = bool(result.get("dialog_opened"))
+        captcha_required = bool(result.get("captcha_required"))
+        submit_disabled = bool(result.get("submit_disabled"))
+        login_ui_present = bool(result.get("login_ui_present"))
+        frame_sources = result.get("frame_sources")
+        if not isinstance(frame_sources, list):
+            frame_sources = []
+        page_changed = self._is_web_auth_page_changed()
+
+        if found_fields:
+            self._web_auth_seen_login_form = True
+        if dialog_opened:
+            self._web_auth_seen_login_dialog = True
+
+        if already_authorized:
+            self._set_web_status(message or "Вход уже выполнен")
+            self._navigate_to_bid_submission_tab()
+            self._stop_web_authorization()
+            return
+
+        if (
+            page_changed
+            and not captcha_required
+            and not submit_disabled
+            and (
+                submitted
+                or self._web_auth_submitted
+                or self._web_auth_seen_login_form
+                or self._web_auth_seen_login_dialog
+            )
+            and (not found_fields or not login_ui_present)
+        ):
+            current_url = self.ui.webView.url().toString()
+            self._set_web_status(
+                f"Авторизация выполнена: {current_url}" if current_url else "Авторизация выполнена"
+            )
+            self._navigate_to_bid_submission_tab()
+            self._stop_web_authorization()
+            return
+
+        if submitted:
+            self._web_auth_submitted = True
+            self._set_web_status(message or "Форма входа отправлена")
+            self._schedule_web_auth_retry(delay_ms=1500)
+            return
+
+        if dialog_opened:
+            self._set_web_status(message or "Открыто окно входа")
+            self._schedule_web_auth_retry(delay_ms=500)
+            return
+
+        if (
+            not found_fields
+            and not dialog_opened
+            and not captcha_required
+            and not login_ui_present
+            and (
+                self._web_auth_submitted
+                or self._web_auth_seen_login_form
+                or self._web_auth_seen_login_dialog
+                or page_changed
+            )
+        ):
+            if page_changed:
+                current_url = self.ui.webView.url().toString()
+                self._set_web_status(
+                    f"Авторизация выполнена: {current_url}" if current_url else "Авторизация выполнена"
+                )
+            else:
+                self._set_web_status("Авторизация выполнена")
+            self._navigate_to_bid_submission_tab()
+            self._stop_web_authorization()
+            return
+
+        if captcha_required:
+            if self._web_auth_attempts_left > 0:
+                self._set_web_status(message or "Ожидание SmartCaptcha...")
+                self._schedule_web_auth_retry(delay_ms=1200)
+                return
+            self._set_web_status("Для входа требуется пройти SmartCaptcha вручную")
+            self.error(
+                "SmartCaptcha",
+                "Автоматический вход остановлен: требуется пройти SmartCaptcha.\n"
+                "Пройдите капчу на странице и нажмите «Авторизоваться» снова.",
+            )
+            self._stop_web_authorization()
+            return
+
+        if submit_disabled and found_fields:
+            if self._web_auth_attempts_left > 0:
+                self._set_web_status(message or "Кнопка входа неактивна, ожидание...")
+                self._schedule_web_auth_retry(delay_ms=900)
+                return
+            self._set_web_status(message or "Кнопка входа неактивна")
+            self.error(
+                "Ошибка",
+                "Кнопка входа остается неактивной. Проверьте капчу и заполнение полей.",
+            )
+            self._stop_web_authorization()
+            return
+
+        if found_fields:
+            self._set_web_status(message or "Данные введены, повторная попытка отправки...")
+            self._schedule_web_auth_retry(delay_ms=700)
+            return
+
+        if self._open_web_auth_frame_candidate(frame_sources):
+            return
+
+        if self._web_auth_submitted:
+            self._set_web_status(message or "Ожидание результата авторизации...")
+            self._schedule_web_auth_retry(delay_ms=1200)
+            return
+
+        if self._web_auth_attempts_left > 0:
+            self._set_web_status(message or "Форма входа пока не найдена, повтор...")
+            self._schedule_web_auth_retry(delay_ms=800)
+            return
+
+        self._set_web_status(message or "Авторизация не выполнена")
+        self.error("Ошибка", message or "Не удалось автоматически авторизоваться")
+        self._stop_web_authorization()
+
+    def _parse_web_page(self):
+        if not hasattr(self.ui, "webView"):
+            return
+
+        self._set_web_status("Получение HTML и парсинг страницы...")
+        self.ui.webParseButton.setEnabled(False)
+        self.ui.webView.page().toHtml(self._on_web_html_ready)
+
+    @staticmethod
+    def _compact_web_text(value):
+        return re.sub(r"\s+", " ", str(value or "")).strip()
+
+    def _extract_web_payload(self, html_text):
+        try:
+            document = lxml_html.fromstring(html_text)
+        except (ParserError, ValueError) as e:
+            raise ValueError("Не удалось разобрать HTML страницы") from e
+
+        title = self._compact_web_text(document.xpath("string(//title)"))
+        heading_nodes = document.xpath("//h1|//h2|//h3|//h4|//h5|//h6")
+        headings = []
+        for node in heading_nodes:
+            text = self._compact_web_text(node.text_content())
+            if text:
+                headings.append(text)
+
+        form_nodes = document.xpath("//form")
+        forms = []
+        for index, form in enumerate(form_nodes, start=1):
+            fields = []
+            for field in form.xpath(".//input|.//select|.//textarea"):
+                field_name = self._compact_web_text(field.get("name") or field.get("id") or "—")
+                field_type = self._compact_web_text(field.get("type") or field.tag or "field")
+                fields.append({"name": field_name, "type": field_type})
+            forms.append(
+                {
+                    "index": index,
+                    "method": self._compact_web_text(form.get("method") or "GET").upper(),
+                    "action": self._compact_web_text(form.get("action") or ""),
+                    "fields": fields[:30],
+                }
+            )
+
+        table_nodes = document.xpath("//table")
+        tables = []
+        for index, table in enumerate(table_nodes, start=1):
+            row_nodes = table.xpath(".//tr")
+            preview_rows = []
+            for row_node in row_nodes[:8]:
+                row_values = [
+                    self._compact_web_text(cell.text_content()) for cell in row_node.xpath("./th|./td")
+                ]
+                if any(value for value in row_values):
+                    preview_rows.append(row_values)
+            tables.append(
+                {
+                    "index": index,
+                    "rows_total": len(row_nodes),
+                    "preview_rows": preview_rows[:5],
+                }
+            )
+
+        link_nodes = document.xpath("//a[@href]")
+        links_preview = []
+        for link in link_nodes[:100]:
+            href = self._compact_web_text(link.get("href"))
+            if not href:
+                continue
+            text = self._compact_web_text(link.text_content()) or "—"
+            links_preview.append({"text": text, "href": href})
+
+        frame_nodes = document.xpath("//frame|//iframe")
+        frames = []
+        for frame in frame_nodes:
+            src = self._compact_web_text(frame.get("src"))
+            name = self._compact_web_text(frame.get("name") or frame.get("id") or "—")
+            frames.append({"name": name, "src": src})
+
+        return {
+            "url": self.ui.webView.url().toString(),
+            "title": title,
+            "html_size": len(html_text),
+            "headings": headings[:30],
+            "forms_count": len(form_nodes),
+            "forms": forms,
+            "tables_count": len(table_nodes),
+            "tables": tables,
+            "links_count": len(link_nodes),
+            "links_preview": links_preview,
+            "frames_count": len(frame_nodes),
+            "frames": frames,
+        }
+
+    def _on_web_html_ready(self, html_text):
+        self.ui.webParseButton.setEnabled(True)
+        html_text = str(html_text or "")
+        if not html_text.strip():
+            self.ui.webParserOutput.setPlainText("HTML пустой, парсинг не выполнен.")
+            self._set_web_status("HTML пустой, парсинг не выполнен")
+            return
+
+        try:
+            payload = self._extract_web_payload(html_text)
+        except Exception as e:
+            Tool.log_exception("Ошибка парсинга веб-страницы", e, include_traceback=False)
+            self.ui.webParserOutput.setPlainText(f"Ошибка парсинга: {e}")
+            self._set_web_status(f"Ошибка парсинга: {e}")
+            return
+
+        self.ui.webParserOutput.setPlainText(json.dumps(payload, ensure_ascii=False, indent=2))
+        self._set_web_status(
+            "Парсинг завершен: "
+            f"форм {payload['forms_count']}, таблиц {payload['tables_count']}, ссылок {payload['links_count']}"
+        )
 
     def _setup_history_tab_table(self):
         if not hasattr(self.ui, "historyTable"):
@@ -620,6 +1756,80 @@ class mainWindow(QMainWindow):
         item = self.ui.KpTable.horizontalHeaderItem(col)
         return item.text() if item is not None else str(col)
 
+    @staticmethod
+    def _format_row_ranges(rows):
+        normalized = sorted(set(int(row) for row in rows if int(row) >= 0))
+        if not normalized:
+            return ""
+
+        one_based = [row + 1 for row in normalized]
+        ranges = []
+        start = one_based[0]
+        end = one_based[0]
+
+        for value in one_based[1:]:
+            if value == end + 1:
+                end = value
+                continue
+            ranges.append((start, end))
+            start = value
+            end = value
+        ranges.append((start, end))
+
+        return ", ".join(f"{left}-{right}" if left != right else str(left) for left, right in ranges)
+
+    def _clear_formula_fill_highlight(self):
+        if hasattr(self, "_formula_fill_highlight_timer"):
+            self._formula_fill_highlight_timer.stop()
+        if not self._formula_fill_highlight_cells:
+            return
+
+        table = self.ui.KpTable
+        blocker = QSignalBlocker(table)
+        for row, col, previous_background in self._formula_fill_highlight_cells:
+            if row < 0 or col < 0 or row >= table.rowCount() or col >= table.columnCount():
+                continue
+            item = table.item(row, col)
+            if item is None:
+                continue
+            item.setData(Qt.ItemDataRole.BackgroundRole, previous_background)
+        del blocker
+        self._formula_fill_highlight_cells = []
+
+    def _show_formula_fill_feedback(self, col, rows, source_row=None):
+        table = self.ui.KpTable
+        self._clear_formula_fill_highlight()
+
+        highlighted = []
+        highlight_color = QColor("#FFE9A8")
+        blocker = QSignalBlocker(table)
+        for row in sorted(set(rows)):
+            if row < 0 or row >= table.rowCount():
+                continue
+            item = table.item(row, col)
+            if item is None:
+                continue
+            previous_background = item.data(Qt.ItemDataRole.BackgroundRole)
+            item.setData(Qt.ItemDataRole.BackgroundRole, highlight_color)
+            highlighted.append((row, col, previous_background))
+        del blocker
+
+        self._formula_fill_highlight_cells = highlighted
+        if highlighted:
+            self._formula_fill_highlight_timer.start(1200)
+
+        status_bar = self.statusBar()
+        if status_bar is None:
+            return
+        rows_label = self._format_row_ranges(rows)
+        if not rows_label:
+            return
+        source_text = f" из строки {source_row + 1}" if source_row is not None and source_row >= 0 else ""
+        status_bar.showMessage(
+            f'Формула в столбце "{self._column_title(col)}" протянута{source_text} по строкам: {rows_label}',
+            2500,
+        )
+
     def _setup_table_quick_search(self):
         self.tableQuickSearchLine = QLineEdit(self)
         self.tableQuickSearchLine.setPlaceholderText("Быстрый поиск по таблице (Ctrl+F)")
@@ -673,6 +1883,18 @@ class mainWindow(QMainWindow):
             parent=self.ui.KpTable,
             context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
         )
+        _bind(
+            "Ctrl+Return",
+            self._fill_formula_to_selection,
+            parent=self.ui.KpTable,
+            context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
+        )
+        _bind(
+            "Ctrl+Enter",
+            self._fill_formula_to_selection,
+            parent=self.ui.KpTable,
+            context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
+        )
         undo_shortcut = QShortcut(QKeySequence(QKeySequence.StandardKey.Undo), self.ui.KpTable)
         undo_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
         undo_shortcut.activated.connect(self._undo_last_table_change)
@@ -690,6 +1912,113 @@ class mainWindow(QMainWindow):
         if current_row >= 0:
             rows.add(current_row)
         return sorted(row for row in rows if 0 <= row < table.rowCount())
+
+    def _selected_rows_in_column(self, col):
+        table = self.ui.KpTable
+        rows = set()
+        selection_model = table.selectionModel()
+        if selection_model is not None:
+            rows.update(index.row() for index in selection_model.selectedIndexes() if index.column() == col)
+            if not rows:
+                rows.update(index.row() for index in selection_model.selectedRows())
+            if not rows:
+                rows.update(index.row() for index in selection_model.selectedIndexes())
+        current_row = table.currentRow()
+        current_col = table.currentColumn()
+        if current_col == col and current_row >= 0:
+            rows.add(current_row)
+        return sorted(row for row in rows if 0 <= row < self.rows)
+
+    def _apply_formula_to_rows(self, col, rows, formula_text, source_row=None):
+        target_rows = sorted(set(rows))
+        if col not in self.FORMULA_EDITABLE_COLUMNS or not target_rows:
+            return False
+
+        text = str(formula_text or "").strip()
+        if not text:
+            if source_row is not None:
+                message = f'Строка {source_row + 1}, столбец "{self._column_title(col)}": формула не может быть пустой'
+            else:
+                message = f'Столбец "{self._column_title(col)}": формула не может быть пустой'
+            self.error(
+                "Ошибка",
+                message,
+            )
+            return False
+
+        old_formulas = {row: self.formulaExpressions[col][row] for row in target_rows}
+        try:
+            for row in target_rows:
+                self.formulaExpressions[col][row] = text
+            self.calculating()
+            if len(target_rows) > 1:
+                self._show_formula_fill_feedback(col, target_rows, source_row=source_row)
+            return True
+        except ValueError as e:
+            for row, previous_value in old_formulas.items():
+                self.formulaExpressions[col][row] = previous_value
+            self.calculating()
+            self.error("Ошибка", str(e))
+            return False
+
+    def _fill_formula_to_selection(self):
+        if not Config.isTableOpened or self.rows <= 0:
+            return
+
+        table = self.ui.KpTable
+        status_bar = self.statusBar()
+        source_col = table.currentColumn()
+        if source_col not in self.FORMULA_EDITABLE_COLUMNS:
+            if status_bar is not None:
+                status_bar.showMessage("Выберите ячейку в столбце с формулой для протягивания", 2500)
+            return
+
+        selected_rows = self._selected_rows_in_column(source_col)
+        selected_rows = sorted(set(selected_rows))
+        if len(selected_rows) <= 1:
+            if status_bar is not None:
+                status_bar.showMessage("Для протягивания формулы выделите минимум две строки", 2500)
+            return
+
+        source_row = selected_rows[0]
+        self._push_undo_state()
+        source_formula = self.formulaExpressions[source_col][source_row]
+        self._apply_formula_to_rows(source_col, selected_rows, source_formula, source_row=source_row)
+        self._apply_table_filters()
+
+    def _fill_formula_on_ctrl_selection(self):
+        if not Config.isTableOpened or self.rows <= 0:
+            return
+        if self._is_restoring_undo:
+            return
+
+        modifiers = QApplication.keyboardModifiers()
+        if not (modifiers & Qt.KeyboardModifier.ControlModifier):
+            return
+
+        table = self.ui.KpTable
+        source_row = table.currentRow()
+        source_col = table.currentColumn()
+        if source_col not in self.FORMULA_EDITABLE_COLUMNS:
+            return
+        if source_row < 0 or source_row >= self.rows:
+            return
+
+        selected_rows = self._selected_rows_in_column(source_col)
+        selected_rows = sorted(set(selected_rows))
+        if len(selected_rows) <= 1:
+            return
+
+        source_formula = str(self.formulaExpressions[source_col][source_row] or "").strip()
+        if not source_formula:
+            return
+
+        if all(self.formulaExpressions[source_col][row] == source_formula for row in selected_rows):
+            return
+
+        self._push_undo_state()
+        if self._apply_formula_to_rows(source_col, selected_rows, source_formula, source_row=source_row):
+            self._apply_table_filters()
 
     def _capture_table_state(self):
         table = self.ui.KpTable
@@ -719,6 +2048,7 @@ class mainWindow(QMainWindow):
             self._undo_stack.pop(0)
 
     def _restore_table_state(self, state):
+        self._clear_formula_fill_highlight()
         self._pending_edit_undo_state = None
         table_rows = state.get("table_rows", [])
         table = self.ui.KpTable
@@ -1150,18 +2480,10 @@ class mainWindow(QMainWindow):
         text = item.text().strip()
         needs_manual_summary_refresh = col in {0, 1, 2, 3}
         if col in self.FORMULA_EDITABLE_COLUMNS:
-            old_formula = self.formulaExpressions[col][row]
-            try:
-                if not text:
-                    raise ValueError(
-                        f'Строка {row + 1}, столбец "{self._column_title(col)}": формула не может быть пустой'
-                    )
-                self.formulaExpressions[col][row] = text
-                self.calculating()
-            except ValueError as e:
-                self.formulaExpressions[col][row] = old_formula
-                self.calculating()
-                self.error("Ошибка", str(e))
+            target_rows = self._selected_rows_in_column(col)
+            if row not in target_rows:
+                target_rows.append(row)
+            self._apply_formula_to_rows(col, target_rows, text, source_row=row)
             self._apply_table_filters()
             return
 
@@ -1235,6 +2557,7 @@ class mainWindow(QMainWindow):
             self.ui.customLine.setText(Config.config["customNum"])
             self.ui.termDeliveryLine.setText(Config.config["termDelivery"])
             self.ui.markupLine.setText(Config.config["markup"])
+            self.ui.requestNumberLine.setText(Config.config.get("requestNumber", ""))
             self.ui.logisticVar.setCurrentIndex(int(Config.config["logisticVar"]))
         self.processFormula()
 
@@ -1277,6 +2600,8 @@ class mainWindow(QMainWindow):
             <li><span class="hotkey">Ctrl+O</span> - открыть таблицу</li>
             <li><span class="hotkey">Ctrl+F</span> - поиск по таблице</li>
             <li><span class="hotkey">Ctrl+D</span> - дублировать выбранные строки</li>
+            <li><span class="hotkey">Ctrl+Enter</span> - протянуть формулу по выделенным строкам</li>
+            <li><span class="hotkey">Ctrl + выделение ячеек</span> - протянуть формулу из активной ячейки</li>
             <li><span class="hotkey">Ctrl+Z / Cmd+Z</span> - отменить последнее изменение таблицы</li>
             <li><span class="hotkey">Delete</span> - удалить выбранные строки</li>
             <li><span class="hotkey">Ctrl+Shift+E</span> - скачать КП</li>
@@ -1664,6 +2989,7 @@ class mainWindow(QMainWindow):
 
     def openCreateDocWindow(self, tableData):
         window = createDocWindow(self, tableData=tableData)
+        window.ui.numLine.setText(self.ui.requestNumberLine.text().strip())
         window.show()
         window.windowClosed.connect(self.updateHistoryTable)
         if Config.settings["closeTable"]:
@@ -1693,6 +3019,7 @@ class mainWindow(QMainWindow):
 
     def closeTable(self, _checked=False, clear_undo=True):
         Config.isTableOpened = False
+        self._clear_formula_fill_highlight()
         blocker = QSignalBlocker(self.ui.KpTable)
         self.ui.KpTable.clearContents()
         self.ui.KpTable.setRowCount(0)
@@ -1905,7 +3232,9 @@ class mainWindow(QMainWindow):
             logistic_var = 0
 
         logistic_num = self.formulaLogistic
+        logistic_num_text = self._fmt_number(logistic_num)
         total_sum = sum(self.tableData["totalPrice"])
+        total_sum_text = self._fmt_number(total_sum)
         self.tableData["logistic"] = []
 
         blocker = QSignalBlocker(self.ui.KpTable)
@@ -1914,10 +3243,13 @@ class mainWindow(QMainWindow):
             if logistic_var == 1:
                 if total_sum <= 0:
                     f = 0
+                    formula_text = "0"
                 else:
                     f = round(base_total + logistic_num / total_sum * base_total, 2)
+                    formula_text = f"TotalPrice+{logistic_num_text}/{total_sum_text}*TotalPrice"
             else:
                 f = round(base_total * logistic_num, 2)
+                formula_text = f"TotalPrice*{logistic_num_text}"
             currency = self.tableData["currency"][row_num]
             self._set_table_item(
                 row_num,
@@ -1925,6 +3257,9 @@ class mainWindow(QMainWindow):
                 Tool.formatPrice(str(f), currency),
                 editable=False,
             )
+            logistic_item = self.ui.KpTable.item(row_num, 7)
+            if logistic_item is not None:
+                logistic_item.setData(Qt.ItemDataRole.UserRole, formula_text)
             self.tableData["logistic"].append(f)
         del blocker
         self._apply_table_filters()
@@ -2012,30 +3347,43 @@ class mainWindow(QMainWindow):
             )
             return
 
+        parsed = self._parse_input_parameters(show_error=True)
+        if parsed is None:
+            return
+
         tableData = []
+        logistic_formulas = []
         row_count = self.ui.KpTable.rowCount()
+        column_count = self.ui.KpTable.columnCount()
 
         for row in range(row_count):
             row_data = []
-            for col in range(6):
-                item = self.ui.KpTable.item(row, col)
-                row_data.append(item.text() if item is not None else "")
-            for col in range(13, 15):
+            for col in range(column_count):
                 item = self.ui.KpTable.item(row, col)
                 row_data.append(item.text() if item is not None else "")
             tableData.append(row_data)
+            logistic_item = self.ui.KpTable.item(row, 7)
+            logistic_formula = logistic_item.data(Qt.ItemDataRole.UserRole) if logistic_item is not None else ""
+            if isinstance(logistic_formula, dict):
+                logistic_formula = logistic_formula.get("formula", "")
+            logistic_formulas.append(str(logistic_formula or ""))
 
         export_result = exportExcelFile(
-            (
-                tableData,
-                (
-                    self.ui.logisticVar.currentIndex(),
-                    self.ui.logisticNum.text(),
-                    self.ui.markupLine.text(),
-                ),
-                self.ui.customLine.text(),
-                sum(self.tableData["totalPrice"]),
-            )
+            {
+                "table_rows": tableData,
+                "request_number": self.ui.requestNumberLine.text().strip(),
+                "logistic_mode": self.ui.logisticVar.currentIndex(),
+                "logistic_value": parsed["logistic"],
+                "custom_value": parsed["custom"],
+                "markup_value": parsed["markup"],
+                "term_delivery": parsed["termDelivery"],
+                "vat_multiplier": self._vat_multiplier(),
+                "named_parameters": self._load_formula_parameters(),
+                "logistic_formulas": logistic_formulas,
+                "formula_expressions": {
+                    col: list(self.formulaExpressions.get(col, [])) for col in self.FORMULA_EDITABLE_COLUMNS
+                },
+            }
         )
         if not getattr(export_result, "success", False):
             error_text = getattr(export_result, "error_message", "") or "Не удалось создать Excel"
@@ -2062,6 +3410,7 @@ class mainWindow(QMainWindow):
         Config.config["customNum"] = self.ui.customLine.text()
         Config.config["termDelivery"] = self.ui.termDeliveryLine.text()
         Config.config["markup"] = self.ui.markupLine.text()
+        Config.config["requestNumber"] = self.ui.requestNumberLine.text().strip()
         Config.config["logisticVar"] = str(self.ui.logisticVar.currentIndex())
         self.ensureOutputDirs()
         self.saveConfig()

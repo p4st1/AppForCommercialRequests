@@ -1,0 +1,13 @@
+[2026-03-04 14:27:59] creating Excel File...
+[2026-03-04 14:27:59] Excel path to save: /tmp/Расчеты_SMOKE_04_03_2026_.xlsx
+[2026-03-04 14:27:59] Final path to save: /tmp/Расчеты_SMOKE_04_03_2026_.xlsx
+[2026-03-04 14:31:02] creating Excel File...
+[2026-03-04 14:31:02] Excel path to save: /tmp/Расчеты_SMOKE_MODE_0_04_03_2026_.xlsx
+[2026-03-04 14:31:02] Final path to save: /tmp/Расчеты_SMOKE_MODE_0_04_03_2026_.xlsx
+[2026-03-04 14:31:02] creating Excel File...
+[2026-03-04 14:31:02] Excel path to save: /tmp/Расчеты_SMOKE_MODE_1_04_03_2026_.xlsx
+[2026-03-04 14:31:02] Final path to save: /tmp/Расчеты_SMOKE_MODE_1_04_03_2026_.xlsx
+[2026-03-04 14:33:11] creating Excel File...
+[2026-03-04 14:33:11] Excel path to save: /tmp/Расчеты_SMOKE_LOGI_FORMULA_04_03_2026_.xlsx
+[2026-03-04 14:33:11] Final path to save: /tmp/Расчеты_SMOKE_LOGI_FORMULA_04_03_2026_.xlsx
+[2026-03-05 16:57:50] [ERROR] Не удалось загрузить конфигурацию: : IsADirectoryError: [Errno 21] Is a directory: '.'
