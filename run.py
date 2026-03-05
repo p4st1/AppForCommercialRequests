@@ -1,6 +1,7 @@
 from main import mainWindow
 from tools import DatabaseTools as Tool
 from config import Config
+from version_check import check_release_version
 from pathlib import Path
 import sys
 import os
@@ -108,14 +109,42 @@ if __name__ == '__main__':
             Tool.write_log("Папка utilities не найдена!")
         Tool.write_log("Testing imports...")
         try:
-            from PySide6.QtWidgets import QApplication, QMainWindow
+            from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
+            from PySide6.QtCore import QTimer
             Tool.write_log("✅ PySide6 import successful")
         except ImportError as e:
             Tool.log_exception("PySide6 import failed", e, include_traceback=False)
+
+        version_check_result = check_release_version(resourcePath, timeout_seconds=2.5)
+        Tool.write_log(
+            "Version check status: "
+            f"{version_check_result.status} "
+            f"(local={version_check_result.local_version or 'n/a'}, "
+            f"release={version_check_result.remote_version or 'n/a'})"
+        )
+        if version_check_result.details:
+            Tool.write_log(f"Version check details: {version_check_result.details}")
+
         Tool.write_log("Creating QApplication...")
         app = QApplication(sys.argv)
         ex = mainWindow()
         ex.show()
+
+        if version_check_result.status == "outdated":
+            def show_update_message():
+                QMessageBox.warning(
+                    ex,
+                    "Версия устарела",
+                    (
+                        "У вас установлена устаревшая версия приложения.\n\n"
+                        f"Текущая версия: {version_check_result.local_version}\n"
+                        f"Актуальная версия release: {version_check_result.remote_version}\n\n"
+                        f"Скачать обновление: {version_check_result.release_url}"
+                    ),
+                )
+
+            QTimer.singleShot(0, show_update_message)
+
         sys.exit(app.exec())
 
     except Exception as e:
@@ -123,5 +152,3 @@ if __name__ == '__main__':
         error_details = "".join(traceback.format_exception(type(e), e, e.__traceback__))
         error_file = Path.home() / 'myapp_error.txt'
         error_file.write_text(f"Error: {e}\n\n{error_details}")
-
-
