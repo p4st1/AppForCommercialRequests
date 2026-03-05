@@ -3084,6 +3084,7 @@ class mainWindow(QMainWindow):
             currency = self.tableData["currency"][row_num]
             logistic_value = self.tableData["logistic"][row_num]
             supplier_term = self.tableData["termDelivery"][row_num]
+            effective_term_delivery = float(self.termDeliveryDays) if float(supplier_term) > 0 else 0.0
             context = {
                 "amount": float(amount),
                 "qty": float(amount),
@@ -3095,7 +3096,7 @@ class mainWindow(QMainWindow):
                 "markup": float(self.formulaMarkup),
                 "vat": float(vat_multiplier),
                 "supplierterm": float(supplier_term),
-                "termdelivery": float(self.termDeliveryDays),
+                "termdelivery": effective_term_delivery,
             }
 
             customs_sum = round(
