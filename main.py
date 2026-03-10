@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,
     QPushButton,
     QLabel,
     QLineEdit,
@@ -209,6 +210,7 @@ class mainWindow(QMainWindow):
         self._ensure_history_tab()
         self._ensure_web_tab()
         self._setup_history_tab_table()
+        self._setup_full_table_input_layout()
         self._full_table_panel_widgets = list(
             dict.fromkeys(self._collect_layout_widgets(self.ui.funcButtons))
         )
@@ -246,6 +248,131 @@ class mainWindow(QMainWindow):
             if child_layout is not None:
                 widgets.extend(self._collect_layout_widgets(child_layout))
         return widgets
+
+    def _clear_layout_items(self, layout):
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                continue
+            child_layout = item.layout()
+            if child_layout is not None:
+                self._clear_layout_items(child_layout)
+
+    @staticmethod
+    def _input_block(label_widget, *input_widgets):
+        block = QVBoxLayout()
+        block.setSpacing(6)
+        block.setContentsMargins(0, 0, 0, 0)
+        block.addWidget(label_widget)
+        for widget in input_widgets:
+            block.addWidget(widget)
+        return block
+
+    def _setup_full_table_input_layout(self):
+        self.ui.verticalLayout.setSpacing(0)
+        root_layout = self.ui.funcButtons
+        self._clear_layout_items(root_layout)
+        root_layout.setContentsMargins(8, 0, 8, 8)
+        root_layout.setHorizontalSpacing(14)
+        root_layout.setVerticalSpacing(8)
+
+        labels = (
+            self.ui.label_5,
+            self.ui.label,
+            self.ui.label_3,
+            self.ui.label_2,
+            self.ui.requestNumberLabel,
+        )
+        for label in labels:
+            label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        inputs = (
+            self.ui.logisticNum,
+            self.ui.customLine,
+            self.ui.markupLine,
+            self.ui.termDeliveryLine,
+            self.ui.requestNumberLine,
+        )
+        for field in inputs:
+            field.setMinimumHeight(32)
+            field.setClearButtonEnabled(True)
+
+        self.ui.logisticVar.setMinimumHeight(32)
+        self.ui.logisticVar.setMinimumWidth(170)
+        self.ui.logisticNum.setMinimumWidth(120)
+        self.ui.customLine.setMinimumWidth(140)
+        self.ui.markupLine.setMinimumWidth(140)
+        self.ui.termDeliveryLine.setMinimumWidth(140)
+        self.ui.requestNumberLine.setMinimumWidth(260)
+
+        logistics_row = QHBoxLayout()
+        logistics_row.setSpacing(8)
+        logistics_row.setContentsMargins(0, 0, 0, 0)
+        logistics_row.addWidget(self.ui.logisticVar, 2)
+        logistics_row.addWidget(self.ui.logisticNum, 1)
+
+        logistics_block = QVBoxLayout()
+        logistics_block.setSpacing(6)
+        logistics_block.setContentsMargins(0, 0, 0, 0)
+        logistics_block.addWidget(self.ui.label_5)
+        logistics_block.addLayout(logistics_row)
+
+        customs_block = self._input_block(self.ui.label, self.ui.customLine)
+        markup_block = self._input_block(self.ui.label_3, self.ui.markupLine)
+        term_block = self._input_block(self.ui.label_2, self.ui.termDeliveryLine)
+        request_block = self._input_block(self.ui.requestNumberLabel, self.ui.requestNumberLine)
+
+        inputs_layout = QGridLayout()
+        inputs_layout.setContentsMargins(0, 0, 0, 0)
+        inputs_layout.setHorizontalSpacing(14)
+        inputs_layout.setVerticalSpacing(10)
+        inputs_layout.addLayout(logistics_block, 0, 0)
+        inputs_layout.addLayout(customs_block, 0, 1)
+        inputs_layout.addLayout(markup_block, 0, 2)
+        inputs_layout.addLayout(term_block, 1, 0)
+        inputs_layout.addLayout(request_block, 1, 1, 1, 2)
+        inputs_layout.setColumnStretch(0, 3)
+        inputs_layout.setColumnStretch(1, 2)
+        inputs_layout.setColumnStretch(2, 2)
+
+        actions_layout = QGridLayout()
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setHorizontalSpacing(8)
+        actions_layout.setVerticalSpacing(8)
+        actions_layout.addWidget(self.ui.openTableButton, 0, 0)
+        actions_layout.addWidget(self.ui.closeTableButton, 0, 1)
+        actions_layout.addWidget(self.ui.createExcelButton, 1, 0)
+        actions_layout.addWidget(self.ui.createDocButton, 1, 1)
+        actions_layout.addWidget(self.ui.createDocFromExcelButton, 2, 0, 1, 2)
+
+        root_layout.addLayout(inputs_layout, 0, 0)
+        root_layout.addLayout(actions_layout, 0, 1, 1, 1, Qt.AlignmentFlag.AlignTop)
+        root_layout.setColumnStretch(0, 1)
+        root_layout.setColumnStretch(1, 0)
+
+        for widget in (
+            self.ui.label_5,
+            self.ui.logisticVar,
+            self.ui.logisticNum,
+            self.ui.label,
+            self.ui.customLine,
+            self.ui.label_3,
+            self.ui.markupLine,
+            self.ui.label_2,
+            self.ui.termDeliveryLine,
+            self.ui.requestNumberLabel,
+            self.ui.requestNumberLine,
+            self.ui.openTableButton,
+            self.ui.closeTableButton,
+            self.ui.createExcelButton,
+            self.ui.createDocButton,
+            self.ui.createDocFromExcelButton,
+        ):
+            widget.show()
 
     def _on_main_tab_changed(self, _index):
         show_panel = self.ui.tabWidget.currentWidget() is self.ui.tab
@@ -3084,6 +3211,7 @@ class mainWindow(QMainWindow):
             currency = self.tableData["currency"][row_num]
             logistic_value = self.tableData["logistic"][row_num]
             supplier_term = self.tableData["termDelivery"][row_num]
+            effective_term_delivery = float(self.termDeliveryDays) if float(supplier_term) > 0 else 0.0
             context = {
                 "amount": float(amount),
                 "qty": float(amount),
@@ -3095,7 +3223,7 @@ class mainWindow(QMainWindow):
                 "markup": float(self.formulaMarkup),
                 "vat": float(vat_multiplier),
                 "supplierterm": float(supplier_term),
-                "termdelivery": float(self.termDeliveryDays),
+                "termdelivery": effective_term_delivery,
             }
 
             customs_sum = round(

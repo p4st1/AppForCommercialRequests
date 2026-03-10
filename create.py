@@ -715,6 +715,7 @@ class createExcelFile:
         return self.DEFAULT_FORMULAS[col]
 
     def _formula_context_by_column(self, excel_row, payload):
+        term_delivery_value = self._fmt_number(payload["term_delivery"])
         base = {
             "amount": f"E{excel_row}",
             "qty": f"E{excel_row}",
@@ -726,7 +727,7 @@ class createExcelFile:
             "markup": self._fmt_number(payload["markup_value"]),
             "vat": self._fmt_number(payload["vat_multiplier"]),
             "supplierterm": f"O{excel_row}",
-            "termdelivery": self._fmt_number(payload["term_delivery"]),
+            "termdelivery": f"IF(O{excel_row}>0,{term_delivery_value},0)",
         }
         with_customs = dict(base)
         with_customs["customs"] = f"I{excel_row}"
