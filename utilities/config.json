@@ -9,7 +9,11 @@
         "pathToSaveExcel" : "",
         "pathToDB": "",
         "ExcelIndent": "0",
-        "lastTable": ""
+        "lastTable": "",
+        "paymentTemplates": [
+            "на дату подписания спецификации Поставщиком",
+            "на дату оплаты"
+        ]
     },
     "settings": {
         "closeTable": true,

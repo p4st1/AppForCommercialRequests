@@ -1,4 +1,9 @@
 class Config:
+    DEFAULT_PAYMENT_TEMPLATES = [
+        "на дату подписания спецификации Поставщиком",
+        "на дату оплаты",
+    ]
+
     DEFAULT_SETTINGS = {
         "closeTable": True,
         "autoFill": True,
@@ -20,6 +25,7 @@ class Config:
         "pathToDB": "",
         "ExcelIndent": "0",
         "lastTable": "",
+        "paymentTemplates": DEFAULT_PAYMENT_TEMPLATES.copy(),
         "webAuthLogin": "",
         "webAuthPassword": "",
         "webAuthMaxAttempts": "25",

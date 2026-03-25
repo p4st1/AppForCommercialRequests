@@ -61,11 +61,9 @@ class mainWindow(QMainWindow):
 
         self._setup_field_placeholders()
         self.payInd = 0
-        self.pay = [
-            "на дату подписания спецификации Поставщиком",
-            "на дату оплаты",
-            "",
-        ]
+        self.payTemplates = self._load_payment_templates()
+        self.payCustomValue = ""
+        self._fill_payment_templates()
         self.ui.payLineEdit.setEnabled(False)
 
     def _setup_window_ergonomics(self):
@@ -130,12 +128,48 @@ class mainWindow(QMainWindow):
         self.ui.deliveryTimeLine.setPlaceholderText("Например: 45 дней")
         self.ui.payLineEdit.setPlaceholderText("Уточните условие оплаты")
 
+    def _load_payment_templates(self):
+        templates_raw = Config.config.get("paymentTemplates", Config.DEFAULT_PAYMENT_TEMPLATES)
+        if isinstance(templates_raw, str):
+            values = [templates_raw]
+        elif isinstance(templates_raw, (list, tuple)):
+            values = list(templates_raw)
+        else:
+            values = []
+
+        templates = []
+        for value in values:
+            text = str(value or "").strip()
+            if not text or text in templates:
+                continue
+            templates.append(text)
+        return templates
+
+    def _fill_payment_templates(self):
+        blocker = QSignalBlocker(self.ui.payComboBox)
+        self.ui.payComboBox.clear()
+        for template in self.payTemplates:
+            self.ui.payComboBox.addItem(template)
+        self.ui.payComboBox.addItem("Другое...")
+        self.ui.payComboBox.setCurrentIndex(0)
+        del blocker
+        self.indChanged(0)
+
+    def _custom_payment_index(self):
+        return len(self.payTemplates)
+
+    def _current_payment_value(self):
+        index = self.ui.payComboBox.currentIndex()
+        if 0 <= index < len(self.payTemplates):
+            return self.payTemplates[index]
+        return self.payCustomValue
+
     def payUpd(self):
-        self.pay[2] = self.ui.payLineEdit.text()
+        self.payCustomValue = self.ui.payLineEdit.text().strip()
 
     def indChanged(self, ind):
         self.payInd = ind
-        if self.payInd == 2:
+        if self.payInd == self._custom_payment_index():
             self.ui.payLineEdit.setEnabled(True)
         else:
             self.ui.payLineEdit.setEnabled(False)
@@ -195,7 +229,7 @@ class mainWindow(QMainWindow):
                 extraData,
                 str(offer_id),
                 self.ui.radioButton.isChecked(),
-                self.pay[self.payInd],
+                self._current_payment_value(),
             ),
         )
         if not getattr(export_result, "success", False):

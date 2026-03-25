@@ -103,6 +103,28 @@ class DatabaseTools:
         web_auth_attempts = max(5, min(120, web_auth_attempts))
         config["webAuthMaxAttempts"] = str(web_auth_attempts)
 
+        payment_templates_raw = config.get("paymentTemplates")
+        if isinstance(payment_templates_raw, str):
+            payment_templates_values = [payment_templates_raw]
+        elif isinstance(payment_templates_raw, (list, tuple)):
+            payment_templates_values = list(payment_templates_raw)
+        else:
+            payment_templates_values = []
+
+        normalized_payment_templates = []
+        for template in payment_templates_values:
+            text = str(template or "").strip()
+            if not text or text in normalized_payment_templates:
+                continue
+            normalized_payment_templates.append(text)
+
+        if not normalized_payment_templates and (
+            not isinstance(raw_config, dict) or "paymentTemplates" not in raw_config
+        ):
+            normalized_payment_templates = Config.DEFAULT_PAYMENT_TEMPLATES.copy()
+
+        config["paymentTemplates"] = normalized_payment_templates
+
         settings = Config.DEFAULT_SETTINGS.copy()
         if isinstance(raw_settings, dict):
             for key in settings:
