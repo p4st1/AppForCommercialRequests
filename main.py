@@ -35,6 +35,7 @@ from ui_mainGui import Ui_MainWindow
 from ui_theme import apply_unified_theme
 from datetime import datetime
 from pathlib import Path
+from decimal import Decimal, ROUND_HALF_UP
 from lxml import html as lxml_html
 from lxml.etree import ParserError
 import pandas as pd
@@ -2566,7 +2567,7 @@ class mainWindow(QMainWindow):
         amount = self.tableData["amount"][row]
         unit_price = self.tableData["unitPrice"][row]
         currency = self.tableData["currency"][row]
-        total_price = round(amount * unit_price, 2)
+        total_price = self._round_money(amount * unit_price)
         self.tableData["totalPrice"][row] = total_price
         self._set_table_item(row, 6, Tool.formatPrice(str(total_price), currency), editable=False)
 
@@ -2804,6 +2805,10 @@ class mainWindow(QMainWindow):
         if float(value).is_integer():
             return str(int(value))
         return f"{value:.6f}".rstrip("0").rstrip(".")
+
+    @staticmethod
+    def _round_money(value) -> float:
+        return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
     def _parse_input_parameters(self, show_error=True):
         try:
@@ -3060,7 +3065,7 @@ class mainWindow(QMainWindow):
 
         blocker = QSignalBlocker(self.ui.KpTable)
         for row_num, row in enumerate(parsed_rows):
-            total_price = round(row["qty"] * row["unitPrice"], 2)
+            total_price = self._round_money(row["qty"] * row["unitPrice"])
             self._set_table_item(row_num, 0, row["number"], editable=True)
             self._set_table_item(row_num, 1, row["name"], editable=True)
             self._set_table_item(row_num, 2, row["sku"], editable=True)
@@ -3226,9 +3231,8 @@ class mainWindow(QMainWindow):
                 "termdelivery": effective_term_delivery,
             }
 
-            customs_sum = round(
-                self._eval_formula(self.formulaExpressions[8][row_num], context, row_num, 8, named_parameters),
-                2,
+            customs_sum = self._round_money(
+                self._eval_formula(self.formulaExpressions[8][row_num], context, row_num, 8, named_parameters)
             )
             if customs_sum < 0:
                 raise ValueError(
@@ -3237,9 +3241,8 @@ class mainWindow(QMainWindow):
                 )
             context["customs"] = float(customs_sum)
 
-            unit_sale_price = round(
-                self._eval_formula(self.formulaExpressions[9][row_num], context, row_num, 9, named_parameters),
-                2,
+            unit_sale_price = self._round_money(
+                self._eval_formula(self.formulaExpressions[9][row_num], context, row_num, 9, named_parameters)
             )
             if unit_sale_price < 0:
                 raise ValueError(
@@ -3248,9 +3251,8 @@ class mainWindow(QMainWindow):
                 )
             context["unitsaleprice"] = float(unit_sale_price)
 
-            real_price = round(
-                self._eval_formula(self.formulaExpressions[10][row_num], context, row_num, 10, named_parameters),
-                2,
+            real_price = self._round_money(
+                self._eval_formula(self.formulaExpressions[10][row_num], context, row_num, 10, named_parameters)
             )
             if real_price < 0:
                 raise ValueError(
@@ -3259,9 +3261,8 @@ class mainWindow(QMainWindow):
                 )
             context["realprice"] = float(real_price)
 
-            total_without_vat = round(
-                self._eval_formula(self.formulaExpressions[11][row_num], context, row_num, 11, named_parameters),
-                2,
+            total_without_vat = self._round_money(
+                self._eval_formula(self.formulaExpressions[11][row_num], context, row_num, 11, named_parameters)
             )
             if total_without_vat < 0:
                 raise ValueError(
@@ -3270,7 +3271,7 @@ class mainWindow(QMainWindow):
                 )
             context["totalwithoutvat"] = float(total_without_vat)
 
-            total_with_vat = round(total_without_vat * vat_multiplier, 2)
+            total_with_vat = self._round_money(total_without_vat * vat_multiplier)
             if total_with_vat < 0:
                 raise ValueError(
                     f'Строка {row_num + 1}, столбец "{self._column_title(12)}": '
@@ -3373,10 +3374,10 @@ class mainWindow(QMainWindow):
                     f = 0
                     formula_text = "0"
                 else:
-                    f = round(base_total + logistic_num / total_sum * base_total, 2)
+                    f = self._round_money(base_total + logistic_num / total_sum * base_total)
                     formula_text = f"TotalPrice+{logistic_num_text}/{total_sum_text}*TotalPrice"
             else:
-                f = round(base_total * logistic_num, 2)
+                f = self._round_money(base_total * logistic_num)
                 formula_text = f"TotalPrice*{logistic_num_text}"
             currency = self.tableData["currency"][row_num]
             self._set_table_item(
@@ -3446,7 +3447,7 @@ class mainWindow(QMainWindow):
                     include_traceback=False,
                 )
                 continue
-        return round(total, 2), currency
+        return self._round_money(total), currency
 
     def exportDocs(self):
         if not Config.isTableOpened:

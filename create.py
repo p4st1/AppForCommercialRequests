@@ -119,9 +119,9 @@ class createTextFile:
             "{{Currency}}": f"{currency[0]}",
             "{{Total_diff}}": f"{Tools.num2text(_round_money(sum2 - sum1))}",
 
-            "{{Total_wo_text}}": f"({tool.decimal2text(_round_money(sum1),int_units=currency[1],exp_units=currency[2])})",
+            "{{Total_wo_text}}": f"{tool.decimal2text(_round_money(sum2),int_units=currency[1],exp_units=currency[2])}",
 
-            "{{Total_diff_text}}": f"({tool.decimal2text(_round_money(sum2 - sum1),int_units=currency[1],exp_units=currency[2])})",
+            "{{Total_diff_text}}": f"{tool.decimal2text(_round_money(sum2 - sum1),int_units=currency[1],exp_units=currency[2])}",
 
             "{{NDS}}": f"{Tools.load_json(Config.vars_path)['parameters']['1'][1]}",
 
@@ -839,7 +839,7 @@ class createExcelFile:
             work_sheet[f"E{excel_row}"] = amount
             work_sheet[f"F{excel_row}"] = unit_price
             work_sheet[f"F{excel_row}"].number_format = self._currency_format(row_currency or currency)
-            work_sheet[f"G{excel_row}"] = f"=F{excel_row}*E{excel_row}"
+            work_sheet[f"G{excel_row}"] = self._wrap_round(f"=F{excel_row}*E{excel_row}", 2)
             work_sheet[f"G{excel_row}"].number_format = self._currency_format(row_currency or currency)
 
             logistic_formula_source = ""

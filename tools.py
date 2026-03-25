@@ -162,16 +162,70 @@ class DatabaseTools:
 
     @staticmethod
     def validNum(value):
+        normalized = DatabaseTools._normalize_number_text(value, prefer_thousands=False)
+        if not normalized:
+            return None
         try:
-            float(str(value).replace(",", ".").replace(" ", ""))
+            float(normalized)
         except ValueError:
             return None
         else:
-            return float(str(value).replace(",", ".").replace(" ", ""))
+            return float(normalized)
+
+    @staticmethod
+    def _normalize_number_text(value, *, prefer_thousands=True) -> str:
+        text = str(value or "").strip().replace("\u00A0", "").replace(" ", "")
+        if not text:
+            return ""
+
+        sign = ""
+        if text[0] in "+-":
+            sign = text[0]
+            text = text[1:]
+        if not text:
+            return sign
+
+        if "," in text and "." in text:
+            # If both separators are present, the rightmost one is decimal,
+            # the other is used as thousands separator.
+            last_comma = text.rfind(",")
+            last_dot = text.rfind(".")
+            decimal_sep = "," if last_comma > last_dot else "."
+            thousands_sep = "." if decimal_sep == "," else ","
+            text = text.replace(thousands_sep, "")
+            if decimal_sep == ",":
+                text = text.replace(",", ".")
+            return sign + text
+
+        sep = "," if "," in text else "." if "." in text else ""
+        if not sep:
+            return sign + text
+
+        parts = text.split(sep)
+        if len(parts) > 2:
+            if all(part.isdigit() for part in parts) and all(len(part) == 3 for part in parts[1:]):
+                return sign + "".join(parts)
+            integer_part = "".join(parts[:-1])
+            fraction_part = parts[-1]
+            if integer_part.isdigit() and fraction_part.isdigit():
+                return sign + f"{integer_part}.{fraction_part}"
+            if sep == ",":
+                return sign + text.replace(",", ".")
+            return sign + text
+
+        left, right = parts
+        if left.isdigit() and right.isdigit():
+            if len(right) == 3 and prefer_thousands:
+                return sign + left + right
+            return sign + f"{left}.{right}"
+
+        if sep == ",":
+            return sign + text.replace(",", ".")
+        return sign + text
 
     @staticmethod
     def parse_int(value, field_name: str, allow_zero=True) -> int:
-        normalized = str(value).strip().replace(" ", "").replace(",", ".")
+        normalized = DatabaseTools._normalize_number_text(value, prefer_thousands=True)
         if not normalized:
             raise ValueError(f'Поле "{field_name}" не заполнено')
         try:
@@ -188,7 +242,7 @@ class DatabaseTools:
 
     @staticmethod
     def parse_float(value, field_name: str, allow_zero=True) -> float:
-        normalized = str(value).strip().replace(" ", "").replace(",", ".")
+        normalized = DatabaseTools._normalize_number_text(value, prefer_thousands=False)
         if not normalized:
             raise ValueError(f'Поле "{field_name}" не заполнено')
         try:
@@ -448,12 +502,14 @@ class DatabaseTools:
         if "." not in normalized:
             normalized = f"{normalized}.00"
         num, mantissa = normalized.split('.', 1)
+        if len(mantissa) < 2:
+            mantissa = mantissa.ljust(2, "0")
         num = num[::-1]
         num = [num[i : i + 3] for i in range(0, len(num), 3)]
         res = ''
         for i in num[::-1]:
             res += f'{i[::-1]} '
-        return f'{res.strip()},{mantissa.zfill(2)}'
+        return f'{res.strip()},{mantissa}'
 
     @staticmethod
     def parsePrice(line):
