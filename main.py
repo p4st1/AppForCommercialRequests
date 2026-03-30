@@ -134,6 +134,11 @@ class mainWindow(QMainWindow):
         self._web_auth_frame_urls_tried = set()
         self._web_auth_seen_login_form = False
         self._web_auth_seen_login_dialog = False
+        self._web_request_number = ""
+        self._web_request_search_pending = False
+        self._web_request_search_attempts_left = 0
+        self._web_request_search_total_attempts = 0
+        self._web_request_search_js_running = False
         self._formula_fill_highlight_cells = []
         self._formula_fill_highlight_timer = QTimer(self)
         self._formula_fill_highlight_timer.setSingleShot(True)
@@ -528,16 +533,32 @@ class mainWindow(QMainWindow):
         saved_login, saved_password = self._get_saved_web_auth_credentials()
         self.ui.webLoginLine.setText(saved_login)
         self.ui.webPasswordLine.setText(saved_password)
+        self.ui.webRequestNumberLine = QLineEdit(self.ui.webTab)
+        self.ui.webRequestNumberLine.setPlaceholderText("Номер заявки")
+        self.ui.webRequestNumberLine.setMinimumWidth(180)
+        self.ui.webRequestNumberLine.setText(
+            str(
+                Config.config.get(
+                    "webRequestNumber",
+                    Config.config.get("requestNumber", ""),
+                )
+                or ""
+            ).strip()
+        )
 
         self.ui.webOpenButton = QPushButton("Открыть", self.ui.webTab)
         self.ui.webAuthButton = QPushButton("Авторизоваться", self.ui.webTab)
+        self.ui.webStopAuthButton = QPushButton("Остановить авторизацию", self.ui.webTab)
         self.ui.webParseButton = QPushButton("Распарсить", self.ui.webTab)
+        self.ui.webStopAuthButton.setVisible(False)
 
         controls_layout.addWidget(self.ui.webUrlLine, 1)
         controls_layout.addWidget(self.ui.webLoginLine)
         controls_layout.addWidget(self.ui.webPasswordLine)
+        controls_layout.addWidget(self.ui.webRequestNumberLine)
         controls_layout.addWidget(self.ui.webOpenButton)
         controls_layout.addWidget(self.ui.webAuthButton)
+        controls_layout.addWidget(self.ui.webStopAuthButton)
         controls_layout.addWidget(self.ui.webParseButton)
 
         self.ui.webStatusLabel = QLabel("Готово", self.ui.webTab)
@@ -560,15 +581,22 @@ class mainWindow(QMainWindow):
 
         self.ui.webOpenButton.clicked.connect(self._open_web_page)
         self.ui.webAuthButton.clicked.connect(self._authorize_web_page)
+        self.ui.webStopAuthButton.clicked.connect(self._stop_web_authorization_by_user)
         self.ui.webParseButton.clicked.connect(self._parse_web_page)
         self.ui.webUrlLine.returnPressed.connect(self._open_web_page)
         self.ui.webPasswordLine.returnPressed.connect(self._authorize_web_page)
+        self.ui.webRequestNumberLine.returnPressed.connect(self._authorize_web_page)
         self.ui.webLoginLine.editingFinished.connect(self._store_web_auth_credentials_from_ui)
         self.ui.webPasswordLine.editingFinished.connect(self._store_web_auth_credentials_from_ui)
+        self.ui.webRequestNumberLine.editingFinished.connect(self._store_web_request_number_from_ui)
         self.ui.webView.loadFinished.connect(self._on_web_page_loaded)
         self._webAuthRetryTimer = QTimer(self)
         self._webAuthRetryTimer.setSingleShot(True)
         self._webAuthRetryTimer.timeout.connect(self._retry_web_authorization)
+        self._webRequestSearchTimer = QTimer(self)
+        self._webRequestSearchTimer.setSingleShot(True)
+        self._webRequestSearchTimer.timeout.connect(self._retry_web_request_search)
+        self._update_web_auth_controls()
 
         self._open_web_page()
 
@@ -632,11 +660,24 @@ class mainWindow(QMainWindow):
             self.ui.webPasswordLine.text(),
         )
 
+    def _persist_web_request_number(self, request_number):
+        normalized_number = str(request_number or "").strip()
+        if Config.config.get("webRequestNumber", "") == normalized_number:
+            return
+        Config.config["webRequestNumber"] = normalized_number
+        self.saveConfig()
+
+    def _store_web_request_number_from_ui(self):
+        if not hasattr(self.ui, "webRequestNumberLine"):
+            return
+        self._persist_web_request_number(self.ui.webRequestNumberLine.text())
+
     def _open_web_page(self):
         if not hasattr(self.ui, "webView"):
             return
 
         self._stop_web_authorization()
+        self._cancel_web_request_search(clear_pending=True)
         url_text = str(self.ui.webUrlLine.text() or "").strip()
         if not url_text:
             self.error("Ошибка", "Введите URL страницы")
@@ -662,6 +703,8 @@ class mainWindow(QMainWindow):
             self._set_web_status(f"Не удалось загрузить страницу: {current_url}")
 
         if not self._web_auth_active:
+            if self._web_request_search_pending and self._web_request_search_attempts_left > 0:
+                self._schedule_web_request_search(delay_ms=500 if ok else 1100)
             return
         page_changed = self._is_web_auth_page_changed(current_url)
         if (
@@ -692,6 +735,22 @@ class mainWindow(QMainWindow):
         self._web_auth_seen_login_dialog = False
         if hasattr(self, "_webAuthRetryTimer"):
             self._webAuthRetryTimer.stop()
+        self._update_web_auth_controls()
+
+    def _stop_web_authorization_by_user(self):
+        if not self._web_auth_active:
+            return
+        self._stop_web_authorization()
+        self._set_web_status("Авторизация остановлена")
+
+    def _update_web_auth_controls(self):
+        if not hasattr(self.ui, "webAuthButton"):
+            return
+        is_active = bool(self._web_auth_active)
+        self.ui.webAuthButton.setEnabled(not is_active)
+        if hasattr(self.ui, "webStopAuthButton"):
+            self.ui.webStopAuthButton.setVisible(is_active)
+            self.ui.webStopAuthButton.setEnabled(is_active)
 
     def _schedule_web_auth_retry(self, delay_ms=700):
         if not self._web_auth_active or self._web_auth_js_running:
@@ -1261,6 +1320,462 @@ class mainWindow(QMainWindow):
 })();
 """
 
+    @staticmethod
+    def _build_bid_request_search_script(request_number):
+        script = """
+(() => {
+  const requestNumber = __REQUEST_NUMBER__;
+  const normalizeText = (value) => String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\\s+/g, ' ')
+    .trim();
+  const latinLikeMap = {
+    'а': 'a',
+    'в': 'b',
+    'е': 'e',
+    'к': 'k',
+    'м': 'm',
+    'н': 'h',
+    'о': 'o',
+    'р': 'p',
+    'с': 'c',
+    'т': 't',
+    'у': 'y',
+    'х': 'x'
+  };
+  const toComparable = (value) => {
+    const normalized = normalizeText(value);
+    let transformed = '';
+    for (const ch of normalized) {
+      transformed += latinLikeMap[ch] || ch;
+    }
+    return transformed.replace(/[^a-zа-я0-9]/g, '');
+  };
+
+  const target = normalizeText(requestNumber);
+  const targetComparable = toComparable(requestNumber);
+  if (!target) {
+    return {
+      ok: false,
+      retry: false,
+      input_filled: false,
+      search_triggered: false,
+      match_found: false,
+      match_opened: false,
+      message: 'Номер заявки не указан'
+    };
+  }
+
+  const docs = [];
+  const seenDocs = [];
+  const addDoc = (doc) => {
+    if (!doc || seenDocs.includes(doc)) return;
+    seenDocs.push(doc);
+    docs.push(doc);
+  };
+
+  addDoc(document);
+  for (const frame of Array.from(document.querySelectorAll('iframe, frame'))) {
+    try { addDoc(frame.contentDocument); } catch (e) {}
+  }
+
+  const isVisible = (node) => {
+    if (!node || !node.ownerDocument || !node.ownerDocument.defaultView) return false;
+    const style = node.ownerDocument.defaultView.getComputedStyle(node);
+    if (!style || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || 1) === 0) {
+      return false;
+    }
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+
+  const setNativeValue = (element, value) => {
+    const tagName = String(element.tagName || '').toLowerCase();
+    const proto = tagName === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (descriptor && typeof descriptor.set === 'function') {
+      descriptor.set.call(element, value);
+    } else {
+      element.value = value;
+    }
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  const fireEnter = (element) => {
+    const data = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true };
+    element.dispatchEvent(new KeyboardEvent('keydown', data));
+    element.dispatchEvent(new KeyboardEvent('keypress', data));
+    element.dispatchEvent(new KeyboardEvent('keyup', data));
+  };
+
+  const textPattern = /поиск|search|найти|фильтр|номер|заяв|request|bid|tender/i;
+  const authPattern = /логин|парол|password|signin|auth|account/i;
+  const searchButtonPattern = /поиск|search|найти|применить|фильтр|обновить/i;
+  const openActionPattern = /участвовать|перейти|открыть|подробн|details|view|participate/i;
+
+  const inputCandidates = [];
+  for (const doc of docs) {
+    let fields = [];
+    try {
+      fields = Array.from(
+        doc.querySelectorAll('input[type="search"], input[type="text"], input:not([type]), textarea')
+      );
+    } catch (e) {
+      fields = [];
+    }
+    for (const field of fields) {
+      if (!isVisible(field)) continue;
+      const metadata = normalizeText(
+        field.placeholder
+        || field.name
+        || field.id
+        || field.getAttribute('aria-label')
+        || field.getAttribute('title')
+        || ''
+      );
+      let score = 0;
+      if (String(field.type || '').toLowerCase() === 'search') score += 7;
+      if (textPattern.test(metadata)) score += 8;
+      if (authPattern.test(metadata)) score -= 10;
+      if (field.form) score += 1;
+      if (score > 0) {
+        inputCandidates.push({ field, score });
+      }
+    }
+  }
+
+  inputCandidates.sort((a, b) => b.score - a.score);
+  const targetInput = inputCandidates.length ? inputCandidates[0].field : null;
+
+  const clickSearchControl = (root) => {
+    if (!root || typeof root.querySelectorAll !== 'function') return false;
+    let nodes = [];
+    try {
+      nodes = Array.from(root.querySelectorAll('button, [role="button"], a'));
+    } catch (e) {
+      nodes = [];
+    }
+    for (const node of nodes) {
+      if (!isVisible(node)) continue;
+      const text = normalizeText(
+        node.innerText
+        || node.textContent
+        || node.getAttribute('aria-label')
+        || node.getAttribute('title')
+        || ''
+      );
+      if (!text || !searchButtonPattern.test(text)) continue;
+      try {
+        node.click();
+        return true;
+      } catch (e) {}
+    }
+    return false;
+  };
+
+  let inputFilled = false;
+  let searchTriggered = false;
+
+  if (targetInput) {
+    targetInput.focus();
+    setNativeValue(targetInput, requestNumber);
+    inputFilled = true;
+
+    const roots = [];
+    if (targetInput.form) roots.push(targetInput.form);
+    if (targetInput.parentElement) roots.push(targetInput.parentElement);
+    const container = targetInput.closest
+      ? targetInput.closest('form, .filters, .filter, [role="search"], [class*="filter"], [class*="search"]')
+      : null;
+    if (container) roots.push(container);
+
+    for (const root of roots) {
+      if (clickSearchControl(root)) {
+        searchTriggered = true;
+        break;
+      }
+    }
+
+    if (!searchTriggered) {
+      fireEnter(targetInput);
+      searchTriggered = true;
+    }
+  }
+
+  const isNavNode = (node) => {
+    if (!node || !node.closest) return false;
+    const nav = node.closest(
+      'aside, nav, [class*="sidebar" i], [class*="menu" i], [class*="navigation" i]'
+    );
+    return Boolean(nav);
+  };
+
+  const triggerClick = (node) => {
+    if (!node) return false;
+    try { node.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}
+    const view = (node.ownerDocument && node.ownerDocument.defaultView) || window;
+    const mouseData = { bubbles: true, cancelable: true, composed: true, view };
+    const pointerData = { bubbles: true, cancelable: true, composed: true, pointerType: 'mouse' };
+    try { node.dispatchEvent(new PointerEvent('pointerdown', pointerData)); } catch (e) {}
+    try { node.dispatchEvent(new MouseEvent('mousedown', mouseData)); } catch (e) {}
+    try { node.dispatchEvent(new PointerEvent('pointerup', pointerData)); } catch (e) {}
+    try { node.dispatchEvent(new MouseEvent('mouseup', mouseData)); } catch (e) {}
+    try { node.dispatchEvent(new MouseEvent('click', mouseData)); } catch (e) {}
+    try { node.click(); } catch (e) {}
+    return true;
+  };
+
+  const findClickable = (node) => {
+    if (!node) return null;
+    if (node.closest) {
+      const clickable = node.closest(
+        'a, button, [role="button"], [role="link"], [onclick], [class*="btn" i], [class*="button" i], tr, [role="row"], li'
+      );
+      if (clickable && !isNavNode(clickable)) return clickable;
+    }
+    if (isNavNode(node)) return null;
+    return node;
+  };
+
+  const collectOpenActionCandidates = (root) => {
+    if (!root || typeof root.querySelectorAll !== 'function') return [];
+    let nodes = [];
+    try {
+      nodes = Array.from(
+        root.querySelectorAll(
+          'button, a, [role="button"], [role="link"], [onclick], [class*="btn" i], [class*="button" i], [tabindex]'
+        )
+      );
+    } catch (e) {
+      nodes = [];
+    }
+    const result = [];
+    for (const node of nodes) {
+      if (!isVisible(node) || isNavNode(node)) continue;
+      const text = normalizeText(
+        node.innerText
+        || node.textContent
+        || node.getAttribute('aria-label')
+        || node.getAttribute('title')
+        || ''
+      );
+      if (!text || !openActionPattern.test(text)) continue;
+      const clickable = findClickable(node) || node;
+      if (clickable && isVisible(clickable) && !result.includes(clickable)) {
+        result.push(clickable);
+      }
+    }
+    return result;
+  };
+
+  const textMatches = [];
+  const selectors = 'a, button, [role="button"], [role="link"], td, th, tr, [role="row"], div, span';
+  for (const doc of docs) {
+    let nodes = [];
+    try {
+      nodes = Array.from(doc.querySelectorAll(selectors));
+    } catch (e) {
+      nodes = [];
+    }
+    for (const node of nodes) {
+      if (textMatches.length >= 30) break;
+      if (!isVisible(node)) continue;
+      const text = normalizeText(node.innerText || node.textContent || '');
+      const comparable = toComparable(text);
+      if (!text || text.length > 220) continue;
+      if (
+        text.includes(target)
+        || (targetComparable && comparable.includes(targetComparable))
+      ) {
+        textMatches.push(node);
+      }
+    }
+  }
+
+  const openActionFromMatch = textMatches
+    .flatMap((node) => {
+      const roots = [];
+      if (node && node.closest) {
+        const container = node.closest(
+          '[class*="trade" i], [class*="purchase" i], [class*="request" i], [class*="lot" i], [class*="card" i], article, tr, [role="row"], li, div'
+        );
+        if (container) roots.push(container);
+      }
+      if (node && node.parentElement) roots.push(node.parentElement);
+      return roots.flatMap((root) => collectOpenActionCandidates(root));
+    })
+    .find((node) => Boolean(node && isVisible(node)));
+
+  if (openActionFromMatch) {
+    try {
+      triggerClick(openActionFromMatch);
+      return {
+        ok: true,
+        retry: false,
+        input_filled: inputFilled,
+        search_triggered: searchTriggered,
+        match_found: true,
+        match_opened: true,
+        message: 'Заявка найдена и открыта'
+      };
+    } catch (e) {}
+  }
+
+  const clickableMatch = textMatches
+    .map((node) => findClickable(node))
+    .find((node) => Boolean(node && isVisible(node)));
+
+  if (clickableMatch) {
+    try {
+      triggerClick(clickableMatch);
+      return {
+        ok: true,
+        retry: false,
+        input_filled: inputFilled,
+        search_triggered: searchTriggered,
+        match_found: true,
+        match_opened: true,
+        message: 'Заявка найдена и открыта'
+      };
+    } catch (e) {}
+  }
+
+  const globalOpenActions = docs
+    .flatMap((doc) => collectOpenActionCandidates(doc.body || doc))
+    .filter((node, index, arr) => arr.indexOf(node) === index);
+
+  if (globalOpenActions.length === 1) {
+    try {
+      triggerClick(globalOpenActions[0]);
+      return {
+        ok: true,
+        retry: false,
+        input_filled: inputFilled,
+        search_triggered: searchTriggered,
+        match_found: true,
+        match_opened: true,
+        message: 'Открыта найденная заявка'
+      };
+    } catch (e) {}
+  }
+
+  if (globalOpenActions.length > 1 && textMatches.length > 0) {
+    try {
+      triggerClick(globalOpenActions[0]);
+      return {
+        ok: true,
+        retry: false,
+        input_filled: inputFilled,
+        search_triggered: searchTriggered,
+        match_found: true,
+        match_opened: true,
+        message: 'Открыта первая заявка из отфильтрованного списка'
+      };
+    } catch (e) {}
+  }
+
+  const participateCandidates = docs
+    .flatMap((doc) => {
+      const root = doc.body || doc;
+      if (!root || typeof root.querySelectorAll !== 'function') return [];
+      let nodes = [];
+      try {
+        nodes = Array.from(
+          root.querySelectorAll(
+            'button, a, [role="button"], [role="link"], [onclick], [class*="btn" i], [class*="button" i], div, span'
+          )
+        );
+      } catch (e) {
+        nodes = [];
+      }
+      return nodes
+        .filter((node) => isVisible(node) && !isNavNode(node))
+        .filter((node) => {
+          const text = normalizeText(
+            node.innerText
+            || node.textContent
+            || node.getAttribute('aria-label')
+            || node.getAttribute('title')
+            || ''
+          );
+          return text.includes('участвовать') || text.includes('participate');
+        })
+        .map((node) => findClickable(node) || node);
+    })
+    .filter((node, index, arr) => Boolean(node) && arr.indexOf(node) === index);
+
+  if (
+    participateCandidates.length === 1
+    && (textMatches.length > 0 || inputFilled || searchTriggered)
+  ) {
+    try {
+      triggerClick(participateCandidates[0]);
+      return {
+        ok: true,
+        retry: false,
+        input_filled: inputFilled,
+        search_triggered: searchTriggered,
+        match_found: true,
+        match_opened: true,
+        message: 'Открыта заявка через кнопку «Участвовать»'
+      };
+    } catch (e) {}
+  }
+
+  if (participateCandidates.length > 1 && textMatches.length > 0) {
+    try {
+      triggerClick(participateCandidates[0]);
+      return {
+        ok: true,
+        retry: false,
+        input_filled: inputFilled,
+        search_triggered: searchTriggered,
+        match_found: true,
+        match_opened: true,
+        message: 'Открыта первая заявка через кнопку «Участвовать»'
+      };
+    } catch (e) {}
+  }
+
+  if (textMatches.length > 0) {
+    return {
+      ok: true,
+      retry: true,
+      input_filled: inputFilled,
+      search_triggered: searchTriggered,
+      match_found: true,
+      match_opened: false,
+      message: 'Заявка найдена в списке, пробуем открыть'
+    };
+  }
+
+  if (inputFilled || searchTriggered) {
+    return {
+      ok: true,
+      retry: true,
+      input_filled: inputFilled,
+      search_triggered: searchTriggered,
+      match_found: false,
+      match_opened: false,
+      message: 'Поиск заявки запущен, ожидание результатов'
+    };
+  }
+
+  return {
+    ok: false,
+    retry: true,
+    input_filled: false,
+    search_triggered: false,
+    match_found: false,
+    match_opened: false,
+    message: `Не удалось найти поле поиска заявки (совпадений: ${textMatches.length}, кнопок: ${globalOpenActions.length})`
+  };
+})();
+"""
+        return script.replace("__REQUEST_NUMBER__", json.dumps(request_number))
+
     def _navigate_to_bid_submission_tab(self):
         if not hasattr(self.ui, "webView"):
             return
@@ -1269,23 +1784,144 @@ class mainWindow(QMainWindow):
         self.ui.webView.page().runJavaScript(script, self._on_bid_submission_navigation_completed)
 
     def _on_bid_submission_navigation_completed(self, result):
+        delay_ms = 900
         if not isinstance(result, dict):
+            self._start_web_request_search_if_needed(delay_ms=delay_ms)
             return
 
         if result.get("already_on_target"):
             self._set_web_status("Уже открыта вкладка «Приём заявок».")
-            return
-
-        if result.get("clicked"):
+            delay_ms = 400
+        elif result.get("clicked"):
             self._set_web_status("Переход во вкладку «Приём заявок» выполнен.")
-            return
-
-        if result.get("redirected"):
+            delay_ms = 900
+        elif result.get("redirected"):
             target_url = str(result.get("target_url", "")).strip()
             if target_url:
                 self._set_web_status(f"Открывается вкладка «Приём заявок»: {target_url}")
+            else:
+                self._set_web_status("Открывается вкладка «Приём заявок».")
+            delay_ms = 1400
+
+        self._start_web_request_search_if_needed(delay_ms=delay_ms)
+
+    def _cancel_web_request_search(self, clear_pending=False):
+        self._web_request_search_js_running = False
+        self._web_request_search_attempts_left = 0
+        self._web_request_search_total_attempts = 0
+        if hasattr(self, "_webRequestSearchTimer"):
+            self._webRequestSearchTimer.stop()
+        if clear_pending:
+            self._web_request_search_pending = False
+
+    def _start_web_request_search_if_needed(self, delay_ms=700):
+        if not hasattr(self.ui, "webView"):
+            return
+        if not self._web_request_search_pending:
+            return
+        request_number = str(self._web_request_number or "").strip()
+        if not request_number:
+            self._web_request_search_pending = False
+            return
+        if self._web_request_search_total_attempts <= 0:
+            self._web_request_search_total_attempts = 14
+            self._web_request_search_attempts_left = self._web_request_search_total_attempts
+        self._schedule_web_request_search(delay_ms)
+
+    def _schedule_web_request_search(self, delay_ms=700):
+        if (
+            not self._web_request_search_pending
+            or self._web_request_search_js_running
+            or self._web_request_search_attempts_left <= 0
+        ):
+            return
+        if hasattr(self, "_webRequestSearchTimer"):
+            self._webRequestSearchTimer.start(max(120, int(delay_ms)))
+
+    def _retry_web_request_search(self):
+        if not self._web_request_search_pending:
+            return
+        self._run_web_request_search_attempt()
+
+    def _run_web_request_search_attempt(self):
+        if (
+            not hasattr(self.ui, "webView")
+            or not self._web_request_search_pending
+            or self._web_request_search_js_running
+        ):
+            return
+
+        if self._web_request_search_attempts_left <= 0:
+            number = str(self._web_request_number or "").strip()
+            if number:
+                self._set_web_status(
+                    f"Не удалось автоматически найти заявку №{number}. Проверьте номер и попробуйте снова."
+                )
+            self._cancel_web_request_search(clear_pending=True)
+            return
+
+        attempt_number = self._web_request_search_total_attempts - self._web_request_search_attempts_left + 1
+        self._web_request_search_attempts_left -= 1
+        self._web_request_search_js_running = True
+
+        number = str(self._web_request_number or "").strip()
+        self._set_web_status(
+            f"Поиск заявки №{number}: попытка {attempt_number}/{self._web_request_search_total_attempts}..."
+        )
+        script = self._build_bid_request_search_script(number)
+        self.ui.webView.page().runJavaScript(script, self._on_web_request_search_completed)
+
+    def _on_web_request_search_completed(self, result):
+        self._web_request_search_js_running = False
+        if not self._web_request_search_pending:
+            return
+
+        number = str(self._web_request_number or "").strip()
+        if not isinstance(result, dict):
+            if self._web_request_search_attempts_left > 0:
+                self._schedule_web_request_search(delay_ms=1100)
                 return
-            self._set_web_status("Открывается вкладка «Приём заявок».")
+            self._set_web_status(
+                f"Не удалось автоматически найти заявку №{number}. Проверьте номер и попробуйте снова."
+            )
+            self._cancel_web_request_search(clear_pending=True)
+            return
+
+        message = str(result.get("message", "")).strip()
+        match_found = bool(result.get("match_found"))
+        match_opened = bool(result.get("match_opened"))
+        retry = bool(result.get("retry"))
+
+        if match_opened:
+            self._set_web_status(message or f"Заявка №{number} найдена и открыта")
+            self._cancel_web_request_search(clear_pending=True)
+            return
+
+        if match_found:
+            if self._web_request_search_attempts_left > 0:
+                self._set_web_status(message or f"Заявка №{number} найдена, пытаемся открыть...")
+                self._schedule_web_request_search(delay_ms=800)
+                return
+            self._set_web_status(
+                message or f"Заявка №{number} найдена, но открыть её автоматически не удалось."
+            )
+            self._cancel_web_request_search(clear_pending=True)
+            return
+
+        if retry and self._web_request_search_attempts_left > 0:
+            self._set_web_status(message or f"Поиск заявки №{number}: ожидаем обновление списка...")
+            self._schedule_web_request_search(delay_ms=950)
+            return
+
+        if self._web_request_search_attempts_left > 0:
+            self._set_web_status(message or f"Поиск заявки №{number}: повторная попытка...")
+            self._schedule_web_request_search(delay_ms=950)
+            return
+
+        self._set_web_status(
+            message or f"Не удалось автоматически найти заявку №{number}. Проверьте номер и попробуйте снова."
+        )
+        self._cancel_web_request_search(clear_pending=True)
 
     def _run_web_auth_attempt(self):
         if not self._web_auth_active or self._web_auth_js_running:
@@ -1313,8 +1949,15 @@ class mainWindow(QMainWindow):
             self.error("Ошибка", "Введите логин и пароль")
             return
         self._persist_web_auth_credentials(login, password)
+        request_number = ""
+        if hasattr(self.ui, "webRequestNumberLine"):
+            request_number = str(self.ui.webRequestNumberLine.text() or "").strip()
+            self._persist_web_request_number(request_number)
 
         self._stop_web_authorization()
+        self._cancel_web_request_search(clear_pending=True)
+        self._web_request_number = request_number
+        self._web_request_search_pending = bool(request_number)
         self._web_auth_login = login
         self._web_auth_password = password
         self._web_auth_start_url = self.ui.webView.url().toString()
@@ -1327,6 +1970,7 @@ class mainWindow(QMainWindow):
         self._web_auth_attempts_left = self._web_auth_total_attempts
         self._web_auth_active = True
         self._web_auth_submitted = False
+        self._update_web_auth_controls()
         self._run_web_auth_attempt()
 
     def _on_web_auth_completed(self, result):
@@ -2687,6 +3331,16 @@ class mainWindow(QMainWindow):
             self.ui.markupLine.setText(Config.config["markup"])
             self.ui.requestNumberLine.setText(Config.config.get("requestNumber", ""))
             self.ui.logisticVar.setCurrentIndex(int(Config.config["logisticVar"]))
+        if hasattr(self.ui, "webRequestNumberLine"):
+            self.ui.webRequestNumberLine.setText(
+                str(
+                    Config.config.get(
+                        "webRequestNumber",
+                        Config.config.get("requestNumber", ""),
+                    )
+                    or ""
+                ).strip()
+            )
         self.processFormula()
 
     def open_url(self, url):
@@ -3540,6 +4194,8 @@ class mainWindow(QMainWindow):
         Config.config["termDelivery"] = self.ui.termDeliveryLine.text()
         Config.config["markup"] = self.ui.markupLine.text()
         Config.config["requestNumber"] = self.ui.requestNumberLine.text().strip()
+        if hasattr(self.ui, "webRequestNumberLine"):
+            Config.config["webRequestNumber"] = self.ui.webRequestNumberLine.text().strip()
         Config.config["logisticVar"] = str(self.ui.logisticVar.currentIndex())
         self.ensureOutputDirs()
         self.saveConfig()

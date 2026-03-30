@@ -20,6 +20,7 @@ class Config:
         "termDelivery": "0",
         "markup": "1",
         "requestNumber": "",
+        "webRequestNumber": "",
         "pathToSaveCP": "",
         "pathToSaveExcel": "",
         "pathToDB": "",
