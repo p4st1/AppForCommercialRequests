@@ -11,13 +11,16 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QLabel,
 )
+from app.repositories.offer_repository import OfferRepository
+from app.repositories.customer_repository import CustomerRepository
+from app.services.customer_service import CustomerService
+from app.services.history_service import HistoryService
 from database import Database
 from config import Config
 from create import createTextFile as exportTextFile
 from tools import DatabaseTools as Tool
 from ui_createDocGui import Ui_MainWindow
 from ui_theme import apply_unified_theme
-import json
 
 class Dialog:
     def myDialog(self):
@@ -56,7 +59,11 @@ class mainWindow(QMainWindow):
 
         self.db = Database()
         self.db.open(Config.db_path)
-        self.suppliers = self.db.getAllCustomers()
+        self.customer_repository = CustomerRepository(self.db)
+        self.customer_service = CustomerService(self.customer_repository)
+        self.offer_repository = OfferRepository(self.db)
+        self.history_service = HistoryService(self.offer_repository)
+        self.suppliers = self.customer_service.get_all_customers()
         self.setupSuppliersItems()
 
         self._setup_field_placeholders()
@@ -215,13 +222,13 @@ class mainWindow(QMainWindow):
         for i in range(self.ui.suppliersList.count()):
             item = self.ui.suppliersList.item(i)
             if item and item.checkState() == Qt.CheckState.Checked:
-                confirmedSuppliers.append(self.db.getCustomer(item.text())[0])
+                confirmedSuppliers.append(self.customer_service.get_customers_by_company(item.text())[0])
         extraData = self.getExtraData()
         if not confirmedSuppliers:
             QMessageBox.warning(self, "Ошибка", "Выберите хотя бы одного заказчика")
             return
 
-        offer_id = self.db.getNextOfferNumber()
+        offer_id = self.offer_repository.get_next_doc_offer_number()
         export_result = exportTextFile(
             (
                 self.tableData,
@@ -237,51 +244,23 @@ class mainWindow(QMainWindow):
             QMessageBox.critical(self, "Ошибка", error_text)
             return
 
-        customer_data = confirmedSuppliers[0]
-        total_amount, currency, items_count = self._history_summary()
-        customer_name = " ".join(
-            part for part in [customer_data[2], customer_data[1], customer_data[3]] if str(part).strip()
-        ).strip()
-        notes = ""
-        if len(confirmedSuppliers) > 1:
-            notes = f"Выбрано заказчиков: {len(confirmedSuppliers)}"
-
-        self.db.createOffer(
-            customer_company=customer_data[7],
-            customer_name=customer_name,
-            items_count=items_count,
-            total_amount=total_amount,
-            currency=currency,
-            file_path=getattr(export_result, "output_path", ""),
-            notes=notes,
-            payload_json=self._history_payload_json(),
+        self.history_service.record_docx_offer(
+            customer_data=confirmedSuppliers[0],
+            table_rows=self.tableData[1] if self.tableData and len(self.tableData) > 1 else [],
+            output_path=getattr(export_result, "output_path", ""),
+            selected_suppliers_count=len(confirmedSuppliers),
+            summary_columns=self.SUMMARY_COLUMNS,
         )
-        self.db.save()
+        self.history_service.save()
         self.close()
 
     def _history_summary(self):
         rows = self.tableData[1] if self.tableData and len(self.tableData) > 1 else []
-        total_amount = 0.0
-        currency = ""
-        for row in rows:
-            if len(row) <= 7:
-                continue
-            symbol, amount_text = Tool.parsePrice(str(row[7]))
-            if symbol and not currency:
-                currency = symbol
-            try:
-                total_amount += float(str(amount_text).replace(" ", "").replace(",", "."))
-            except ValueError:
-                continue
-        return round(total_amount, 2), currency, len(rows)
+        return self.history_service.summarize_table_for_history(rows, total_col_index=7)
 
     def _history_payload_json(self) -> str:
         rows = self.tableData[1] if self.tableData and len(self.tableData) > 1 else []
-        normalized_rows = []
-        for row in rows:
-            normalized_rows.append([str(value) for value in row[: self.SUMMARY_COLUMNS]])
-        payload = {"table_data": normalized_rows}
-        return json.dumps(payload, ensure_ascii=False)
+        return self.history_service.build_payload_json(rows, summary_columns=self.SUMMARY_COLUMNS)
 
     def getExtraData(self):
         result = []

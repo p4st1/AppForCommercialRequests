@@ -1,6 +1,8 @@
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QListWidgetItem, QLineEdit
+from app.repositories.customer_repository import CustomerRepository
+from app.services.customer_service import CustomerService
 from config import Config
 from database import Database
 from addNewCustomer import mainWindow as newSupplierWindow
@@ -44,6 +46,8 @@ class mainWindow(QMainWindow):
         self.db = Database()
         if self.db.open(Config.db_path) == -1:
             QMessageBox.critical(self, "Ошибка", "Не удалось открыть базу данных")
+        self.customer_repository = CustomerRepository(self.db)
+        self.customer_service = CustomerService(self.customer_repository)
 
         self.ui.suppliersList.itemClicked.connect(self.customerSelected)
         self.ui.closeButton.clicked.connect(self.close)
@@ -58,7 +62,7 @@ class mainWindow(QMainWindow):
         self.showSuppliers()
 
     def showSuppliers(self):
-        self.suppliers = self.db.getAllCustomers()
+        self.suppliers = self.customer_service.get_all_customers()
         self.ui.suppliersList.clear()
         self.customer_by_id = {}
         for supplier in self.suppliers:
@@ -102,8 +106,7 @@ class mainWindow(QMainWindow):
     def delSelectedCustomer(self):
         if not self.selectedCustomerData:
             return
-        self.db.delCustomerById(self.selectedCustomerData[0])
-        self.db.save()
+        self.customer_service.delete_customer_by_id(self.selectedCustomerData[0], commit=True)
         self.showSuppliers()
         self.selectedCustomerData = None
         self.ui.deleteSupplierButton.setEnabled(False)

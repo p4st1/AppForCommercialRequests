@@ -1,5 +1,7 @@
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox
+from app.repositories.customer_repository import CustomerRepository
+from app.services.customer_service import CustomerService
 from database import Database
 from tools import DatabaseTools as Tool
 from ui_addCustomerGui import Ui_MainWindow
@@ -95,6 +97,7 @@ class mainWindow(QMainWindow):
         if db.open(Config.db_path) == -1:
             QMessageBox.critical(self, "Ошибка", "Не удалось открыть базу данных")
             return
+        customer_service = CustomerService(CustomerRepository(db))
 
         surname, name, patronymic = self.split_full_name(self.ui.nameLine.text().strip())
 
@@ -163,7 +166,7 @@ class mainWindow(QMainWindow):
             return
 
         full_name = " ".join(part for part in [surname, name, patronymic] if str(part).strip())
-        duplicate_row = db.findPotentialCustomerDuplicate(
+        duplicate_row = customer_service.find_potential_duplicate(
             company_name=companyName,
             email=email,
             phone=phone,
@@ -177,17 +180,12 @@ class mainWindow(QMainWindow):
                 db.close()
                 return
             if resolution == "update":
-                db.updateCustomer(int(duplicate_row[0]), data)
-                db.save()
+                customer_service.save_customer(data, edit_customer_id=int(duplicate_row[0]))
                 db.close()
                 self.close()
                 return
 
-        if self.edit_customer_id is not None:
-            db.updateCustomer(self.edit_customer_id, data)
-        else:
-            db.createCustomer(data)
-        db.save()
+        customer_service.save_customer(data, edit_customer_id=self.edit_customer_id)
         db.close()
         self.close()
 
