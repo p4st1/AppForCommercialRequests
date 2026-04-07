@@ -33,15 +33,11 @@ class mainWindow(QMainWindow):
         self.ui.autoFillCheckBox.setChecked(Config.settings['autoFill'])
         self.ui.openLastTable.setChecked(Config.settings['openLastTab'])
         self.ui.openUpdateTab.setChecked(Config.settings['openUpdateTab'])
-        self.ui.saveWebAuthDataCheckBox.setChecked(Config.settings['saveWebAuthData'])
-        self.ui.webAuthAttemptsSpinBox.setValue(self._get_web_auth_attempts_value())
 
         self.ui.autoFillCheckBox.toggled.connect(self.autoFillChange)
         self.ui.closeTableCheckBox.toggled.connect(self.closeTableChange)
         self.ui.openLastTable.toggled.connect(self.openLastTableChange)
         self.ui.openUpdateTab.toggled.connect(self.openUpdateTabChange)
-        self.ui.saveWebAuthDataCheckBox.toggled.connect(self.saveWebAuthDataChange)
-        self.ui.webAuthAttemptsSpinBox.valueChanged.connect(self.webAuthAttemptsChange)
 
         default_dir = Path.home() / "Documents"
         cp_dir = Tool.ensure_directory(Config.config.get('pathToSaveCP'), default_dir)
@@ -79,33 +75,6 @@ class mainWindow(QMainWindow):
 
     def closeTableChange(self, signal):
         Config.settings['closeTable'] = signal
-
-    def saveWebAuthDataChange(self, signal):
-        Config.settings['saveWebAuthData'] = signal
-        if signal:
-            return
-        Config.config['webAuthLogin'] = ''
-        Config.config['webAuthPassword'] = ''
-        Tool.save_json_atomic(
-            Config.cfg_path,
-            {'config': Config.config, 'settings': Config.settings},
-        )
-
-    @staticmethod
-    def _get_web_auth_attempts_value():
-        default_value = 25
-        min_value = 5
-        max_value = 120
-        try:
-            parsed = int(str(Config.config.get('webAuthMaxAttempts', default_value)).strip())
-        except (TypeError, ValueError):
-            parsed = default_value
-        normalized = max(min_value, min(max_value, parsed))
-        Config.config['webAuthMaxAttempts'] = str(normalized)
-        return normalized
-
-    def webAuthAttemptsChange(self, value):
-        Config.config['webAuthMaxAttempts'] = str(int(value))
 
     def _setup_payment_templates_editor(self):
         self.paymentTemplatesLabel = QLabel("Шаблоны оплаты", self.ui.scrollAreaWidgetContents)

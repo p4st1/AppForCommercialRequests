@@ -90,21 +90,10 @@ class DatabaseTools:
         config["termDelivery"] = str(config.get("termDelivery", "0"))
         config["markup"] = str(config.get("markup", "1"))
         config["requestNumber"] = str(config.get("requestNumber", "")).strip()
-        config["webRequestNumber"] = str(
-            config.get("webRequestNumber", config["requestNumber"])
-        ).strip()
         config["ExcelIndent"] = str(config.get("ExcelIndent", "0"))
         config["lastTable"] = str(config.get("lastTable", "")).strip()
         config["pathToSaveCP"] = str(config.get("pathToSaveCP", "")).strip()
         config["pathToSaveExcel"] = str(config.get("pathToSaveExcel", "")).strip()
-        config["webAuthLogin"] = str(config.get("webAuthLogin", "") or "").strip()
-        config["webAuthPassword"] = str(config.get("webAuthPassword", "") or "")
-        try:
-            web_auth_attempts = int(str(config.get("webAuthMaxAttempts", "25")).strip())
-        except (TypeError, ValueError):
-            web_auth_attempts = 25
-        web_auth_attempts = max(5, min(120, web_auth_attempts))
-        config["webAuthMaxAttempts"] = str(web_auth_attempts)
 
         payment_templates_raw = config.get("paymentTemplates")
         if isinstance(payment_templates_raw, str):

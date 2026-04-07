@@ -9,7 +9,6 @@ class Config:
         "autoFill": True,
         "openUpdateTab": True,
         "openLastTab": True,
-        "saveWebAuthData": False,
         "testFeature": False,
     }
 
@@ -20,16 +19,12 @@ class Config:
         "termDelivery": "0",
         "markup": "1",
         "requestNumber": "",
-        "webRequestNumber": "",
         "pathToSaveCP": "",
         "pathToSaveExcel": "",
         "pathToDB": "",
         "ExcelIndent": "0",
         "lastTable": "",
         "paymentTemplates": DEFAULT_PAYMENT_TEMPLATES.copy(),
-        "webAuthLogin": "",
-        "webAuthPassword": "",
-        "webAuthMaxAttempts": "25",
     }
 
     types = {
