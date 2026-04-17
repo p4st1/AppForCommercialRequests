@@ -46,11 +46,7 @@ class MetalITClient:
         self._session = session or requests.Session()
         self.session = self._session
         self.url = self.ENDPOINT
-        normalized_cookies = {
-            str(key): str(value)
-            for key, value in dict(cookies).items()
-            if str(key).strip()
-        }
+        raw_cookies = dict(cookies)
         self.session.headers.update(
             {
                 "Content-Type": "application/json",
@@ -58,10 +54,11 @@ class MetalITClient:
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": "https://etp.metal-it.ru",
                 "Referer": "https://etp.metal-it.ru/",
-                "X-XSRF-TOKEN": normalized_cookies.get("XSRF-TOKEN", ""),
+                "X-XSRF-TOKEN": str(raw_cookies.get("XSRF-TOKEN", "")),
             }
         )
-        self.session.cookies.update(normalized_cookies)
+        for key, value in raw_cookies.items():
+            self.session.cookies.set(str(key), str(value))
 
     @staticmethod
     def _build_variables(limit: int, skip: int) -> dict[str, Any]:
