@@ -150,6 +150,19 @@ class ExportMixin:
 
     def _on_export_finished(self, file_path: str) -> None:
         file_path_text = str(file_path or "").strip()
+
+        if file_path_text:
+            open_excel = getattr(self, "open_excel_in_new_tab", None)
+            if callable(open_excel):
+                try:
+                    open_excel(file_path_text)
+                except Exception as exc:
+                    preview_error = str(exc or "Неизвестная ошибка")
+                    Tool.write_log(f"Не удалось открыть Excel во вкладке: {preview_error}")
+                    status_bar = self.statusBar()
+                    if status_bar is not None:
+                        status_bar.showMessage("Файл экспортирован, но предпросмотр Excel не открыт", 5_000)
+
         info_text = (
             f"Файл успешно экспортирован:\n{file_path_text}"
             if file_path_text
