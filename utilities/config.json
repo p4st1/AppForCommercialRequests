@@ -6,7 +6,7 @@
         "termDelivery": "20",
         "markup": "1.25",
         "pathToSaveCP": "C:/Users/irina/OneDrive/Рабочий стол",
-        "pathToSaveExcel" : "",
+        "pathToSaveExcel": "",
         "pathToDB": "",
         "ExcelIndent": "0",
         "lastTable": "",
@@ -21,5 +21,9 @@
         "openUpdateTab": true,
         "openLastTab": true,
         "testFeature": false
-    }
+    },
+    "cookies": {
+    "JSESSIONID": "46052C544D1BE9D019A2EE099B42C01F",
+    "__Host-refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzMDcxMTQ3MzQiLCJleHAiOjE3NzY1MDQ5NjEsImlhdCI6MTc3NjQxODU2MX0.2hSptUF2AO7CHudQgWh9FYpbbnVqQ9t6YMlbQ45i_c4"
+  }
 }

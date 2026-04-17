@@ -68,14 +68,34 @@ class DatabaseTools:
         return default
 
     @staticmethod
+    def _normalize_cookies_dict(raw_value) -> dict[str, str]:
+        if not isinstance(raw_value, dict):
+            return {}
+        normalized: dict[str, str] = {}
+        for key, value in raw_value.items():
+            key_text = str(key).strip()
+            value_text = str(value).strip()
+            if not key_text or not value_text:
+                continue
+            normalized[key_text] = value_text
+        return normalized
+
+    @staticmethod
     def merge_config_with_defaults(raw_data: dict | None) -> dict:
         data = raw_data if isinstance(raw_data, dict) else {}
         raw_config = data.get("config", {})
         raw_settings = data.get("settings", {})
+        raw_root_cookies = data.get("cookies")
 
         config = Config.DEFAULT_CONFIG.copy()
         if isinstance(raw_config, dict):
             config.update(raw_config)
+
+        cookies_from_config = DatabaseTools._normalize_cookies_dict(config.get("cookies"))
+        cookies_from_root = DatabaseTools._normalize_cookies_dict(raw_root_cookies)
+        normalized_cookies = cookies_from_config or cookies_from_root
+        if normalized_cookies:
+            config["cookies"] = normalized_cookies
 
         # Backward compatibility for older key name.
         if "customLine" in config and "customNum" not in raw_config:
@@ -122,7 +142,10 @@ class DatabaseTools:
             for key in settings:
                 settings[key] = DatabaseTools._to_bool(raw_settings.get(key), settings[key])
 
-        return {"config": config, "settings": settings}
+        result = {"config": config, "settings": settings}
+        if normalized_cookies:
+            result["cookies"] = normalized_cookies
+        return result
 
     @staticmethod
     def evalWithVars(line):

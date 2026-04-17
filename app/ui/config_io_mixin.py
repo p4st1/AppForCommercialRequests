@@ -21,9 +21,20 @@ class ConfigIoMixin:
         self.saveConfig()
 
     def saveConfig(self):
+        data = {"config": Config.config, "settings": Config.settings}
+        cookies_raw = Config.config.get("cookies")
+        if isinstance(cookies_raw, dict):
+            cookies = {
+                str(key): str(value)
+                for key, value in cookies_raw.items()
+                if str(key).strip() and str(value).strip()
+            }
+            if cookies:
+                data["cookies"] = cookies
+
         Tool.save_json_atomic(
             Config.cfg_path,
-            {"config": Config.config, "settings": Config.settings},
+            data,
         )
 
     def ensureOutputDirs(self):

@@ -1,45 +1,67 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any
 
 import requests
 
-
-class MetalITClient:
-    ENDPOINT = "https://etp.metal-it.ru/api/graphql"
-    _QUERY = """
-    query tradeSearch($limit: Int!, $skip: Int!, $tradeQueryDto: TradeQueryDtoIn!) {
-      tradeSearch(limit: $limit, skip: $skip, tradeQueryDto: $tradeQueryDto) {
-        items {
-          id
-          title
-          registeredNumber
-          bidSubmissionStartDate
+FULL_GRAPHQL_QUERY = """
+query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
+  trades(tradeQueryDto: $tradeQueryDto, limit: $limit, skip: $skip) {
+    items {
+      id
+      registeredNumber
+      title
+      organizer {
+        title
+      }
+      procurementMethod {
+        title
+      }
+      bidSubmissionEndDate
+      processStatus
+      lots {
+        title
+        biddingData {
           bidSubmissionEndDate
-          currency {
-            title
-          }
         }
       }
     }
-    """
+    total
+  }
+}
+"""
+
+
+class MetalITClient:
+    ENDPOINT = "https://etp.metal-it.ru/graphql/tradeSearch"
 
     def __init__(
         self,
-        cookies: Mapping[str, str],
+        cookies: dict[str, str],
         *,
         timeout: float = 30.0,
         session: requests.Session | None = None,
     ) -> None:
         self._timeout = timeout
         self._session = session or requests.Session()
-        self._session.headers.update(
+        self.session = self._session
+        self.url = self.ENDPOINT
+        normalized_cookies = {
+            str(key): str(value)
+            for key, value in dict(cookies).items()
+            if str(key).strip()
+        }
+        self.session.headers.update(
             {
                 "Content-Type": "application/json",
+                "Accept": "application/json",
                 "X-Requested-With": "XMLHttpRequest",
+                "Origin": "https://etp.metal-it.ru",
+                "Referer": "https://etp.metal-it.ru/",
+                "X-XSRF-TOKEN": normalized_cookies.get("XSRF-TOKEN", ""),
             }
         )
-        self._session.cookies.update(dict(cookies))
+        self.session.cookies.update(normalized_cookies)
 
     @staticmethod
     def _build_variables(limit: int, skip: int) -> dict[str, Any]:
@@ -57,36 +79,24 @@ class MetalITClient:
             },
         }
 
-    def _request_trade_search(self, *, limit: int, skip: int) -> dict[str, Any]:
+    def _request_trade_search(self, *, limit: int, skip: int) -> list[dict[str, Any]]:
         payload = {
             "operationName": "tradeSearch",
             "variables": self._build_variables(limit=limit, skip=skip),
-            "query": self._QUERY,
+            "query": FULL_GRAPHQL_QUERY,
         }
-        response = self._session.post(self.ENDPOINT, json=payload, timeout=self._timeout)
+        response = self.session.post(
+            self.url,
+            json=payload,
+            timeout=self._timeout,
+        )
+        print("STATUS:", response.status_code)
+        print("RESPONSE:", response.text[:500])
         response.raise_for_status()
-        response_payload = response.json()
-        if "data" not in response_payload:
-            raise Exception(f"GraphQL response does not contain 'data': {response_payload}")
-        if response_payload.get("errors"):
-            raise Exception(f"GraphQL returned errors: {response_payload['errors']}")
-        data = response_payload["data"]
-        if not isinstance(data, Mapping):
-            raise Exception(f"Unexpected GraphQL data format: {data}")
-        return dict(data)
-
-    @staticmethod
-    def _extract_items(data: Mapping[str, Any]) -> list[dict[str, Any]]:
-        trade_search = data.get("tradeSearch")
-        if trade_search is None:
-            return []
-        if isinstance(trade_search, list):
-            return [item for item in trade_search if isinstance(item, dict)]
-        if isinstance(trade_search, Mapping):
-            items = trade_search.get("items", [])
-            if isinstance(items, list):
-                return [item for item in items if isinstance(item, dict)]
-        return []
+        data = response.json()
+        if "data" not in data:
+            raise Exception(f"GraphQL response does not contain 'data': {data}")
+        return data["data"]["trades"]["items"]
 
     def get_trades_page(self, limit: int = 20, skip: int = 0) -> list[dict[str, Any]]:
         if limit <= 0:
@@ -94,8 +104,7 @@ class MetalITClient:
         if skip < 0:
             raise ValueError("skip cannot be negative")
 
-        data = self._request_trade_search(limit=limit, skip=skip)
-        items = self._extract_items(data)
+        items = self._request_trade_search(limit=limit, skip=skip)
         print(f"Загружено заявок: {len(items)} (skip={skip}, limit={limit})")
         return items
 
@@ -119,7 +128,7 @@ class MetalITClient:
 
 if __name__ == "__main__":
     cookies = {
-        "JSESSIONID": "PUT_YOUR_VALUE",
+        "JSESSIONID": "46052C544D1BE9D019A2EE099B42C01F",
     }
 
     client = MetalITClient(cookies)
