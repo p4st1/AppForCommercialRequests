@@ -42,6 +42,7 @@ from app.ui.history_flow_mixin import HistoryFlowMixin
 from app.ui.maintenance_actions_mixin import MaintenanceActionsMixin
 from app.ui.ui_feedback_mixin import UiFeedbackMixin
 from app.ui.window_navigation_mixin import WindowNavigationMixin
+from ui_mixins.export_mixin import ExportMixin
 from ui_mixins.platform_mixin import PlatformMixin
 from ui_mixins.upload_mixin import UploadMixin
 from tools import DatabaseTools as Tool
@@ -98,6 +99,7 @@ class mainWindow(
     TableSearchMixin,
     TableFilterMixin,
     HistoryFlowMixin,
+    ExportMixin,
     UploadMixin,
     PlatformMixin,
     QMainWindow,
@@ -243,6 +245,7 @@ class mainWindow(
         self._ensure_history_tab()
         self._setup_history_tab_table()
         self.init_platform_mixin()
+        self.init_export_mixin()
         self.init_upload_mixin()
         self._setup_full_table_input_layout()
         self._full_table_panel_widgets = list(
