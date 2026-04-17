@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -26,16 +27,22 @@ class LoadTradesWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
 
-    def __init__(self, cookies: dict[str, str], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        cookies: dict[str, str],
+        max_items: int = 50,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._cookies = dict(cookies)
+        self.max_items = max_items
 
     def run(self) -> None:
         try:
             if not self._cookies:
                 raise ValueError("Не найдены cookies для авторизации")
             client = MetalITClient(self._cookies)
-            trades = client.get_all_trades()
+            trades = client.get_all_trades(max_items=self.max_items)
             self.finished.emit(trades)
         except Exception as exc:
             self.error.emit(str(exc))
@@ -57,7 +64,11 @@ class PlatformMixin:
         self.btn_load_trades.clicked.connect(self.load_trades_clicked)
 
     def _ensure_platform_tab(self) -> None:
-        if hasattr(self.ui, "tradesTable") and hasattr(self, "btn_load_trades"):
+        if (
+            hasattr(self.ui, "tradesTable")
+            and hasattr(self, "btn_load_trades")
+            and hasattr(self.ui, "input_limit")
+        ):
             return
 
         self.ui.webTab = QWidget(self.ui.tabWidget)
@@ -78,8 +89,14 @@ class PlatformMixin:
         self.btn_load_trades.setObjectName("btn_load_trades")
         self.ui.btn_load_trades = self.btn_load_trades
 
+        self.input_limit = QLineEdit(self.ui.webTab)
+        self.input_limit.setObjectName("input_limit")
+        self.input_limit.setPlaceholderText("Количество заявок (например 50)")
+        self.ui.input_limit = self.input_limit
+
         header_layout.addWidget(title_label)
         header_layout.addStretch(1)
+        header_layout.addWidget(self.input_limit)
         header_layout.addWidget(self.btn_load_trades)
 
         self.ui.tradesTable = QTableWidget(self.ui.webTab)
@@ -187,6 +204,14 @@ class PlatformMixin:
         if self._load_trades_worker is not None and self._load_trades_worker.isRunning():
             return
 
+        max_items = 50
+        try:
+            max_items = int(self.input_limit.text())
+        except (TypeError, ValueError, AttributeError):
+            max_items = 50
+        if max_items <= 0:
+            max_items = 50
+
         try:
             cookies = self.load_cookies()
         except Exception as exc:
@@ -195,7 +220,7 @@ class PlatformMixin:
 
         self._set_trades_loading_state(is_loading=True)
 
-        worker = LoadTradesWorker(cookies=cookies, parent=self)
+        worker = LoadTradesWorker(cookies=cookies, max_items=max_items, parent=self)
         worker.finished.connect(self.on_trades_loaded)
         worker.error.connect(self.on_error)
         self._load_trades_worker = worker

@@ -105,7 +105,7 @@ class MetalITClient:
         print(f"Загружено заявок: {len(items)} (skip={skip}, limit={limit})")
         return items
 
-    def get_all_trades(self, limit: int = 20) -> list[dict[str, Any]]:
+    def get_all_trades(self, limit: int = 20, max_items: int = 100) -> list[dict[str, Any]]:
         if limit <= 0:
             raise ValueError("limit must be greater than 0")
 
@@ -117,6 +117,8 @@ class MetalITClient:
             if not items:
                 break
             all_items.extend(items)
+            if len(all_items) >= max_items:
+                return all_items[:max_items]
             skip += limit
 
         print(f"Загружено заявок всего: {len(all_items)}")
