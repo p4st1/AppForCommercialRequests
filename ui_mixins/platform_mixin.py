@@ -6,6 +6,7 @@ from typing import Any
 from PySide6.QtCore import QSignalBlocker, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -83,11 +84,15 @@ class PlatformMixin:
     )
 
     def init_platform_mixin(self) -> None:
+        self.all_trades: list[dict[str, Any]] = []
+        self.filtered_trades: list[dict[str, Any]] = []
         self._load_trades_worker: LoadTradesWorker | None = None
         self._auth_login_worker: AuthLoginWorker | None = None
         self._ensure_platform_tab()
         self.btn_login.clicked.connect(self.login)
         self.btn_load_trades.clicked.connect(self.load_trades_clicked)
+        self.search_input.textChanged.connect(self.apply_search)
+        self.checkbox_active.stateChanged.connect(self.apply_filters)
 
     def _ensure_platform_tab(self) -> None:
         if (
@@ -97,6 +102,8 @@ class PlatformMixin:
             and hasattr(self, "btn_login")
             and hasattr(self.ui, "input_login")
             and hasattr(self.ui, "input_password")
+            and hasattr(self, "search_input")
+            and hasattr(self, "checkbox_active")
         ):
             return
 
@@ -151,8 +158,19 @@ class PlatformMixin:
         self.input_limit.setPlaceholderText("Количество заявок (например 50)")
         self.ui.input_limit = self.input_limit
 
+        self.search_input = QLineEdit(self.ui.webTab)
+        self.search_input.setObjectName("search_input")
+        self.search_input.setPlaceholderText("Поиск по номеру или названию")
+        self.ui.search_input = self.search_input
+
+        self.checkbox_active = QCheckBox("Только активные", self.ui.webTab)
+        self.checkbox_active.setObjectName("checkbox_active")
+        self.ui.checkbox_active = self.checkbox_active
+
         header_layout.addWidget(title_label)
         header_layout.addStretch(1)
+        header_layout.addWidget(self.checkbox_active)
+        header_layout.addWidget(self.search_input)
         header_layout.addWidget(self.input_limit)
         header_layout.addWidget(self.btn_load_trades)
 
@@ -331,8 +349,10 @@ class PlatformMixin:
         worker.start()
 
     def on_trades_loaded(self, trades: list[dict[str, Any]]) -> None:
-        self.populate_trades_table(trades)
-        self._finish_trades_loading(f"Загружено заявок: {len(trades)}")
+        self.all_trades = trades if isinstance(trades, list) else []
+        self.filtered_trades = list(self.all_trades)
+        self.apply_filters()
+        self._finish_trades_loading(f"Загружено заявок: {len(self.all_trades)}")
 
     def on_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
@@ -390,3 +410,31 @@ class PlatformMixin:
 
         del blocker
         table.resizeRowsToContents()
+
+    def apply_search(self, _: str = "") -> None:
+        self.apply_filters()
+
+    def apply_filters(self, _: int = 0) -> None:
+        trades = list(self.all_trades) if isinstance(self.all_trades, list) else []
+
+        if self.checkbox_active.isChecked():
+            trades = [
+                trade
+                for trade in trades
+                if isinstance(trade, dict) and trade.get("bidSubmissionEndDate") is not None
+            ]
+
+        text = self.search_input.text().lower().strip()
+        if text:
+            trades = [
+                trade
+                for trade in trades
+                if isinstance(trade, dict)
+                and (
+                    text in (trade.get("title", "") or "").lower()
+                    or text in str(trade.get("registeredNumber", "")).lower()
+                )
+            ]
+
+        self.filtered_trades = trades
+        self.populate_trades_table(self.filtered_trades)
