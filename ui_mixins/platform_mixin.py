@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QSignalBlocker, Qt, QThread, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -239,9 +241,14 @@ class PlatformMixin:
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         table.setAlternatingRowColors(True)
-        table.setSortingEnabled(False)
+        table.setSortingEnabled(True)
         table.verticalHeader().setVisible(False)
         table.horizontalHeader().setStretchLastSection(False)
+        try:
+            table.itemDoubleClicked.disconnect(self.on_trade_double_click)
+        except (TypeError, RuntimeError):
+            pass
+        table.itemDoubleClicked.connect(self.on_trade_double_click)
 
         header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -378,7 +385,10 @@ class PlatformMixin:
     def populate_trades_table(self, trades: list[dict[str, Any]]) -> None:
         table = self.ui.tradesTable
         rows = trades if isinstance(trades, list) else []
+        today = datetime.now()
+        sorting_enabled = table.isSortingEnabled()
 
+        table.setSortingEnabled(False)
         blocker = QSignalBlocker(table)
         table.clearContents()
         table.setRowCount(len(rows))
@@ -401,15 +411,63 @@ class PlatformMixin:
                 currency_title,
             )
 
+            end_date = trade.get("bidSubmissionEndDate")
+            if end_date:
+                try:
+                    dt = datetime.fromisoformat(str(end_date).replace("Z", ""))
+                    diff = (dt - today).days
+                    if diff <= 1:
+                        color = QColor(255, 200, 200)
+                    elif diff <= 3:
+                        color = QColor(255, 255, 200)
+                    else:
+                        color = QColor(200, 255, 200)
+                except Exception:
+                    color = QColor(255, 255, 255)
+            else:
+                color = QColor(220, 220, 220)
+
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem("" if value is None else str(value))
                 flags = item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
                 flags &= ~Qt.ItemFlag.ItemIsEditable
                 item.setFlags(flags)
+                if col_idx == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, trade)
                 table.setItem(row_idx, col_idx, item)
 
+            for col_idx in range(table.columnCount()):
+                item = table.item(row_idx, col_idx)
+                if item:
+                    item.setBackground(color)
+
         del blocker
+        table.setSortingEnabled(sorting_enabled)
         table.resizeRowsToContents()
+        table.resizeColumnsToContents()
+
+    def on_trade_double_click(self, item: QTableWidgetItem) -> None:
+        row = item.row()
+        if row < 0:
+            return
+
+        trade: dict[str, Any] | None = None
+        row_item = self.ui.tradesTable.item(row, 0)
+        if row_item is not None:
+            trade_data = row_item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(trade_data, dict):
+                trade = trade_data
+
+        if trade is None and 0 <= row < len(self.filtered_trades):
+            candidate = self.filtered_trades[row]
+            if isinstance(candidate, dict):
+                trade = candidate
+
+        if not isinstance(trade, dict):
+            return
+
+        trade_id = trade.get("id")
+        print("Открываем заявку:", trade_id)
 
     def apply_search(self, _: str = "") -> None:
         self.apply_filters()
