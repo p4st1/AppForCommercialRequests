@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from config import Config
+from services.auth_service import AuthService
 from services.platform_client import MetalITClient
 from tools import DatabaseTools as Tool
 
@@ -48,6 +49,29 @@ class LoadTradesWorker(QThread):
             self.error.emit(str(exc))
 
 
+class AuthLoginWorker(QThread):
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        login: str,
+        password: str,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._login = login
+        self._password = password
+
+    def run(self) -> None:
+        try:
+            service = AuthService(headless=False)
+            cookies = service.login_and_save_session(self._login, self._password)
+            self.finished.emit(cookies)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
 class PlatformMixin:
     TRADE_HEADERS = (
         "id",
@@ -60,7 +84,9 @@ class PlatformMixin:
 
     def init_platform_mixin(self) -> None:
         self._load_trades_worker: LoadTradesWorker | None = None
+        self._auth_login_worker: AuthLoginWorker | None = None
         self._ensure_platform_tab()
+        self.btn_login.clicked.connect(self.login)
         self.btn_load_trades.clicked.connect(self.load_trades_clicked)
 
     def _ensure_platform_tab(self) -> None:
@@ -68,6 +94,9 @@ class PlatformMixin:
             hasattr(self.ui, "tradesTable")
             and hasattr(self, "btn_load_trades")
             and hasattr(self.ui, "input_limit")
+            and hasattr(self, "btn_login")
+            and hasattr(self.ui, "input_login")
+            and hasattr(self.ui, "input_password")
         ):
             return
 
@@ -77,6 +106,34 @@ class PlatformMixin:
         root_layout = QVBoxLayout(self.ui.webTab)
         root_layout.setSpacing(8)
         root_layout.setContentsMargins(8, 8, 8, 8)
+
+        auth_layout = QHBoxLayout()
+        auth_layout.setSpacing(8)
+        auth_layout.setContentsMargins(0, 0, 0, 0)
+
+        auth_label = QLabel("Авторизация", self.ui.webTab)
+        auth_label.setObjectName("platformAuthLabel")
+
+        self.input_login = QLineEdit(self.ui.webTab)
+        self.input_login.setObjectName("input_login")
+        self.input_login.setPlaceholderText("Логин")
+        self.ui.input_login = self.input_login
+
+        self.input_password = QLineEdit(self.ui.webTab)
+        self.input_password.setObjectName("input_password")
+        self.input_password.setPlaceholderText("Пароль")
+        self.input_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ui.input_password = self.input_password
+
+        self.btn_login = QPushButton("Войти", self.ui.webTab)
+        self.btn_login.setObjectName("btn_login")
+        self.ui.btn_login = self.btn_login
+
+        auth_layout.addWidget(auth_label)
+        auth_layout.addWidget(self.input_login)
+        auth_layout.addWidget(self.input_password)
+        auth_layout.addWidget(self.btn_login)
+        auth_layout.addStretch(1)
 
         header_layout = QHBoxLayout()
         header_layout.setSpacing(8)
@@ -102,11 +159,58 @@ class PlatformMixin:
         self.ui.tradesTable = QTableWidget(self.ui.webTab)
         self.ui.tradesTable.setObjectName("tradesTable")
 
+        root_layout.addLayout(auth_layout)
         root_layout.addLayout(header_layout)
         root_layout.addWidget(self.ui.tradesTable)
         self.ui.tabWidget.addTab(self.ui.webTab, "Веб")
 
         self._setup_trades_table()
+
+    def login(self) -> None:
+        if self._auth_login_worker is not None and self._auth_login_worker.isRunning():
+            return
+
+        login = self.input_login.text().strip()
+        password = self.input_password.text()
+        if not login or not password:
+            QMessageBox.warning(self, "Авторизация", "Введите логин и пароль")
+            return
+
+        self._set_login_loading_state(is_loading=True)
+        worker = AuthLoginWorker(login=login, password=password, parent=self)
+        worker.finished.connect(self.on_login_success)
+        worker.error.connect(self.on_login_error)
+        self._auth_login_worker = worker
+        worker.start()
+
+    def on_login_success(self, cookies: dict[str, str]) -> None:
+        cookies_count = len(cookies) if isinstance(cookies, dict) else 0
+        self._finish_login(
+            f"Авторизация успешна. Cookies сохранены ({cookies_count})."
+        )
+
+    def on_login_error(self, message: str) -> None:
+        error_text = str(message or "Неизвестная ошибка")
+        Tool.write_log(f"Ошибка авторизации на площадке: {error_text}")
+        print(f"Ошибка авторизации на площадке: {error_text}")
+        QMessageBox.warning(self, "Ошибка авторизации", error_text)
+        self._finish_login("Ошибка авторизации")
+
+    def _set_login_loading_state(self, *, is_loading: bool) -> None:
+        self.btn_login.setEnabled(not is_loading)
+        self.input_login.setEnabled(not is_loading)
+        self.input_password.setEnabled(not is_loading)
+        self.btn_login.setText("Вход..." if is_loading else "Войти")
+
+    def _finish_login(self, status_message: str) -> None:
+        self._set_login_loading_state(is_loading=False)
+        worker = self._auth_login_worker
+        self._auth_login_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        status_bar = self.statusBar()
+        if status_bar is not None and status_message:
+            status_bar.showMessage(status_message, 4000)
 
     def _setup_trades_table(self) -> None:
         table = self.ui.tradesTable
@@ -165,7 +269,7 @@ class PlatformMixin:
         cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
         if cfg_path:
             candidate_paths.append(Path(cfg_path))
-        candidate_paths.append(Path("config.json"))
+        candidate_paths.extend([Path("config.json"), Path("utilities/config.json")])
 
         seen: set[Path] = set()
         errors: list[str] = []
