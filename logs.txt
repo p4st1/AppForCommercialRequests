@@ -13,3 +13,4 @@
 [2026-03-05 16:57:50] [ERROR] Не удалось загрузить конфигурацию: : IsADirectoryError: [Errno 21] Is a directory: '.'
 [2026-04-18 14:59:27] Ошибка загрузки заявок (pipeline): 401 Unauthorized
 [2026-04-18 14:59:37] Ошибка загрузки заявок (pipeline): 401 Unauthorized
+[2026-04-18 16:16:00] Ошибка загрузки заявок (pipeline): 401 Unauthorized

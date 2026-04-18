@@ -8,6 +8,7 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QHBoxLayout, QMessageBox, QPushButton
 
 from config import Config
+from services.excel_processor import ExcelProcessor
 from services.trade_exporter import TradeExporter
 from tools import DatabaseTools as Tool
 
@@ -52,6 +53,7 @@ class ExportTradeWorker(QThread):
 class ExportMixin:
     def init_export_mixin(self) -> None:
         self._export_trade_worker: ExportTradeWorker | None = None
+        self.excel_processor = ExcelProcessor()
         self._ensure_export_button()
         self.btn_export_trade.clicked.connect(self.export_selected_trade)
 
@@ -176,10 +178,64 @@ class ExportMixin:
         if status_bar is not None and status_message:
             status_bar.showMessage(status_message, 5_000)
 
+    def get_table_rows(self) -> list[dict]:
+        table = getattr(getattr(self, "ui", None), "KpTable", None)
+        if table is None:
+            return []
+
+        rows: list[dict] = []
+        row_count = table.rowCount()
+
+        for row_index in range(row_count):
+            price_item = table.item(row_index, 10) or table.item(row_index, 5)
+            manufacturer_item = table.item(row_index, 1)
+            tech_item = table.item(row_index, 2)
+
+            price_text = price_item.text().strip() if price_item is not None else ""
+            _, raw_price = Tool.parsePrice(price_text)
+            raw_price = str(raw_price or "").replace(" ", "").replace(",", ".").strip()
+            if raw_price:
+                try:
+                    price_value = float(raw_price)
+                except ValueError:
+                    price_value = raw_price
+            else:
+                price_value = ""
+
+            rows.append(
+                {
+                    "price": price_value,
+                    "manufacturer": manufacturer_item.text().strip() if manufacturer_item is not None else "",
+                    "tech_characteristics": tech_item.text().strip() if tech_item is not None else "",
+                }
+            )
+
+        return rows
+
     def _on_export_finished(self, file_path: str) -> None:
         file_path_text = str(file_path or "").strip()
 
         if file_path_text:
+            excel_processor = getattr(self, "excel_processor", None)
+            if excel_processor is None:
+                excel_processor = ExcelProcessor()
+                self.excel_processor = excel_processor
+
+            try:
+                excel_processor.fill_exported_excel(
+                    file_path_text,
+                    self.get_table_rows(),
+                )
+            except Exception as exc:
+                error_text = str(exc or "Ошибка обработки Excel")
+                Tool.write_log(f"Ошибка пост-обработки Excel: {error_text}")
+                QMessageBox.critical(self, "Ошибка", error_text)
+                set_pipeline_error_status = getattr(self, "_set_pipeline_error_status", None)
+                if callable(set_pipeline_error_status):
+                    set_pipeline_error_status()
+                self._finish_export("Ошибка пост-обработки Excel")
+                return
+
             open_excel = getattr(self, "open_excel_in_new_tab", None)
             if callable(open_excel):
                 try:
