@@ -19,21 +19,31 @@ class ExportTradeWorker(QThread):
     def __init__(
         self,
         *,
-        trade_id: int,
+        trade_id: int | None = None,
+        lot_id: int | None = None,
         download_path: str,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
-        self._trade_id = int(trade_id)
+        self._trade_id = int(trade_id) if trade_id is not None else None
+        self._lot_id = int(lot_id) if lot_id is not None else None
+        if self._trade_id is None and self._lot_id is None:
+            raise ValueError("Не указан trade_id или lot_id для экспорта")
         self._download_path = str(download_path)
 
     def run(self) -> None:
         try:
             exporter = TradeExporter()
-            saved_path = exporter.export_trade_data(
-                trade_id=self._trade_id,
-                download_path=self._download_path,
-            )
+            if self._lot_id is not None:
+                saved_path = exporter.export_lot_data(
+                    lot_id=self._lot_id,
+                    download_path=self._download_path,
+                )
+            else:
+                saved_path = exporter.export_trade_data(
+                    trade_id=int(self._trade_id),
+                    download_path=self._download_path,
+                )
             self.finished.emit(saved_path)
         except Exception as exc:
             self.error.emit(str(exc))
@@ -75,20 +85,38 @@ class ExportMixin:
         header_layout.addWidget(self.btn_export_trade)
 
     def export_selected_trade(self) -> None:
-        if self._export_trade_worker is not None and self._export_trade_worker.isRunning():
-            return
-
         try:
             trade_id = self._get_selected_trade_id_for_export()
-            download_path = self._build_export_download_path(trade_id)
+            self._start_export_worker(trade_id=trade_id)
         except Exception as exc:
             self._on_export_error(str(exc))
-            return
 
+    def export_trade(self, lot_id: int) -> None:
+        self._start_export_worker(lot_id=lot_id)
+
+    def _start_export_worker(
+        self,
+        *,
+        trade_id: int | None = None,
+        lot_id: int | None = None,
+    ) -> None:
+        if self._export_trade_worker is not None and self._export_trade_worker.isRunning():
+            raise RuntimeError("Экспорт заявки уже выполняется")
+
+        if trade_id is None and lot_id is None:
+            raise ValueError("Не указан идентификатор для экспорта")
+
+        identifier = trade_id if trade_id is not None else lot_id
+        identifier_value = int(identifier)
+        if identifier_value <= 0:
+            raise ValueError(f"Некорректный идентификатор для экспорта: {identifier}")
+
+        download_path = self._build_export_download_path(identifier_value)
         self._set_export_loading_state(is_loading=True)
 
         worker = ExportTradeWorker(
             trade_id=trade_id,
+            lot_id=lot_id,
             download_path=download_path,
             parent=self,
         )

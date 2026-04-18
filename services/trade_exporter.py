@@ -262,24 +262,38 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
             raise RuntimeError("Найдено несколько кнопок 'Экспорт'. Уточните селектор.")
         raise RuntimeError("Не удалось найти кнопку 'Экспорт' в блоке 'Спецификация'.")
 
-    def export_trade_data(self, trade_id: int, download_path: str) -> str:
+    @staticmethod
+    def _parse_positive_int(raw_value: Any, *, name: str) -> int:
         try:
-            trade_id_int = int(trade_id)
+            parsed = int(raw_value)
         except (TypeError, ValueError) as exc:
-            raise ValueError(f"Некорректный trade_id: {trade_id}") from exc
-        if trade_id_int <= 0:
-            raise ValueError(f"trade_id должен быть положительным числом: {trade_id_int}")
+            raise ValueError(f"Некорректный {name}: {raw_value}") from exc
+        if parsed <= 0:
+            raise ValueError(f"{name} должен быть положительным числом: {parsed}")
+        return parsed
 
+    @staticmethod
+    def _validate_target_path(download_path: str) -> Path:
         target_path = Path(download_path).expanduser()
         if target_path.suffix.lower() not in {".xlsx", ".xls"}:
             raise ValueError("Файл экспорта должен иметь расширение .xlsx или .xls")
         target_path.parent.mkdir(parents=True, exist_ok=True)
+        return target_path
 
+    def _load_cookies_for_export(self) -> dict[str, str]:
         cookies = self._load_cookies_from_config()
         if not cookies:
             raise ValueError("Не найдены cookies для авторизации в config.json")
+        return cookies
 
-        lot_id = self._resolve_lot_id_from_api(trade_id=trade_id_int, cookies=cookies)
+    def _export_with_lot_id(
+        self,
+        *,
+        lot_id: int,
+        target_path: Path,
+        cookies: dict[str, str],
+    ) -> str:
+        lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
 
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=self._headless)
@@ -289,7 +303,7 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
                 page = context.new_page()
 
                 page.goto(
-                    f"https://etp.metal-it.ru/bids/new?lot={lot_id}",
+                    f"https://etp.metal-it.ru/bids/new?lot={lot_id_int}",
                     wait_until="domcontentloaded",
                     timeout=self._timeout_ms,
                 )
@@ -311,5 +325,30 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
 
         return str(target_path.resolve())
 
+    def export_lot_data(self, lot_id: int, download_path: str) -> str:
+        lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
+        target_path = self._validate_target_path(download_path)
+        cookies = self._load_cookies_for_export()
+        return self._export_with_lot_id(
+            lot_id=lot_id_int,
+            target_path=target_path,
+            cookies=cookies,
+        )
+
+    def export_trade_data(self, trade_id: int, download_path: str) -> str:
+        trade_id_int = self._parse_positive_int(trade_id, name="trade_id")
+        target_path = self._validate_target_path(download_path)
+        cookies = self._load_cookies_for_export()
+
+        lot_id = self._resolve_lot_id_from_api(trade_id=trade_id_int, cookies=cookies)
+        return self._export_with_lot_id(
+            lot_id=lot_id,
+            target_path=target_path,
+            cookies=cookies,
+        )
+
     def export_trade(self, trade_id: int, download_path: str) -> str:
         return self.export_trade_data(trade_id=trade_id, download_path=download_path)
+
+    def export_lot(self, lot_id: int, download_path: str) -> str:
+        return self.export_lot_data(lot_id=lot_id, download_path=download_path)

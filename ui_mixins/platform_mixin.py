@@ -428,6 +428,9 @@ class PlatformMixin:
         self._load_trades_worker = worker
         worker.start()
 
+    def load_trades(self) -> None:
+        self.load_trades_clicked()
+
     def on_trades_loaded(self, trades: list[dict[str, Any]]) -> None:
         self.all_trades = trades if isinstance(trades, list) else []
         self.filtered_trades = list(self.all_trades)

@@ -6,6 +6,31 @@ from unittest.mock import patch
 from config import Config
 
 
+pyside6 = sys.modules.get("PySide6")
+if pyside6 is None:
+    pyside6 = ModuleType("PySide6")
+    sys.modules["PySide6"] = pyside6
+
+qtwidgets = sys.modules.get("PySide6.QtWidgets")
+if qtwidgets is None:
+    qtwidgets = ModuleType("PySide6.QtWidgets")
+    sys.modules["PySide6.QtWidgets"] = qtwidgets
+
+if not hasattr(qtwidgets, "QMessageBox"):
+    class _QMessageBox:
+        @staticmethod
+        def warning(*args, **kwargs):
+            return 0
+
+        @staticmethod
+        def critical(*args, **kwargs):
+            return 0
+
+    qtwidgets.QMessageBox = _QMessageBox
+
+pyside6.QtWidgets = qtwidgets
+
+
 class _FakeSignal:
     def __init__(self):
         self.callbacks = []
@@ -65,10 +90,26 @@ class _FakeTableWidget:
         self.row_count_values.append(value)
 
 
+class _FakeTabWidget:
+    def __init__(self, web_tab):
+        self._web_tab = web_tab
+        self.indices = []
+
+    def indexOf(self, tab):
+        if tab is self._web_tab:
+            return 1
+        return -1
+
+    def setCurrentIndex(self, index):
+        self.indices.append(index)
+
+
 class _FakeMainUi:
     def __init__(self):
         self.requestNumberLine = _FakeRequestNumberLine("  42  ")
         self.KpTable = _FakeTableWidget()
+        self.webTab = object()
+        self.tabWidget = _FakeTabWidget(self.webTab)
 
 
 class _FakeMainWindow(DocExportFlowMixin):
@@ -79,6 +120,11 @@ class _FakeMainWindow(DocExportFlowMixin):
         self.mixed_currencies = False
         self.history_updates = 0
         self.close_calls = 0
+        self.load_trades_calls = 0
+        self.export_trade_calls = []
+        self.finish_loading_messages = []
+        self.auth_status_values = []
+        self.all_trades = []
 
     def error(self, title, message):
         self.error_calls.append((title, message))
@@ -94,6 +140,21 @@ class _FakeMainWindow(DocExportFlowMixin):
 
     def closeTable(self, *args, **kwargs):
         self.close_calls += 1
+
+    def _ensure_platform_tab(self):
+        return None
+
+    def load_trades(self):
+        self.load_trades_calls += 1
+
+    def export_trade(self, lot_id):
+        self.export_trade_calls.append(lot_id)
+
+    def _finish_trades_loading(self, status_message):
+        self.finish_loading_messages.append(status_message)
+
+    def _set_auth_status(self, *, is_auth):
+        self.auth_status_values.append(is_auth)
 
 
 def _has_bound_callback(callbacks, owner, method_name):
@@ -177,6 +238,52 @@ class DocExportFlowMixinTests(unittest.TestCase):
         created_window = _FakeCreateDocWindow.instances[0]
         self.assertEqual(created_window.tableData, (2, [["1"], ["2"]]))
         self.assertEqual(window.error_calls, [])
+
+    def test_run_web_pipeline_switches_tab_and_starts_loading(self):
+        window = _FakeMainWindow()
+
+        window.run_web_pipeline("A-100")
+
+        self.assertEqual(window.ui.tabWidget.indices, [1])
+        self.assertEqual(window.load_trades_calls, 1)
+        self.assertEqual(window._web_pipeline_trade_number, "A-100")
+
+    def test_on_trades_loaded_continues_pipeline_and_exports_lot(self):
+        window = _FakeMainWindow()
+        window.run_web_pipeline("A-100")
+        window.all_trades = [
+            {"registeredNumber": "ZZ-1", "lots": [{"id": 10}]},
+            {"registeredNumber": "A-100", "lots": [{"id": 77}]},
+        ]
+
+        window.on_trades_loaded(window.all_trades)
+
+        self.assertEqual(window.export_trade_calls, [77])
+        self.assertEqual(window._web_pipeline_trade_number, "")
+
+    @patch("app.ui.doc_export_flow_mixin.QMessageBox.warning")
+    def test_on_trades_loaded_shows_warning_when_trade_not_found(self, warning):
+        window = _FakeMainWindow()
+        window.run_web_pipeline("A-404")
+        window.all_trades = [{"registeredNumber": "A-100", "lots": [{"id": 77}]}]
+
+        window.on_trades_loaded(window.all_trades)
+
+        warning.assert_called_once()
+        self.assertEqual(window.export_trade_calls, [])
+        self.assertEqual(window._web_pipeline_trade_number, "")
+
+    @patch("app.ui.doc_export_flow_mixin.QMessageBox.critical")
+    def test_on_error_with_pipeline_shows_critical_and_finishes_loading(self, critical):
+        window = _FakeMainWindow()
+        window._web_pipeline_trade_number = "A-500"
+
+        window.on_error("401 Unauthorized")
+
+        critical.assert_called_once()
+        self.assertEqual(window._web_pipeline_trade_number, "")
+        self.assertEqual(window.finish_loading_messages, ["Ошибка загрузки заявок"])
+        self.assertEqual(window.auth_status_values, [False])
 
 
 if __name__ == "__main__":

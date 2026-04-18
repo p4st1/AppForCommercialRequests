@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLineEdit,
     QLabel,
+    QCheckBox,
+    QWidget,
 )
 from app.repositories.offer_repository import OfferRepository
 from app.repositories.customer_repository import CustomerRepository
@@ -67,6 +69,7 @@ class mainWindow(QMainWindow):
         self.setupSuppliersItems()
 
         self._setup_field_placeholders()
+        self._setup_participation_checkbox()
         self.payInd = 0
         self.payTemplates = self._load_payment_templates()
         self.payCustomValue = ""
@@ -134,6 +137,27 @@ class mainWindow(QMainWindow):
         self.ui.producerLine.setPlaceholderText("Например: завод-изготовитель")
         self.ui.deliveryTimeLine.setPlaceholderText("Например: 45 дней")
         self.ui.payLineEdit.setPlaceholderText("Уточните условие оплаты")
+
+    def _setup_participation_checkbox(self):
+        self.checkbox_participate = QCheckBox("Участвовать в приёме заявок", self)
+        self.checkbox_participate.setObjectName("checkbox_participate")
+
+        grid_layout = getattr(self.ui, "gridLayout", None)
+        num_line = getattr(self.ui, "numLine", None)
+        if grid_layout is None or num_line is None:
+            return
+
+        number_container = QWidget(self)
+        number_layout = QHBoxLayout(number_container)
+        number_layout.setContentsMargins(0, 0, 0, 0)
+        number_layout.setSpacing(8)
+        number_layout.addWidget(num_line)
+        number_layout.addWidget(self.checkbox_participate)
+        number_layout.setStretch(0, 1)
+        number_layout.setStretch(1, 0)
+
+        grid_layout.removeWidget(num_line)
+        grid_layout.addWidget(number_container, 3, 3, 1, 1)
 
     def _load_payment_templates(self):
         templates_raw = Config.config.get("paymentTemplates", Config.DEFAULT_PAYMENT_TEMPLATES)
@@ -252,6 +276,19 @@ class mainWindow(QMainWindow):
             summary_columns=self.SUMMARY_COLUMNS,
         )
         self.history_service.save()
+
+        if self.checkbox_participate.isChecked():
+            try:
+                run_web_pipeline = getattr(self.parent(), "run_web_pipeline", None)
+                if callable(run_web_pipeline):
+                    run_web_pipeline(trade_number=self.ui.numLine.text().strip())
+            except Exception as exc:
+                QMessageBox.critical(
+                    self,
+                    "Ошибка",
+                    f"Ошибка на этапе: запуск pipeline\n{exc}",
+                )
+
         self.close()
 
     def _history_summary(self):

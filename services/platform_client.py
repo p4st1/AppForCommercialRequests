@@ -20,6 +20,7 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
       bidSubmissionEndDate
       processStatus
       lots {
+        id
         title
         biddingData {
           bidSubmissionEndDate
