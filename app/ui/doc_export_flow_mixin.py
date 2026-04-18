@@ -3,6 +3,16 @@ from PySide6.QtWidgets import QMessageBox
 from config import Config
 from tools import DatabaseTools as Tool
 
+try:
+    from PySide6.QtCore import QTimer
+except Exception:
+    QTimer = None
+
+try:
+    from PySide6.QtWidgets import QApplication
+except Exception:
+    QApplication = None
+
 
 class DocExportFlowMixin:
     def openCreateDocWindow(self, tableData):
@@ -30,6 +40,41 @@ class DocExportFlowMixin:
         self._web_pipeline_trade_number = ""
         return trade_number
 
+    def set_pipeline_status(self, text: str):
+        label = getattr(self, "label_pipeline_status", None)
+        if label is None and hasattr(self, "ui"):
+            label = getattr(self.ui, "label_pipeline_status", None)
+        if label is not None:
+            label.setText(str(text or ""))
+        if QApplication is not None:
+            QApplication.processEvents()
+
+    def _schedule_pipeline_status_reset(self) -> None:
+        token = int(getattr(self, "_pipeline_status_reset_token", 0)) + 1
+        self._pipeline_status_reset_token = token
+
+        def _reset_status() -> None:
+            if int(getattr(self, "_pipeline_status_reset_token", 0)) != token:
+                return
+            if bool(getattr(self, "_web_pipeline_active", False)):
+                return
+            self.set_pipeline_status("Готово")
+
+        if QTimer is not None:
+            QTimer.singleShot(3000, _reset_status)
+            return
+        _reset_status()
+
+    def _set_pipeline_success_status(self) -> None:
+        self._web_pipeline_active = False
+        self.set_pipeline_status("✅ Готово")
+        self._schedule_pipeline_status_reset()
+
+    def _set_pipeline_error_status(self) -> None:
+        self._web_pipeline_active = False
+        self.set_pipeline_status("❌ Ошибка")
+        self._schedule_pipeline_status_reset()
+
     def run_web_pipeline(self, trade_number: str = "") -> None:
         try:
             raw_trade_number = str(trade_number or "").strip()
@@ -38,6 +83,7 @@ class DocExportFlowMixin:
             if not raw_trade_number:
                 raise ValueError("Номер заявки не указан")
         except Exception as exc:
+            self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -45,7 +91,10 @@ class DocExportFlowMixin:
             )
             return
 
+        self._web_pipeline_active = True
+
         try:
+            self.set_pipeline_status("🌐 Переход на вкладку Веб...")
             ensure_tab = getattr(self, "_ensure_platform_tab", None)
             if callable(ensure_tab):
                 ensure_tab()
@@ -54,6 +103,7 @@ class DocExportFlowMixin:
                 raise RuntimeError("Вкладка 'Веб' не найдена")
             self.ui.tabWidget.setCurrentIndex(index_web)
         except Exception as exc:
+            self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -63,12 +113,14 @@ class DocExportFlowMixin:
 
         self._set_web_pipeline_trade_number(raw_trade_number)
         try:
+            self.set_pipeline_status("📥 Загрузка заявок...")
             load_trades_method = getattr(self, "load_trades", None)
             if not callable(load_trades_method):
                 raise RuntimeError("Метод load_trades не найден")
             load_trades_method()
         except Exception as exc:
             self._pop_web_pipeline_trade_number()
+            self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -91,6 +143,7 @@ class DocExportFlowMixin:
                 None,
             )
         except Exception as exc:
+            self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -99,6 +152,7 @@ class DocExportFlowMixin:
             return
 
         if trade is None:
+            self._set_pipeline_error_status()
             QMessageBox.warning(
                 self,
                 "Ошибка",
@@ -115,6 +169,7 @@ class DocExportFlowMixin:
                 raise ValueError("Некорректный формат данных лота")
             lot_id = first_lot["id"]
         except Exception as exc:
+            self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -123,11 +178,13 @@ class DocExportFlowMixin:
             return
 
         try:
+            self.set_pipeline_status("📤 Экспорт таблицы...")
             export_trade_method = getattr(self, "export_trade", None)
             if not callable(export_trade_method):
                 raise RuntimeError("Метод export_trade не найден")
             export_trade_method(lot_id)
         except Exception as exc:
+            self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -138,6 +195,8 @@ class DocExportFlowMixin:
         parent_handler = getattr(super(), "on_trades_loaded", None)
         if callable(parent_handler):
             parent_handler(trades)
+        if str(getattr(self, "_web_pipeline_trade_number", "") or "").strip():
+            self.set_pipeline_status("🔍 Поиск заявки...")
         self._continue_web_pipeline_after_load()
 
     def on_error(self, message):
@@ -152,6 +211,7 @@ class DocExportFlowMixin:
             finish_loading = getattr(self, "_finish_trades_loading", None)
             if callable(finish_loading):
                 finish_loading("Ошибка загрузки заявок")
+            self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -160,6 +220,20 @@ class DocExportFlowMixin:
             return
 
         parent_handler = getattr(super(), "on_error", None)
+        if callable(parent_handler):
+            parent_handler(message)
+
+    def _on_export_finished(self, file_path: str) -> None:
+        parent_handler = getattr(super(), "_on_export_finished", None)
+        if callable(parent_handler):
+            parent_handler(file_path)
+        if bool(getattr(self, "_web_pipeline_active", False)):
+            self._set_pipeline_success_status()
+
+    def _on_export_error(self, message: str) -> None:
+        if bool(getattr(self, "_web_pipeline_active", False)):
+            self._set_pipeline_error_status()
+        parent_handler = getattr(super(), "_on_export_error", None)
         if callable(parent_handler):
             parent_handler(message)
 

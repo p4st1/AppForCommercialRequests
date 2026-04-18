@@ -252,6 +252,14 @@ class mainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка", "Выберите хотя бы одного заказчика")
             return
 
+        parent_window = self.parent()
+        set_pipeline_status = getattr(parent_window, "set_pipeline_status", None)
+        set_pipeline_success_status = getattr(parent_window, "_set_pipeline_success_status", None)
+        set_pipeline_error_status = getattr(parent_window, "_set_pipeline_error_status", None)
+
+        if callable(set_pipeline_status):
+            set_pipeline_status("🔄 Создание КП...")
+
         offer_id = self.offer_repository.get_next_doc_offer_number()
         export_result = exportTextFile(
             (
@@ -265,6 +273,10 @@ class mainWindow(QMainWindow):
         )
         if not getattr(export_result, "success", False):
             error_text = getattr(export_result, "error_message", "") or "Не удалось создать файл DOCX"
+            if callable(set_pipeline_error_status):
+                set_pipeline_error_status()
+            elif callable(set_pipeline_status):
+                set_pipeline_status("❌ Ошибка")
             QMessageBox.critical(self, "Ошибка", error_text)
             return
 
@@ -282,12 +294,26 @@ class mainWindow(QMainWindow):
                 run_web_pipeline = getattr(self.parent(), "run_web_pipeline", None)
                 if callable(run_web_pipeline):
                     run_web_pipeline(trade_number=self.ui.numLine.text().strip())
+                else:
+                    if callable(set_pipeline_success_status):
+                        set_pipeline_success_status()
+                    elif callable(set_pipeline_status):
+                        set_pipeline_status("✅ Готово")
             except Exception as exc:
+                if callable(set_pipeline_error_status):
+                    set_pipeline_error_status()
+                elif callable(set_pipeline_status):
+                    set_pipeline_status("❌ Ошибка")
                 QMessageBox.critical(
                     self,
                     "Ошибка",
                     f"Ошибка на этапе: запуск pipeline\n{exc}",
                 )
+        else:
+            if callable(set_pipeline_success_status):
+                set_pipeline_success_status()
+            elif callable(set_pipeline_status):
+                set_pipeline_status("✅ Готово")
 
         self.close()
 

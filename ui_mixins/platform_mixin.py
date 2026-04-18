@@ -132,6 +132,7 @@ class PlatformMixin:
             and hasattr(self, "search_input")
             and hasattr(self, "checkbox_active")
             and hasattr(self, "label_auth_status")
+            and hasattr(self, "label_pipeline_status")
         ):
             return
 
@@ -208,11 +209,28 @@ class PlatformMixin:
         header_layout.addWidget(self.input_limit)
         header_layout.addWidget(self.btn_load_trades)
 
+        pipeline_status_layout = QHBoxLayout()
+        pipeline_status_layout.setSpacing(8)
+        pipeline_status_layout.setContentsMargins(0, 0, 0, 0)
+
+        pipeline_status_title = QLabel("Статус pipeline:", self.ui.webTab)
+        pipeline_status_title.setObjectName("pipelineStatusTitle")
+
+        self.label_pipeline_status = QLabel("Готово", self.ui.webTab)
+        self.label_pipeline_status.setObjectName("label_pipeline_status")
+        self.label_pipeline_status.setStyleSheet("color: #344054; font-weight: bold")
+        self.ui.label_pipeline_status = self.label_pipeline_status
+
+        pipeline_status_layout.addWidget(pipeline_status_title)
+        pipeline_status_layout.addWidget(self.label_pipeline_status)
+        pipeline_status_layout.addStretch(1)
+
         self.ui.tradesTable = QTableWidget(self.ui.webTab)
         self.ui.tradesTable.setObjectName("tradesTable")
 
         root_layout.addLayout(auth_layout)
         root_layout.addLayout(header_layout)
+        root_layout.addLayout(pipeline_status_layout)
         root_layout.addWidget(self.ui.tradesTable)
         self.ui.tabWidget.addTab(self.ui.webTab, "Веб")
 
