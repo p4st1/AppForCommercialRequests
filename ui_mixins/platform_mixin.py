@@ -75,6 +75,29 @@ class AuthLoginWorker(QThread):
             self.error.emit(str(exc))
 
 
+class AuthStatusWorker(QThread):
+    finished = Signal(bool)
+
+    def __init__(
+        self,
+        cookies: dict[str, str],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._cookies = dict(cookies)
+
+    def run(self) -> None:
+        try:
+            if not self._cookies:
+                self.finished.emit(False)
+                return
+            client = MetalITClient(self._cookies)
+            is_auth = client.is_authenticated()
+            self.finished.emit(bool(is_auth))
+        except Exception:
+            self.finished.emit(False)
+
+
 class PlatformMixin:
     TRADE_HEADERS = (
         "id",
@@ -90,11 +113,13 @@ class PlatformMixin:
         self.filtered_trades: list[dict[str, Any]] = []
         self._load_trades_worker: LoadTradesWorker | None = None
         self._auth_login_worker: AuthLoginWorker | None = None
+        self._auth_status_worker: AuthStatusWorker | None = None
         self._ensure_platform_tab()
         self.btn_login.clicked.connect(self.login)
         self.btn_load_trades.clicked.connect(self.load_trades_clicked)
         self.search_input.textChanged.connect(self.apply_search)
         self.checkbox_active.stateChanged.connect(self.apply_filters)
+        self.refresh_auth_status_on_startup()
 
     def _ensure_platform_tab(self) -> None:
         if (
@@ -106,6 +131,7 @@ class PlatformMixin:
             and hasattr(self.ui, "input_password")
             and hasattr(self, "search_input")
             and hasattr(self, "checkbox_active")
+            and hasattr(self, "label_auth_status")
         ):
             return
 
@@ -123,6 +149,11 @@ class PlatformMixin:
         auth_label = QLabel("Авторизация", self.ui.webTab)
         auth_label.setObjectName("platformAuthLabel")
 
+        self.label_auth_status = QLabel("Проверка авторизации...", self.ui.webTab)
+        self.label_auth_status.setObjectName("label_auth_status")
+        self.label_auth_status.setStyleSheet("color: #666666")
+        self.ui.label_auth_status = self.label_auth_status
+
         self.input_login = QLineEdit(self.ui.webTab)
         self.input_login.setObjectName("input_login")
         self.input_login.setPlaceholderText("Логин")
@@ -139,6 +170,7 @@ class PlatformMixin:
         self.ui.btn_login = self.btn_login
 
         auth_layout.addWidget(auth_label)
+        auth_layout.addWidget(self.label_auth_status)
         auth_layout.addWidget(self.input_login)
         auth_layout.addWidget(self.input_password)
         auth_layout.addWidget(self.btn_login)
@@ -205,6 +237,7 @@ class PlatformMixin:
 
     def on_login_success(self, cookies: dict[str, str]) -> None:
         cookies_count = len(cookies) if isinstance(cookies, dict) else 0
+        self._set_auth_status(is_auth=True)
         self._finish_login(
             f"Авторизация успешна. Cookies сохранены ({cookies_count})."
         )
@@ -214,6 +247,7 @@ class PlatformMixin:
         Tool.write_log(f"Ошибка авторизации на площадке: {error_text}")
         print(f"Ошибка авторизации на площадке: {error_text}")
         QMessageBox.warning(self, "Ошибка авторизации", error_text)
+        self._set_auth_status(is_auth=False)
         self._finish_login("Ошибка авторизации")
 
     def _set_login_loading_state(self, *, is_loading: bool) -> None:
@@ -231,6 +265,45 @@ class PlatformMixin:
         status_bar = self.statusBar()
         if status_bar is not None and status_message:
             status_bar.showMessage(status_message, 4000)
+
+    def refresh_auth_status_on_startup(self) -> None:
+        if self._auth_status_worker is not None and self._auth_status_worker.isRunning():
+            return
+
+        self._set_auth_status_checking()
+        try:
+            cookies = self.load_cookies()
+        except Exception as exc:
+            Tool.write_log(
+                "Проверка авторизации на старте: cookies не найдены или невалидны: "
+                f"{exc}"
+            )
+            self._set_auth_status(is_auth=False)
+            return
+
+        worker = AuthStatusWorker(cookies=cookies, parent=self)
+        worker.finished.connect(self.on_auth_status_checked)
+        self._auth_status_worker = worker
+        worker.start()
+
+    def on_auth_status_checked(self, is_auth: bool) -> None:
+        worker = self._auth_status_worker
+        self._auth_status_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        self._set_auth_status(is_auth=bool(is_auth))
+
+    def _set_auth_status_checking(self) -> None:
+        self.label_auth_status.setText("Проверка авторизации...")
+        self.label_auth_status.setStyleSheet("color: #666666")
+
+    def _set_auth_status(self, *, is_auth: bool) -> None:
+        if is_auth:
+            self.label_auth_status.setText("Авторизован")
+            self.label_auth_status.setStyleSheet("color: green")
+            return
+        self.label_auth_status.setText("Не авторизован")
+        self.label_auth_status.setStyleSheet("color: red")
 
     def _setup_trades_table(self) -> None:
         table = self.ui.tradesTable
@@ -365,6 +438,8 @@ class PlatformMixin:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка загрузки заявок: {error_text}")
         print(f"Ошибка загрузки заявок: {error_text}")
+        if "401" in error_text:
+            self._set_auth_status(is_auth=False)
         QMessageBox.warning(self, "Ошибка загрузки заявок", error_text)
         self._finish_trades_loading("Ошибка загрузки заявок")
 

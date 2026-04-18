@@ -105,6 +105,15 @@ class MetalITClient:
         print(f"Загружено заявок: {len(items)} (skip={skip}, limit={limit})")
         return items
 
+    def is_authenticated(self) -> bool:
+        try:
+            self.get_trades_page(limit=1, skip=0)
+            return True
+        except Exception as exc:
+            if "401" in str(exc):
+                return False
+            return False
+
     def get_all_trades(self, limit: int = 20, max_items: int = 100) -> list[dict[str, Any]]:
         if limit <= 0:
             raise ValueError("limit must be greater than 0")
