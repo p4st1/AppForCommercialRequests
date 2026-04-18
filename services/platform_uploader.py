@@ -4,24 +4,27 @@ import re
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
+from playwright.sync_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 
 class TradeUploader:
     BASE_URL = "https://etp.metal-it.ru"
     TRADE_URL_TEMPLATE = "https://etp.metal-it.ru/trades/{trade_id}"
+    SUBMIT_BUTTON_TEXT = "Подать предложение"
 
     def __init__(
         self,
         cookies: dict[str, str],
         *,
         headless: bool = False,
+        allow_submit: bool = False,
         timeout_ms: int = 30_000,
     ) -> None:
         self._cookies = self._normalize_cookies(cookies)
         if not self._cookies:
             raise ValueError("Не найдены cookies для авторизации в config.json")
         self._headless = headless
+        self._allow_submit = bool(allow_submit)
         self._timeout_ms = timeout_ms
 
     @staticmethod
@@ -48,6 +51,22 @@ class TradeUploader:
         ]
 
     def upload_file(self, trade_id: int, file_path: str) -> str:
+        return self.submit_trade(trade_id=trade_id, file_path=file_path)
+
+    def submit_trade(
+        self,
+        trade_id: int,
+        file_path: str,
+        *,
+        allow_submit: bool | None = None,
+    ) -> str:
+        submit_allowed = self._allow_submit if allow_submit is None else bool(allow_submit)
+        if not submit_allowed:
+            raise PermissionError(
+                "Отправка КП заблокирована: allow_submit=False. "
+                "Подтвердите действие в интерфейсе перед отправкой."
+            )
+
         try:
             trade_id_int = int(trade_id)
         except (TypeError, ValueError) as exc:
@@ -77,6 +96,7 @@ class TradeUploader:
                 page.wait_for_selector("input[type=file]", timeout=self._timeout_ms)
                 page.set_input_files("input[type=file]", str(resolved_path))
 
+                self._click_upload_button(page)
                 self._click_submit_button(page)
                 self._wait_for_upload_confirmation(page)
             finally:
@@ -84,35 +104,50 @@ class TradeUploader:
 
         return f"Файл '{resolved_path.name}' загружен в заявку {trade_id_int}"
 
+    def _click_with_log(self, locator: Locator, *, button_text: str, timeout_ms: int) -> None:
+        print("CLICK:", button_text)
+        locator.click(timeout=timeout_ms)
+
+    def _click_upload_button(self, page: Page) -> None:
+        button_candidates: tuple[tuple[str, str], ...] = (
+            ("button[aria-label*='Загрузить']", "Загрузить"),
+            ("button[data-testid*='upload']", "Загрузить"),
+            ("button[data-testid*='Upload']", "Загрузить"),
+            ("button:has-text('Загрузить КП')", "Загрузить КП"),
+            ("button:has-text('Загрузить')", "Загрузить"),
+        )
+        ambiguous_selectors: list[str] = []
+        for selector, button_text in button_candidates:
+            locator = page.locator(selector)
+            count = locator.count()
+            if count == 0:
+                continue
+            if count > 1:
+                ambiguous_selectors.append(selector)
+                continue
+            self._click_with_log(locator.first, button_text=button_text, timeout_ms=4_000)
+            return
+
+        if ambiguous_selectors:
+            raise RuntimeError(
+                "Не удалось однозначно выбрать кнопку загрузки файла. "
+                f"Неоднозначные селекторы: {', '.join(ambiguous_selectors)}"
+            )
+
     def _click_submit_button(self, page: Page) -> None:
-        button_names = (
-            "Загрузить",
-            "Отправить",
-            "Загрузить КП",
-            "Отправить КП",
-        )
-        for name in button_names:
-            try:
-                page.get_by_role("button", name=name).first.click(timeout=4_000)
-                return
-            except Exception:
-                continue
-
-        fallback_patterns = (
-            re.compile(r"загруз", re.IGNORECASE),
-            re.compile(r"отправ", re.IGNORECASE),
-        )
-        for pattern in fallback_patterns:
-            try:
-                page.get_by_role("button", name=pattern).first.click(timeout=4_000)
-                return
-            except Exception:
-                continue
-
-        raise RuntimeError(
-            "Не удалось найти кнопку загрузки на странице заявки "
-            "(ожидались кнопки 'Загрузить' или 'Отправить')."
-        )
+        btn = page.locator(f"button:has-text('{self.SUBMIT_BUTTON_TEXT}')")
+        button_count = btn.count()
+        if button_count == 0:
+            raise RuntimeError(
+                "Не найдена финальная кнопка отправки 'Подать предложение'. "
+                "Проверьте верстку страницы."
+            )
+        if button_count > 1:
+            raise RuntimeError(
+                "Найдено несколько кнопок 'Подать предложение'. "
+                "Отправка остановлена из соображений безопасности."
+            )
+        self._click_with_log(btn.first, button_text=self.SUBMIT_BUTTON_TEXT, timeout_ms=4_000)
 
     def _wait_for_upload_confirmation(self, page: Page) -> None:
         try:
@@ -124,6 +159,7 @@ class TradeUploader:
             re.compile(r"успеш", re.IGNORECASE),
             re.compile(r"загруж", re.IGNORECASE),
             re.compile(r"отправ", re.IGNORECASE),
+            re.compile(r"предложени.*подан", re.IGNORECASE),
             re.compile(r"добавлен", re.IGNORECASE),
         )
         for pattern in success_patterns:

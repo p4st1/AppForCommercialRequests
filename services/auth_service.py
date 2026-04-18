@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-import time
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +70,8 @@ def save_config(data: dict) -> None:
 
 class AuthService:
     BASE_URL = "https://etp.metal-it.ru"
+    LOGIN_SUCCESS_SELECTOR = "text=Приём заявок"
+    CAPTCHA_WAIT_TIMEOUT_MS = 120_000
 
     def __init__(self, *, headless: bool = False, timeout_ms: int = 30_000) -> None:
         self._headless = headless
@@ -108,7 +108,7 @@ class AuthService:
                 page.get_by_role("button", name="ДАЛЕЕ").click(timeout=self._timeout_ms)
 
                 print("Введите капчу вручную в браузере...")
-                self._wait_for_login_success(page, context)
+                self._wait_for_login_success(page)
 
                 cookies = self._extract_session_cookies(context.cookies())
                 if not cookies:
@@ -119,52 +119,16 @@ class AuthService:
             finally:
                 browser.close()
 
-    def _wait_for_login_success(self, page, context) -> None:
-        success_selector_candidates = (
-            "a[href*='logout']",
-            "button:has-text('Выйти')",
-            "a:has-text('Выйти')",
-            "button:has-text('Выход')",
-            "a:has-text('Выход')",
-            "button:has-text('Профиль')",
-            "a:has-text('Профиль')",
-        )
-        success_text_candidates = (
-            re.compile(r"профил", re.IGNORECASE),
-            re.compile(r"выход", re.IGNORECASE),
-            re.compile(r"выйти", re.IGNORECASE),
-        )
-
-        deadline = time.monotonic() + 180
-        while time.monotonic() < deadline:
-            for selector in success_selector_candidates:
-                try:
-                    page.wait_for_selector(selector, state="visible", timeout=1_000)
-                    return
-                except PlaywrightTimeoutError:
-                    continue
-
-            for pattern in success_text_candidates:
-                try:
-                    page.get_by_text(pattern).first.wait_for(state="visible", timeout=1_000)
-                    return
-                except PlaywrightTimeoutError:
-                    continue
-
-            try:
-                page.wait_for_load_state("networkidle", timeout=2_000)
-            except PlaywrightTimeoutError:
-                pass
-
-            cookies = self._extract_session_cookies(context.cookies())
-            if "JSESSIONID" in cookies:
-                return
-
-            page.wait_for_timeout(500)
-
-        raise RuntimeError(
-            "Не удалось подтвердить вход. Завершите капчу/2FA в браузере и повторите попытку."
-        )
+    def _wait_for_login_success(self, page) -> None:
+        try:
+            page.wait_for_selector(
+                self.LOGIN_SUCCESS_SELECTOR,
+                timeout=self.CAPTCHA_WAIT_TIMEOUT_MS,
+            )
+        except PlaywrightTimeoutError as exc:
+            raise Exception(
+                "Не удалось определить успешный вход (возможно капча не решена)"
+            ) from exc
 
     @staticmethod
     def _extract_session_cookies(raw_cookies: list[dict[str, Any]]) -> dict[str, str]:
@@ -175,9 +139,4 @@ class AuthService:
             if not name or not value:
                 continue
             collected[name] = value
-
-        session_keys = ("JSESSIONID", "__Host-refreshToken")
-        session_cookies = {key: collected[key] for key in session_keys if key in collected}
-        if session_cookies:
-            return session_cookies
         return collected

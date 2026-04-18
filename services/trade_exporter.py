@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 import requests
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Locator, Page, sync_playwright
 
 from config import Config
 from tools import DatabaseTools as Tool
@@ -226,7 +227,42 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
 
         raise ValueError(f"Заявка {trade_id} не найдена в API или недоступна для подачи")
 
-    def export_trade(self, trade_id: int, download_path: str) -> str:
+    @staticmethod
+    def _click_with_log(locator: Locator, *, button_text: str, timeout_ms: int) -> None:
+        print("CLICK:", button_text)
+        locator.click(timeout=timeout_ms)
+
+    def _resolve_export_button(self, page: Page) -> Locator:
+        specification_block = page.locator("section, article, div").filter(
+            has_text=re.compile(r"Спецификац", re.IGNORECASE)
+        )
+        search_roots: list[Page | Locator] = [page]
+        if specification_block.count() > 0:
+            search_roots.insert(0, specification_block.first)
+
+        selectors: tuple[str, ...] = (
+            "button[aria-label*='Экспорт']",
+            "button[data-testid*='export']",
+            "button[data-testid*='Export']",
+            "button[data-testid*='Экспорт']",
+            "button:has-text('Экспорт')",
+        )
+        for root in search_roots:
+            for selector in selectors:
+                button = root.locator(selector)
+                button_count = button.count()
+                if button_count == 1:
+                    return button.first
+
+        fallback = page.get_by_role("button", name="Экспорт")
+        fallback_count = fallback.count()
+        if fallback_count == 1:
+            return fallback.first
+        if fallback_count > 1:
+            raise RuntimeError("Найдено несколько кнопок 'Экспорт'. Уточните селектор.")
+        raise RuntimeError("Не удалось найти кнопку 'Экспорт' в блоке 'Спецификация'.")
+
+    def export_trade_data(self, trade_id: int, download_path: str) -> str:
         try:
             trade_id_int = int(trade_id)
         except (TypeError, ValueError) as exc:
@@ -259,9 +295,14 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
                 )
                 page.wait_for_load_state("domcontentloaded", timeout=self._timeout_ms)
                 page.wait_for_selector("text=Экспорт", timeout=30_000)
+                export_button = self._resolve_export_button(page)
 
                 with page.expect_download(timeout=self._timeout_ms) as download_info:
-                    page.get_by_role("button", name="Экспорт").click(timeout=self._timeout_ms)
+                    self._click_with_log(
+                        export_button,
+                        button_text="Экспорт",
+                        timeout_ms=self._timeout_ms,
+                    )
 
                 download = download_info.value
                 download.save_as(str(target_path))
@@ -269,3 +310,6 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
                 browser.close()
 
         return str(target_path.resolve())
+
+    def export_trade(self, trade_id: int, download_path: str) -> str:
+        return self.export_trade_data(trade_id=trade_id, download_path=download_path)

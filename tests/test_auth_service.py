@@ -63,7 +63,7 @@ class AuthServiceTests(unittest.TestCase):
                 },
             )
 
-    def test_extract_session_cookies_prefers_required_keys(self):
+    def test_extract_session_cookies_returns_all_available_values(self):
         extracted = AuthService._extract_session_cookies(
             [
                 {"name": "JSESSIONID", "value": "session"},
@@ -77,6 +77,7 @@ class AuthServiceTests(unittest.TestCase):
             {
                 "JSESSIONID": "session",
                 "__Host-refreshToken": "refresh",
+                "XSRF-TOKEN": "xsrf",
             },
         )
 
@@ -89,6 +90,39 @@ class AuthServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(extracted, {"XSRF-TOKEN": "xsrf", "LOCALE": "ru"})
+
+    def test_wait_for_login_success_waits_for_bid_submission_text(self):
+        service = AuthService()
+
+        class _Page:
+            def __init__(self):
+                self.calls = []
+
+            def wait_for_selector(self, selector, timeout=None):
+                self.calls.append((selector, timeout))
+                return None
+
+        page = _Page()
+        service._wait_for_login_success(page)
+
+        self.assertEqual(
+            page.calls,
+            [(service.LOGIN_SUCCESS_SELECTOR, service.CAPTCHA_WAIT_TIMEOUT_MS)],
+        )
+
+    def test_wait_for_login_success_raises_clear_error_on_timeout(self):
+        service = AuthService()
+
+        class _Page:
+            @staticmethod
+            def wait_for_selector(_selector, timeout=None):
+                raise TimeoutError(timeout)
+
+        with self.assertRaisesRegex(
+            Exception,
+            "Не удалось определить успешный вход \\(возможно капча не решена\\)",
+        ):
+            service._wait_for_login_success(_Page())
 
 
 if __name__ == "__main__":

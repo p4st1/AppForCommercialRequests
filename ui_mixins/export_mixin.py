@@ -30,7 +30,7 @@ class ExportTradeWorker(QThread):
     def run(self) -> None:
         try:
             exporter = TradeExporter()
-            saved_path = exporter.export_trade(
+            saved_path = exporter.export_trade_data(
                 trade_id=self._trade_id,
                 download_path=self._download_path,
             )

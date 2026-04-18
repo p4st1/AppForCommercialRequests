@@ -21,17 +21,23 @@ class UploadTradeWorker(QThread):
         trade_id: int,
         file_path: str,
         cookies: dict[str, str],
+        allow_submit: bool = False,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
         self._trade_id = int(trade_id)
         self._file_path = str(file_path)
         self._cookies = dict(cookies)
+        self._allow_submit = bool(allow_submit)
 
     def run(self) -> None:
         try:
-            uploader = TradeUploader(self._cookies, headless=False)
-            result_message = uploader.upload_file(self._trade_id, self._file_path)
+            uploader = TradeUploader(
+                self._cookies,
+                headless=False,
+                allow_submit=self._allow_submit,
+            )
+            result_message = uploader.submit_trade(self._trade_id, self._file_path)
             self.finished.emit(result_message)
         except Exception as exc:
             self.error.emit(str(exc))
@@ -40,6 +46,7 @@ class UploadTradeWorker(QThread):
 class UploadMixin:
     def init_upload_mixin(self) -> None:
         self._upload_trade_worker: UploadTradeWorker | None = None
+        self._allow_submit: bool = False
         self._ensure_upload_button()
         self.btn_upload_kp.clicked.connect(self.upload_selected_trade)
 
@@ -76,6 +83,16 @@ class UploadMixin:
         if self._upload_trade_worker is not None and self._upload_trade_worker.isRunning():
             return
 
+        self._allow_submit = False
+        allow_submit = False
+        if self._confirm_submit_trade():
+            allow_submit = True
+        if not allow_submit:
+            status_bar = self.statusBar()
+            if status_bar is not None:
+                status_bar.showMessage("Отправка КП отменена пользователем", 5_000)
+            return
+
         try:
             trade_id = self._get_selected_trade_id()
             excel_path = self._resolve_excel_path_from_project()
@@ -84,18 +101,30 @@ class UploadMixin:
             self._on_upload_error(str(exc))
             return
 
+        self._allow_submit = allow_submit
         self._set_upload_loading_state(is_loading=True)
 
         worker = UploadTradeWorker(
             trade_id=trade_id,
             file_path=str(excel_path),
             cookies=cookies,
+            allow_submit=self._allow_submit,
             parent=self,
         )
         worker.finished.connect(self._on_upload_finished)
         worker.error.connect(self._on_upload_error)
         self._upload_trade_worker = worker
         worker.start()
+
+    def _confirm_submit_trade(self) -> bool:
+        confirm = QMessageBox.question(
+            self,
+            "Подтверждение отправки",
+            "Вы действительно хотите ОТПРАВИТЬ КП?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return confirm == QMessageBox.StandardButton.Yes
 
     def _get_selected_trade_id(self) -> int:
         table = getattr(self.ui, "tradesTable", None)
@@ -163,6 +192,7 @@ class UploadMixin:
         self.btn_upload_kp.setText("Загрузка..." if is_loading else "Загрузить КП")
 
     def _finish_upload(self, status_message: str) -> None:
+        self._allow_submit = False
         self._set_upload_loading_state(is_loading=False)
         worker = self._upload_trade_worker
         self._upload_trade_worker = None
@@ -183,4 +213,3 @@ class UploadMixin:
         Tool.write_log(f"Ошибка загрузки КП: {error_text}")
         QMessageBox.warning(self, "Ошибка загрузки КП", error_text)
         self._finish_upload("Ошибка загрузки КП")
-
