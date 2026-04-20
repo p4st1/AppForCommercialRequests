@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import requests
-from playwright.sync_api import Locator, Page, sync_playwright
+from playwright.sync_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 from config import Config
 from tools import DatabaseTools as Tool
@@ -70,6 +72,230 @@ def open_bid(page: Page, bid_id: int) -> str:
     page.goto(url, timeout=60_000)
     page.wait_for_load_state("networkidle", timeout=60_000)
     return url
+
+
+def _save_export_debug(page: Page) -> None:
+    page.screenshot(path="export_debug.png")
+    Path("export_debug.html").write_text(page.content(), encoding="utf-8")
+
+
+def _is_export_like_url(url: str) -> bool:
+    lower_url = str(url or "").lower()
+    return any(token in lower_url for token in ("/export", "/report", "/file", ".xlsx", "xlsx"))
+
+
+def _pick_export_url(
+    request_urls: list[str],
+    response_records: list[dict[str, Any]],
+) -> str | None:
+    for record in reversed(response_records):
+        url = str(record.get("url", "") or "")
+        status = int(record.get("status", 0) or 0)
+        headers = record.get("headers", {})
+        content_type = str(headers.get("content-type", "")).lower() if isinstance(headers, dict) else ""
+        content_disposition = (
+            str(headers.get("content-disposition", "")).lower() if isinstance(headers, dict) else ""
+        )
+        if status >= 400:
+            continue
+        if (
+            "attachment" in content_disposition
+            or "spreadsheet" in content_type
+            or "excel" in content_type
+            or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in content_type
+            or _is_export_like_url(url)
+        ):
+            return url
+
+    for url in reversed(request_urls):
+        if _is_export_like_url(url):
+            return url
+    return None
+
+
+def _filename_from_response_headers(headers: dict[str, Any], bid_id: int) -> str:
+    content_disposition = str(headers.get("content-disposition", "") or "")
+    matches = re.findall(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', content_disposition, flags=re.IGNORECASE)
+    if matches:
+        name = str(matches[-1]).strip()
+        if name:
+            return name
+    return f"retrade_{bid_id}.xlsx"
+
+
+def _download_export_from_captured_url(
+    page: Page,
+    *,
+    file_url: str,
+    download_dir: str,
+    bid_id: int,
+) -> str:
+    absolute_url = urljoin(page.url, file_url)
+    session = requests.Session()
+    try:
+        for cookie in page.context.cookies():
+            name = str(cookie.get("name", "") or "").strip()
+            value = str(cookie.get("value", "") or "").strip()
+            if not name or not value:
+                continue
+            domain = str(cookie.get("domain", "") or "").strip() or "etp.metal-it.ru"
+            path = str(cookie.get("path", "") or "").strip() or "/"
+            session.cookies.set(name, value, domain=domain, path=path)
+
+        session.headers.update(
+            {
+                "Accept": "*/*",
+                "Referer": page.url,
+                "Origin": "https://etp.metal-it.ru",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+            }
+        )
+
+        response = session.get(
+            absolute_url,
+            timeout=60,
+            stream=True,
+            allow_redirects=True,
+        )
+        response.raise_for_status()
+
+        filename = _filename_from_response_headers(dict(response.headers), bid_id)
+        parsed_url_path = Path(urlparse(str(response.url)).path)
+        if filename == f"retrade_{bid_id}.xlsx" and parsed_url_path.name:
+            filename = parsed_url_path.name
+
+        if not filename.lower().endswith((".xlsx", ".xls")):
+            filename = f"{filename}.xlsx"
+
+        save_dir = Path(download_dir).expanduser()
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = (save_dir / filename).resolve()
+
+        with save_path.open("wb") as output_file:
+            for chunk in response.iter_content(chunk_size=65_536):
+                if chunk:
+                    output_file.write(chunk)
+
+        if not save_path.exists() or save_path.stat().st_size <= 0:
+            raise RuntimeError("Файл не скачан или пустой")
+
+        print("[DEBUG] файл:", filename)
+        print("[SUCCESS] файл скачан:", str(save_path))
+        return str(save_path)
+    finally:
+        session.close()
+
+
+def export_retrading_table(page: Page, bid_id: int, download_dir: str) -> str:
+    bid_id_int = int(bid_id)
+    if bid_id_int <= 0:
+        raise ValueError(f"Некорректный bid_id: {bid_id_int}")
+
+    download_path = Path(download_dir).expanduser()
+    download_path.mkdir(parents=True, exist_ok=True)
+
+    url = f"https://etp.metal-it.ru/bids/{bid_id_int}/retrading"
+    print("[DEBUG] open:", url)
+
+    request_urls: list[str] = []
+    response_records: list[dict[str, Any]] = []
+
+    def _on_request(request: Any) -> None:
+        request_url = str(getattr(request, "url", "") or "")
+        request_urls.append(request_url)
+        print("[REQUEST]", request_url)
+
+    def _on_response(response: Any) -> None:
+        response_url = str(getattr(response, "url", "") or "")
+        print("[RESPONSE]", response_url)
+        headers: dict[str, Any] = {}
+        try:
+            headers = dict(response.headers)
+        except Exception:
+            headers = {}
+        response_records.append(
+            {
+                "url": response_url,
+                "status": int(getattr(response, "status", 0) or 0),
+                "headers": headers,
+            }
+        )
+
+    page.on("request", _on_request)
+    page.on("response", _on_response)
+    try:
+        page.goto(url, timeout=60_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
+        print("[DEBUG] page url:", page.url)
+        _save_export_debug(page)
+        try:
+            page.wait_for_selector("text=Экспорт", timeout=60_000)
+        except Exception as exc:
+            print("[ERROR] кнопка Экспорт не найдена")
+            Path("debug_export.html").write_text(page.content(), encoding="utf-8")
+            raise RuntimeError("Кнопка Экспорт не найдена") from exc
+
+        print("[DEBUG] ищем кнопку Экспорт")
+        button = page.get_by_text("Экспорт", exact=False).first
+        print("[DEBUG] button found:", button)
+        if button.count() == 0:
+            raise RuntimeError("Не удалось найти кнопку Экспорт")
+
+        element_handle = button.element_handle(timeout=10_000)
+        if element_handle is None:
+            raise RuntimeError("Не удалось получить элемент кнопки Экспорт")
+
+        print("[DEBUG] нажимаем Экспорт")
+        page.evaluate("(el) => el.click()", element_handle)
+        page.wait_for_timeout(5000)
+
+        captured_export_url = _pick_export_url(request_urls, response_records)
+        if captured_export_url:
+            print("[DEBUG] captured export url:", captured_export_url)
+            return _download_export_from_captured_url(
+                page,
+                file_url=captured_export_url,
+                download_dir=str(download_path),
+                bid_id=bid_id_int,
+            )
+
+        with page.expect_download(timeout=15_000) as download_info:
+            element_handle_retry = button.element_handle(timeout=10_000)
+            if element_handle_retry is None:
+                raise RuntimeError("Не удалось получить элемент кнопки Экспорт для повторного клика")
+            page.evaluate("(el) => el.click()", element_handle_retry)
+
+        download = download_info.value
+        filename = str(download.suggested_filename or f"retrade_{bid_id_int}.xlsx")
+        print("[DEBUG] файл:", filename)
+
+        path = os.path.join(str(download_path), filename)
+        download.save_as(path)
+        print("[SUCCESS] файл скачан:", path)
+        return str(Path(path).resolve())
+    except PlaywrightTimeoutError:
+        _save_export_debug(page)
+        page.screenshot(path="export_error.png")
+        Path("export_error.html").write_text(page.content(), encoding="utf-8")
+        raise Exception("Экспорт не сработал — см. export_debug.html и логи REQUEST")
+    except Exception:
+        _save_export_debug(page)
+        page.screenshot(path="export_error.png")
+        Path("export_error.html").write_text(page.content(), encoding="utf-8")
+        raise Exception("Экспорт не сработал — см. export_debug.html и логи REQUEST")
+    finally:
+        try:
+            page.remove_listener("request", _on_request)
+        except Exception:
+            pass
+        try:
+            page.remove_listener("response", _on_response)
+        except Exception:
+            pass
 
 
 def _unwrap_trade_json(raw_payload: Any) -> dict[str, Any]:
@@ -1278,6 +1504,12 @@ query tradeWithCurrentStage($id: Int) {
         trade_id: int | None = None,
         bid_id: int | None = None,
     ) -> str:
+        if bid_id is not None:
+            return self.export_retrade_bid_data(
+                bid_id=bid_id,
+                download_path=download_path,
+            )
+
         lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
         if trade_id is None:
             raise Exception("Не указан trade_id для открытия страницы переторжки")
@@ -1290,6 +1522,32 @@ query tradeWithCurrentStage($id: Int) {
             target_path=target_path,
             cookies=cookies,
         )
+
+    def export_retrade_bid_data(
+        self,
+        *,
+        bid_id: int,
+        download_path: str,
+    ) -> str:
+        bid_id_int = self._parse_positive_int(bid_id, name="bid_id")
+        target_path = self._validate_target_path(download_path)
+        cookies = self._load_cookies_for_export()
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=self._headless)
+            try:
+                context = browser.new_context(accept_downloads=True)
+                context.add_cookies(self._build_playwright_cookies(cookies))
+                page = context.new_page()
+                saved_path = export_retrading_table(
+                    page,
+                    bid_id=bid_id_int,
+                    download_dir="./downloads",
+                )
+            finally:
+                browser.close()
+
+        return saved_path
 
     def export_trade(self, trade_id: int, download_path: str) -> str:
         return self.export_trade_data(trade_id=trade_id, download_path=download_path)

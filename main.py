@@ -1,3 +1,54 @@
+import sys
+
+if __name__ == "__main__" and "--storage-state" in sys.argv:
+    import argparse
+
+    from exporter import export_all
+
+    parser = argparse.ArgumentParser(
+        description="Экспорт Excel по bid_id через перехват сети и replay запроса.",
+    )
+    parser.add_argument(
+        "bid_ids",
+        nargs="+",
+        type=int,
+        help="Список bid_id для экспорта (через пробел).",
+    )
+    parser.add_argument(
+        "--storage-state",
+        dest="storage_state_path",
+        required=True,
+        help="Путь до storage_state.json с авторизацией Playwright.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        dest="exports_dir",
+        default="exports",
+        help="Каталог для сохранения xlsx (по умолчанию: ./exports).",
+    )
+    parser.add_argument(
+        "--headed",
+        action="store_true",
+        help="Запуск браузера в headed-режиме (по умолчанию headless).",
+    )
+    bootstrap_args = parser.parse_args()
+
+    bootstrap_results = export_all(
+        bid_ids=bootstrap_args.bid_ids,
+        storage_state_path=bootstrap_args.storage_state_path,
+        exports_dir=bootstrap_args.exports_dir,
+        headless=not bootstrap_args.headed,
+    )
+
+    if not bootstrap_results:
+        print("[ERROR] Не удалось скачать ни одного файла")
+        raise SystemExit(1)
+
+    print(f"[DONE] успешно скачано: {len(bootstrap_results)}")
+    for bootstrap_bid_id, bootstrap_file_path in bootstrap_results.items():
+        print(f"[DONE] bid_id={bootstrap_bid_id} -> {bootstrap_file_path}")
+    raise SystemExit(0)
+
 from PySide6.QtWidgets import (
     QMainWindow,
     QTableWidget,
