@@ -6,7 +6,7 @@ if __name__ == "__main__" and "--storage-state" in sys.argv:
     from exporter import export_all
 
     parser = argparse.ArgumentParser(
-        description="Экспорт Excel по bid_id через перехват сети и replay запроса.",
+        description="Экспорт Excel по bid_id через страницу переторжки и Playwright download.",
     )
     parser.add_argument(
         "bid_ids",

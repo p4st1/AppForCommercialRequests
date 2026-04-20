@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from playwright.sync_api import BrowserContext, Download, Locator, Page, sync_playwright
@@ -11,74 +12,149 @@ def _save_debug_artifacts(page: Page, *, prefix: str = "export_debug") -> None:
     page.screenshot(path=f"{prefix}.png", full_page=True)
 
 
-def _log_buttons(page: Page) -> None:
-    print("Все кнопки на странице:")
+def _safe_page_title(page: Page) -> str:
+    try:
+        return str(page.title() or "")
+    except Exception:
+        return ""
+
+
+def _print_first_button_texts(page: Page, *, limit: int = 20) -> None:
+    print(f"BUTTON TEXTS (first {limit}):")
     buttons = page.locator("button")
-    count = buttons.count()
-    for index in range(count):
+    total = buttons.count()
+    for index in range(min(total, limit)):
         try:
             text = (buttons.nth(index).inner_text() or "").strip()
-            if text:
-                print("-", text)
         except Exception:
-            pass
+            text = ""
+        print(f"- [{index}] {text}")
 
 
-def _resolve_export_button(page: Page) -> tuple[Locator, int]:
-    candidate = page.locator("button:has-text('Экспорт'), a:has-text('Экспорт')")
-    count = candidate.count()
-    if count == 0:
-        fallback = page.locator("text=Экспорт")
-        count = fallback.count()
-        return fallback.first, count
-    return candidate.first, count
+def _emit_failure_diagnostics(page: Page, *, response_urls: list[str]) -> None:
+    print("CURRENT URL:", page.url)
+    print("PAGE TITLE:", _safe_page_title(page))
+    _print_first_button_texts(page, limit=20)
+    print("RESPONSE URLS:")
+    for response_url in response_urls:
+        print("-", response_url)
+    _save_debug_artifacts(page, prefix="export_debug")
 
 
-def _download_with_force_click(page: Page, export_button: Locator) -> Download:
-    with page.expect_download(timeout=60_000) as download_info:
-        export_button.click(force=True)
-    return download_info.value
-
-
-def _download_with_js_click(page: Page, export_button: Locator) -> Download:
-    handle = export_button.element_handle(timeout=10_000)
-    if handle is None:
-        raise RuntimeError("Не удалось получить element_handle для кнопки Экспорт")
-    with page.expect_download(timeout=60_000) as download_info:
-        page.evaluate("(el) => el.click()", handle)
-    return download_info.value
-
-
-def _download_with_hard_fallback(page: Page) -> Download:
-    with page.expect_download(timeout=60_000) as download_info:
-        page.evaluate(
-            """
-            () => {
-                const btn = Array.from(document.querySelectorAll('button, a'))
-                    .find(el => (el.innerText || '').includes('Экспорт'));
-                if (btn) {
-                    btn.click();
-                }
-            }
-            """
-        )
-    return download_info.value
-
-
-def export_retrading_table(page: Page, context: BrowserContext, bid_id: int, save_path: str) -> str:
-    del context
-
+def resolve_retrading_page(
+    context: BrowserContext,
+    bid_id: int,
+    preferred_page: Page | None = None,
+) -> Page:
     bid_id_int = int(bid_id)
     if bid_id_int <= 0:
         raise ValueError(f"Некорректный bid_id: {bid_id_int}")
 
-    url = f"https://etp.metal-it.ru/bids/{bid_id_int}/retrading"
-    print("[DEBUG] открытие страницы:", url)
+    fragment = f"/bids/{bid_id_int}/retrading"
+    target_url = f"https://etp.metal-it.ru{fragment}"
 
+    if preferred_page is not None:
+        try:
+            if fragment in str(preferred_page.url or ""):
+                return preferred_page
+        except Exception:
+            pass
+
+    for candidate in context.pages:
+        try:
+            if fragment in str(candidate.url or ""):
+                return candidate
+        except Exception:
+            continue
+
+    page = context.new_page()
+    page.goto(target_url, timeout=60_000)
+    page.wait_for_load_state("networkidle", timeout=60_000)
+    return page
+
+
+def _validate_retrading_page(page: Page, *, bid_id: int) -> None:
+    bid_id_int = int(bid_id)
+    fragment = f"/bids/{bid_id_int}/retrading"
+    if fragment not in str(page.url or ""):
+        _save_debug_artifacts(page, prefix="export_debug")
+        raise RuntimeError("Экспорт выполняется не на странице переторжки")
+
+    markers = (
+        re.compile(r"Переторжка\s+по\s+лоту", re.IGNORECASE),
+        re.compile(r"Предложение\s+участника", re.IGNORECASE),
+        re.compile(r"ЗАРЕГИСТРИРОВАТЬ\s+ПРЕДЛОЖЕНИЕ", re.IGNORECASE),
+    )
+    has_marker = False
+    for marker in markers:
+        if page.get_by_text(marker).count() > 0:
+            has_marker = True
+            break
+
+    if not has_marker:
+        _save_debug_artifacts(page, prefix="export_debug")
+        raise RuntimeError("Открыта не страница переторжки")
+
+
+def _first_visible_variant(variant: Locator, *, max_items: int = 50) -> Locator | None:
+    count = variant.count()
+    for index in range(min(count, max_items)):
+        candidate = variant.nth(index)
+        try:
+            if candidate.is_visible():
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
+def _resolve_export_button(page: Page) -> Locator | None:
+    variants = [
+        page.get_by_role("button", name=re.compile("экспорт", re.IGNORECASE)),
+        page.locator("button:has-text('Экспорт')"),
+        page.locator("a:has-text('Экспорт')"),
+        page.locator("[aria-label*='Экспорт' i]"),
+        page.locator("[title*='Экспорт' i]"),
+        page.locator("mat-icon, svg").locator(".."),
+    ]
+
+    for variant in variants:
+        candidate = _first_visible_variant(variant)
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def _download_with_click(page: Page, locator: Locator) -> Download:
+    try:
+        with page.expect_download(timeout=30_000) as download_info:
+            locator.click(force=True)
+        return download_info.value
+    except Exception as first_error:
+        print("❌ Обычный клик не сработал:", first_error)
+        with page.expect_download(timeout=30_000) as download_info:
+            handle = locator.element_handle(timeout=10_000)
+            if handle is None:
+                raise RuntimeError("Не удалось получить element_handle для JS click")
+            page.evaluate("(el) => el.click()", handle)
+        return download_info.value
+
+
+def export_retrading_table(
+    context: BrowserContext,
+    bid_id: int,
+    save_path: str,
+    preferred_page: Page | None = None,
+) -> str:
+    bid_id_int = int(bid_id)
+    if bid_id_int <= 0:
+        raise ValueError(f"Некорректный bid_id: {bid_id_int}")
+
+    page = resolve_retrading_page(context, bid_id_int, preferred_page=preferred_page)
     response_urls: list[str] = []
 
     def _on_download(download: Download) -> None:
-        print("🔥 Download event:", download.suggested_filename)
+        print("[DOWNLOAD EVENT]", download.suggested_filename)
 
     def _on_response(response) -> None:
         response_url = str(getattr(response, "url", "") or "")
@@ -89,63 +165,32 @@ def export_retrading_table(page: Page, context: BrowserContext, bid_id: int, sav
     page.on("response", _on_response)
 
     try:
-        page.goto(url, timeout=60_000)
         page.wait_for_load_state("networkidle", timeout=60_000)
         page.wait_for_timeout(5000)
 
         print("Страница загружена:", page.url)
-        print("Текущий URL:", page.url)
-        page.wait_for_selector("text=Экспорт", timeout=60_000)
+        _validate_retrading_page(page, bid_id=bid_id_int)
 
-        export_button, count = _resolve_export_button(page)
-        print(f"Найдено кнопок Экспорт: {count}")
-
-        if count == 0:
-            print("HTML страницы:")
-            print(page.content())
-            _save_debug_artifacts(page, prefix="export_error")
-            raise Exception("❌ Кнопка Экспорт НЕ найдена")
-
-        _log_buttons(page)
+        export_button = _resolve_export_button(page)
+        if export_button is None:
+            raise RuntimeError("Кнопка Экспорт НЕ найдена")
 
         export_button.scroll_into_view_if_needed()
         page.wait_for_timeout(1000)
 
         print("Ожидаем скачивание файла...")
-
-        download: Download | None = None
-
-        try:
-            download = _download_with_force_click(page, export_button)
-        except Exception as click_error:
-            print("❌ Обычный клик не сработал:", click_error)
-
-            try:
-                print("Пробуем JS click...")
-                download = _download_with_js_click(page, export_button)
-            except Exception as js_error:
-                print("❌ JS click не сработал:", js_error)
-                print("Пробуем жесткий fallback click...")
-                download = _download_with_hard_fallback(page)
-
-        if download is None:
-            raise RuntimeError("Download объект не получен")
+        download = _download_with_click(page, export_button)
 
         filename = str(download.suggested_filename or f"retrading_{bid_id_int}.xlsx")
-        target_path = Path(save_path).expanduser().resolve() if save_path else Path(f"retrading_{bid_id_int}.xlsx").resolve()
+        target_path = Path(save_path).expanduser().resolve()
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
         download.save_as(str(target_path))
-
         print(f"✅ Файл скачан: {target_path}")
         print(f"📄 Имя файла: {filename}")
-        _save_debug_artifacts(page, prefix="export_debug")
         return str(target_path)
     except Exception:
-        print("[DEBUG] response urls:")
-        for response_url in response_urls:
-            print("-", response_url)
-        _save_debug_artifacts(page, prefix="export_error")
+        _emit_failure_diagnostics(page, response_urls=response_urls)
         raise
     finally:
         try:
@@ -184,15 +229,13 @@ def export_all(
         browser = playwright.chromium.launch(headless=headless)
         try:
             context = browser.new_context(storage_state=str(storage_state), accept_downloads=True)
-            page = context.new_page()
 
             for bid_id in bid_ids:
                 bid_id_int = int(bid_id)
                 target_file = exports_path / f"retrading_{bid_id_int}.xlsx"
                 try:
                     saved_file = export_retrading_table(
-                        page,
-                        context,
+                        context=context,
                         bid_id=bid_id_int,
                         save_path=str(target_file),
                     )
