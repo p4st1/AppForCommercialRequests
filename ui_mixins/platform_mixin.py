@@ -854,7 +854,7 @@ class PlatformMixin:
     def _setup_retrade_offers_table(self) -> None:
         table = self.table_retrade_offers
         table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(("bid_id", "number", "price", "status"))
+        table.setHorizontalHeaderLabels(("number", "bidder_title", "price", "status"))
         table.setRowCount(0)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -866,9 +866,9 @@ class PlatformMixin:
 
         header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
 
     def populate_retrades_table(self, retrades: list[dict[str, Any]]) -> None:
         table = self.table_retrades
@@ -917,8 +917,8 @@ class PlatformMixin:
                 continue
 
             values = (
-                offer.get("bid_id", ""),
                 offer.get("number", ""),
+                offer.get("bidder_title", ""),
                 offer.get("price", ""),
                 offer.get("status", ""),
             )

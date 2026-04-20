@@ -66,6 +66,7 @@ def open_retrading(page: Page, trade_id: int, stage_id: int) -> str:
 def open_bid(page: Page, bid_id: int) -> str:
     bid_id_int = int(bid_id)
     url = f"https://etp.metal-it.ru/bids/{bid_id_int}/retrading"
+    print("[DEBUG] open bid url:", url)
     page.goto(url, timeout=60_000)
     page.wait_for_load_state("networkidle", timeout=60_000)
     return url

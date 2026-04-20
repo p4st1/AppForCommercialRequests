@@ -287,6 +287,8 @@ class PlatformClientAuthTests(unittest.TestCase):
                                                         "number": "BID-001",
                                                         "price": 12345.67,
                                                         "status": {"title": "Подана"},
+                                                        "bidDate": 1711111111111,
+                                                        "bidder": {"title": "ООО Ромашка"},
                                                     }
                                                 },
                                                 {"bid": None},
@@ -300,6 +302,8 @@ class PlatformClientAuthTests(unittest.TestCase):
                                                         "number": "BID-002",
                                                         "price": 999.0,
                                                         "status": {"title": "На рассмотрении"},
+                                                        "bidDate": 1711111112222,
+                                                        "bidder": {"title": "ООО Лютик"},
                                                     }
                                                 },
                                             ]
@@ -324,17 +328,21 @@ class PlatformClientAuthTests(unittest.TestCase):
                     "number": "BID-001",
                     "price": 12345.67,
                     "status": "Подана",
+                    "bid_date": 1711111111111,
+                    "bidder_title": "ООО Ромашка",
                 },
                 {
                     "bid_id": 7002,
                     "number": "BID-002",
                     "price": 999.0,
                     "status": "На рассмотрении",
+                    "bid_date": 1711111112222,
+                    "bidder_title": "ООО Лютик",
                 },
             ],
         )
         self.assertEqual(len(session.get_calls), 1)
-        self.assertTrue(session.get_calls[0]["url"].endswith("/trade/101"))
+        self.assertTrue(session.get_calls[0]["url"].endswith("/trades/101"))
 
     def test_get_retrading_offers_returns_empty_when_no_bid_places(self):
         session = _PostCaptureSession(

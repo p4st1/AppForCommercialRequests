@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import requests
@@ -32,94 +33,31 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
   }
 }
 """
-TRADE_DETAILS_ENDPOINT_PATTERNS = (
-    "{base_url}/trade/{trade_id}",
-    "{base_url}/api/trade/{trade_id}",
-)
+TRADE_DETAILS_ENDPOINT_PATTERN = "{base_url}/trades/{trade_id}"
 
 
-def _extract_trade_payload(response_body: Any) -> dict[str, Any] | None:
-    if isinstance(response_body, dict):
-        if isinstance(response_body.get("submissionStages"), list):
-            return response_body
+def _normalize_trade_json(raw_payload: Any) -> dict[str, Any]:
+    if not isinstance(raw_payload, dict):
+        return {}
+    if isinstance(raw_payload.get("submissionStages"), list):
+        return raw_payload
 
-        data_node = response_body.get("data")
-        if isinstance(data_node, dict):
-            if isinstance(data_node.get("submissionStages"), list):
-                return data_node
-            trade_node = data_node.get("trade")
-            if isinstance(trade_node, dict):
-                return trade_node
-
-        trade_node = response_body.get("trade")
-        if isinstance(trade_node, dict):
+    data_node = raw_payload.get("data")
+    if isinstance(data_node, dict):
+        if isinstance(data_node.get("submissionStages"), list):
+            return data_node
+        trade_node = data_node.get("trade")
+        if isinstance(trade_node, dict) and isinstance(trade_node.get("submissionStages"), list):
             return trade_node
-    return None
+
+    trade_node = raw_payload.get("trade")
+    if isinstance(trade_node, dict) and isinstance(trade_node.get("submissionStages"), list):
+        return trade_node
+
+    return raw_payload
 
 
-def _parse_retrading_bids_from_trade_payload(trade_payload: dict[str, Any]) -> list[dict[str, Any]]:
-    submission_stages = trade_payload.get("submissionStages")
-    if not isinstance(submission_stages, list):
-        submission_stages = []
-
-    bids: list[dict[str, Any]] = []
-    seen_bid_ids: set[int] = set()
-
-    for stage in submission_stages:
-        if not isinstance(stage, dict):
-            continue
-        trade_result = stage.get("tradeResult")
-        if not isinstance(trade_result, dict):
-            continue
-
-        lot_results = trade_result.get("lotResults")
-        if not isinstance(lot_results, list):
-            continue
-
-        for lot in lot_results:
-            if not isinstance(lot, dict):
-                continue
-
-            bid_places = lot.get("bidPlaces")
-            if not isinstance(bid_places, list):
-                continue
-
-            for place in bid_places:
-                if not isinstance(place, dict):
-                    continue
-                bid = place.get("bid")
-                if not isinstance(bid, dict):
-                    continue
-
-                bid_id_raw = bid.get("id")
-                try:
-                    bid_id = int(bid_id_raw)
-                except (TypeError, ValueError):
-                    continue
-                if bid_id <= 0 or bid_id in seen_bid_ids:
-                    continue
-
-                status_title = ""
-                status_node = bid.get("status")
-                if isinstance(status_node, dict):
-                    status_title = str(status_node.get("title", "") or "")
-                elif status_node is not None:
-                    status_title = str(status_node)
-
-                bids.append(
-                    {
-                        "bid_id": bid_id,
-                        "number": str(bid.get("number", "") or ""),
-                        "price": bid.get("price"),
-                        "status": status_title,
-                    }
-                )
-                seen_bid_ids.add(bid_id)
-
-    return bids
-
-
-def get_retrading_offers(platform_client: Any, trade_id: int) -> list[dict]:
+def get_trade_json(platform_client: Any, trade_id: int) -> dict[str, Any]:
     if platform_client is None:
         raise ValueError("platform_client не передан")
 
@@ -138,33 +76,102 @@ def get_retrading_offers(platform_client: Any, trade_id: int) -> list[dict]:
     timeout = float(getattr(platform_client, "_timeout", 30.0) or 30.0)
     base_url = str(getattr(platform_client, "BASE_URL", "https://etp.metal-it.ru"))
 
+    endpoint = TRADE_DETAILS_ENDPOINT_PATTERN.format(
+        base_url=base_url.rstrip("/"),
+        trade_id=trade_id_int,
+    )
+    response = session.get(
+        endpoint,
+        headers=headers,
+        timeout=timeout,
+    )
+    if response.status_code == 403:
+        raise RuntimeError("Ошибка авторизации — обновите cookies")
+    response.raise_for_status()
+
+    body = response.json()
+    return _normalize_trade_json(body)
+
+
+def parse_retrade_bids(trade_json: dict) -> list[dict]:
+    normalized_trade = _normalize_trade_json(trade_json)
+    print("[DEBUG] trade_json keys:", list(normalized_trade.keys()))
+    print("[DEBUG] submissionStages:", len(normalized_trade.get("submissionStages", [])))
+
+    stages = normalized_trade.get("submissionStages", [])
+    if not isinstance(stages, list):
+        stages = []
+
     bids: list[dict[str, Any]] = []
-    for pattern in TRADE_DETAILS_ENDPOINT_PATTERNS:
-        endpoint = pattern.format(
-            base_url=base_url.rstrip("/"),
-            trade_id=trade_id_int,
-        )
-        response = session.get(
-            endpoint,
-            headers=headers,
-            timeout=timeout,
-        )
-        if response.status_code == 403:
-            raise RuntimeError("Ошибка авторизации — обновите cookies")
-        if response.status_code == 404:
-            continue
-        response.raise_for_status()
+    seen_bid_ids: set[int] = set()
 
-        body = response.json()
-        trade_payload = _extract_trade_payload(body)
-        if not isinstance(trade_payload, dict):
+    for stage in stages:
+        if not isinstance(stage, dict):
+            continue
+        trade_result = stage.get("tradeResult")
+        if not isinstance(trade_result, dict):
             continue
 
-        bids = _parse_retrading_bids_from_trade_payload(trade_payload)
-        break
+        lot_results = trade_result.get("lotResults", [])
+        if not isinstance(lot_results, list):
+            lot_results = []
+        print("[DEBUG] lotResults:", len(lot_results))
+
+        for lot in lot_results:
+            if not isinstance(lot, dict):
+                continue
+            bid_places = lot.get("bidPlaces", [])
+            if not isinstance(bid_places, list):
+                bid_places = []
+            print("[DEBUG] bidPlaces:", len(bid_places))
+
+            for place in bid_places:
+                if not isinstance(place, dict):
+                    continue
+                bid = place.get("bid")
+                if not isinstance(bid, dict):
+                    continue
+
+                bid_id_raw = bid.get("id")
+                try:
+                    bid_id = int(bid_id_raw)
+                except (TypeError, ValueError):
+                    continue
+                if bid_id <= 0 or bid_id in seen_bid_ids:
+                    continue
+
+                status_node = bid.get("status")
+                status_title = ""
+                if isinstance(status_node, dict):
+                    status_title = str(status_node.get("title", "") or "")
+
+                bidder_node = bid.get("bidder")
+                bidder_title = ""
+                if isinstance(bidder_node, dict):
+                    bidder_title = str(bidder_node.get("title", "") or "")
+
+                parsed_bid = {
+                    "bid_id": bid_id,
+                    "number": str(bid.get("number", "") or ""),
+                    "price": bid.get("price"),
+                    "status": status_title,
+                    "bid_date": bid.get("bidDate"),
+                    "bidder_title": bidder_title,
+                }
+                bids.append(parsed_bid)
+                seen_bid_ids.add(bid_id)
+                print("[DEBUG] found bid:", bid_id, bid.get("number"))
 
     print(f"[DEBUG] найдено заявок: {len(bids)}")
+    if not bids:
+        payload_preview = json.dumps(normalized_trade, ensure_ascii=False, default=str)
+        print(payload_preview[:2000])
     return bids
+
+
+def get_retrading_offers(platform_client: Any, trade_id: int) -> list[dict]:
+    trade_json = get_trade_json(platform_client, trade_id)
+    return parse_retrade_bids(trade_json)
 
 
 class MetalITClient:
