@@ -7,6 +7,7 @@ class Config:
     DEFAULT_SETTINGS = {
         "closeTable": True,
         "autoFill": True,
+        "autoFillWebAuth": False,
         "openUpdateTab": True,
         "openLastTab": True,
         "testFeature": False,
@@ -25,6 +26,8 @@ class Config:
         "ExcelIndent": "0",
         "lastTable": "",
         "paymentTemplates": DEFAULT_PAYMENT_TEMPLATES.copy(),
+        "platformLogin": "",
+        "platformPassword": "",
     }
 
     types = {

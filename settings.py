@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QFileDialog,
     QAbstractItemView,
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -33,11 +34,16 @@ class mainWindow(QMainWindow):
         self.ui.autoFillCheckBox.setChecked(Config.settings['autoFill'])
         self.ui.openLastTable.setChecked(Config.settings['openLastTab'])
         self.ui.openUpdateTab.setChecked(Config.settings['openUpdateTab'])
+        self._setup_web_auth_autofill_checkbox()
+        self.webAuthAutoFillCheckBox.setChecked(
+            bool(Config.settings.get('autoFillWebAuth', False))
+        )
 
         self.ui.autoFillCheckBox.toggled.connect(self.autoFillChange)
         self.ui.closeTableCheckBox.toggled.connect(self.closeTableChange)
         self.ui.openLastTable.toggled.connect(self.openLastTableChange)
         self.ui.openUpdateTab.toggled.connect(self.openUpdateTabChange)
+        self.webAuthAutoFillCheckBox.toggled.connect(self.webAuthAutoFillChange)
 
         default_dir = Path.home() / "Documents"
         cp_dir = Tool.ensure_directory(Config.config.get('pathToSaveCP'), default_dir)
@@ -75,6 +81,25 @@ class mainWindow(QMainWindow):
 
     def closeTableChange(self, signal):
         Config.settings['closeTable'] = signal
+
+    def webAuthAutoFillChange(self, signal):
+        Config.settings['autoFillWebAuth'] = bool(signal)
+
+    def _setup_web_auth_autofill_checkbox(self):
+        checkbox = QCheckBox(
+            "Автоматически заполнять логин и пароль",
+            self.ui.scrollAreaWidgetContents,
+        )
+        checkbox.setObjectName("webAuthAutoFillCheckBox")
+        checkbox.setStyleSheet(self.ui.openUpdateTab.styleSheet())
+        checkbox.setFont(self.ui.openUpdateTab.font())
+
+        insert_index = self.ui.verticalLayout.indexOf(self.ui.line)
+        if insert_index < 0:
+            insert_index = self.ui.verticalLayout.count()
+        self.ui.verticalLayout.insertWidget(insert_index, checkbox)
+        self.webAuthAutoFillCheckBox = checkbox
+        self.ui.webAuthAutoFillCheckBox = checkbox
 
     def _setup_payment_templates_editor(self):
         self.paymentTemplatesLabel = QLabel("Шаблоны оплаты", self.ui.scrollAreaWidgetContents)

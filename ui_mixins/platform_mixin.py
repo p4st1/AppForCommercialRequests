@@ -35,11 +35,25 @@ class LoadTradesWorker(QThread):
         self,
         cookies: dict[str, str],
         max_items: int = 50,
+        login: str = "",
+        password: str = "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._cookies = dict(cookies)
         self.max_items = max_items
+        self._login = str(login or "").strip()
+        self._password = str(password or "")
+
+    @staticmethod
+    def _is_auth_error(message: str) -> bool:
+        text = str(message or "").lower()
+        return (
+            "401" in text
+            or "403" in text
+            or "forbidden" in text
+            or "unauthorized" in text
+        )
 
     def run(self) -> None:
         try:
@@ -49,7 +63,74 @@ class LoadTradesWorker(QThread):
             trades = client.get_all_trades(max_items=self.max_items)
             self.finished.emit(trades)
         except Exception as exc:
-            self.error.emit(str(exc))
+            error_text = str(exc or "Неизвестная ошибка")
+            should_retry_auth = self._is_auth_error(error_text) or (
+                "cookie" in error_text.lower()
+            )
+            if not should_retry_auth:
+                self.error.emit(error_text)
+                return
+
+            if not self._login or not self._password:
+                self.error.emit(
+                    "Сессия истекла (401/403). "
+                    "Для авто-переавторизации сохраните логин и пароль в настройках."
+                )
+                return
+
+            try:
+                print("AUTH: выполняем авто-переавторизацию из сохраненных учетных данных")
+                service = AuthService(headless=False)
+                refreshed_cookies = service.login_and_save_session(
+                    self._login,
+                    self._password,
+                )
+                if not isinstance(refreshed_cookies, dict) or not refreshed_cookies:
+                    raise RuntimeError("После переавторизации не получены cookies")
+                self._cookies = dict(refreshed_cookies)
+                client = MetalITClient(self._cookies)
+                trades = client.get_all_trades(max_items=self.max_items)
+                self.finished.emit(trades)
+            except Exception as retry_exc:
+                self.error.emit(str(retry_exc))
+
+
+class LoadRetradesWorker(QThread):
+    finished = Signal(list)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        cookies: dict[str, str],
+        max_items: int = 50,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._cookies = dict(cookies)
+        self.max_items = max_items
+        self.client: MetalITClient | None = None
+
+    @staticmethod
+    def _is_forbidden_error(message: str) -> bool:
+        text = str(message or "").lower()
+        return "403" in text or "forbidden" in text
+
+    def run(self) -> None:
+        try:
+            if not self._cookies:
+                raise ValueError("Не найдены cookies для авторизации")
+            self.client = MetalITClient(self._cookies)
+            retrades = self.client.load_retrades(limit=50)
+            if self.max_items > 0:
+                retrades = retrades[: self.max_items]
+            print(f"Загружено переторжек: {len(retrades)}")
+            self.finished.emit(retrades)
+        except Exception as exc:
+            error_text = str(exc or "Неизвестная ошибка")
+            if self._is_forbidden_error(error_text):
+                self.error.emit("Ошибка авторизации — обновите cookies")
+                return
+            self.error.emit(error_text)
 
 
 class AuthLoginWorker(QThread):
@@ -111,12 +192,16 @@ class PlatformMixin:
     def init_platform_mixin(self) -> None:
         self.all_trades: list[dict[str, Any]] = []
         self.filtered_trades: list[dict[str, Any]] = []
+        self.retrades: list[dict[str, Any]] = []
         self._load_trades_worker: LoadTradesWorker | None = None
+        self._load_retrades_worker: LoadRetradesWorker | None = None
         self._auth_login_worker: AuthLoginWorker | None = None
         self._auth_status_worker: AuthStatusWorker | None = None
         self._ensure_platform_tab()
+        self._apply_web_auth_autofill_if_enabled()
         self.btn_login.clicked.connect(self.login)
         self.btn_load_trades.clicked.connect(self.load_trades_clicked)
+        self.btn_load_retrades.clicked.connect(self.load_retrades)
         self.search_input.textChanged.connect(self.apply_search)
         self.checkbox_active.stateChanged.connect(self.apply_filters)
         self.refresh_auth_status_on_startup()
@@ -124,7 +209,9 @@ class PlatformMixin:
     def _ensure_platform_tab(self) -> None:
         if (
             hasattr(self.ui, "tradesTable")
+            and hasattr(self.ui, "table_retrades")
             and hasattr(self, "btn_load_trades")
+            and hasattr(self, "btn_load_retrades")
             and hasattr(self.ui, "input_limit")
             and hasattr(self, "btn_login")
             and hasattr(self.ui, "input_login")
@@ -188,6 +275,10 @@ class PlatformMixin:
         self.btn_load_trades.setObjectName("btn_load_trades")
         self.ui.btn_load_trades = self.btn_load_trades
 
+        self.btn_load_retrades = QPushButton("Загрузить переторжки", self.ui.webTab)
+        self.btn_load_retrades.setObjectName("btn_load_retrades")
+        self.ui.btn_load_retrades = self.btn_load_retrades
+
         self.input_limit = QLineEdit(self.ui.webTab)
         self.input_limit.setObjectName("input_limit")
         self.input_limit.setPlaceholderText("Количество заявок (например 50)")
@@ -208,6 +299,7 @@ class PlatformMixin:
         header_layout.addWidget(self.search_input)
         header_layout.addWidget(self.input_limit)
         header_layout.addWidget(self.btn_load_trades)
+        header_layout.addWidget(self.btn_load_retrades)
 
         pipeline_status_layout = QHBoxLayout()
         pipeline_status_layout.setSpacing(8)
@@ -228,13 +320,23 @@ class PlatformMixin:
         self.ui.tradesTable = QTableWidget(self.ui.webTab)
         self.ui.tradesTable.setObjectName("tradesTable")
 
+        retrades_label = QLabel("Переторжки", self.ui.webTab)
+        retrades_label.setObjectName("retradesTitleLabel")
+
+        self.table_retrades = QTableWidget(self.ui.webTab)
+        self.table_retrades.setObjectName("table_retrades")
+        self.ui.table_retrades = self.table_retrades
+
         root_layout.addLayout(auth_layout)
         root_layout.addLayout(header_layout)
         root_layout.addLayout(pipeline_status_layout)
         root_layout.addWidget(self.ui.tradesTable)
+        root_layout.addWidget(retrades_label)
+        root_layout.addWidget(self.table_retrades)
         self.ui.tabWidget.addTab(self.ui.webTab, "Веб")
 
         self._setup_trades_table()
+        self._setup_retrades_table()
 
     def login(self) -> None:
         if self._auth_login_worker is not None and self._auth_login_worker.isRunning():
@@ -246,6 +348,9 @@ class PlatformMixin:
             QMessageBox.warning(self, "Авторизация", "Введите логин и пароль")
             return
 
+        if bool(Config.settings.get("autoFillWebAuth", False)):
+            self._save_web_auth_credentials(login, password)
+
         self._set_login_loading_state(is_loading=True)
         worker = AuthLoginWorker(login=login, password=password, parent=self)
         worker.finished.connect(self.on_login_success)
@@ -255,6 +360,10 @@ class PlatformMixin:
 
     def on_login_success(self, cookies: dict[str, str]) -> None:
         cookies_count = len(cookies) if isinstance(cookies, dict) else 0
+        try:
+            self._save_web_auth_to_root_config(cookies)
+        except Exception as exc:
+            Tool.write_log(f"Не удалось сохранить web cookies в config.json: {exc}")
         self._set_auth_status(is_auth=True)
         self._finish_login(
             f"Авторизация успешна. Cookies сохранены ({cookies_count})."
@@ -380,6 +489,163 @@ class PlatformMixin:
 
         return {}
 
+    @staticmethod
+    def _extract_web_auth_from_payload(payload: dict[str, Any]) -> tuple[str, str]:
+        if not isinstance(payload, dict):
+            return "", ""
+
+        login = ""
+        password = ""
+        config_section = payload.get("config")
+        if isinstance(config_section, dict):
+            login = str(config_section.get("platformLogin", "") or "").strip()
+            password = str(config_section.get("platformPassword", "") or "")
+            if not login:
+                platform_section = config_section.get("platform")
+                if isinstance(platform_section, dict):
+                    login = str(platform_section.get("login", "") or "").strip()
+                    password = str(platform_section.get("password", "") or "")
+
+        if not login:
+            login = str(payload.get("platformLogin", "") or "").strip()
+        if not password:
+            password = str(payload.get("platformPassword", "") or "")
+
+        platform_root = payload.get("platform")
+        if isinstance(platform_root, dict):
+            if not login:
+                login = str(platform_root.get("login", "") or "").strip()
+            if not password:
+                password = str(platform_root.get("password", "") or "")
+
+        return login, password
+
+    def _load_web_auth_credentials(self) -> tuple[str, str]:
+        login = str(Config.config.get("platformLogin", "") or "").strip()
+        password = str(Config.config.get("platformPassword", "") or "")
+        if login and password:
+            return login, password
+
+        candidate_paths: list[Path] = [Path("config.json")]
+        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
+        if cfg_path:
+            candidate_paths.append(Path(cfg_path))
+        candidate_paths.append(Path("utilities/config.json"))
+
+        seen: set[Path] = set()
+        for path in candidate_paths:
+            resolved_path = path.expanduser()
+            if resolved_path in seen:
+                continue
+            seen.add(resolved_path)
+            if not resolved_path.exists():
+                continue
+            try:
+                payload = Tool.load_json(resolved_path)
+            except Exception:
+                continue
+            loaded_login, loaded_password = self._extract_web_auth_from_payload(payload)
+            if loaded_login and loaded_password:
+                return loaded_login, loaded_password
+        return "", ""
+
+    def _apply_web_auth_autofill_if_enabled(self) -> None:
+        if not bool(Config.settings.get("autoFillWebAuth", False)):
+            return
+        login, password = self._load_web_auth_credentials()
+        if login:
+            self.input_login.setText(login)
+        if password:
+            self.input_password.setText(password)
+
+    def _save_web_auth_credentials_to_path(
+        self,
+        path: Path,
+        *,
+        login: str,
+        password: str,
+    ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload: dict[str, Any] = {}
+        if path.exists():
+            try:
+                loaded = Tool.load_json(path)
+                if isinstance(loaded, dict):
+                    payload = loaded
+            except Exception:
+                payload = {}
+
+        normalized_payload = Tool.merge_config_with_defaults(payload)
+        config_section = normalized_payload.get("config")
+        if not isinstance(config_section, dict):
+            config_section = {}
+        normalized_payload["config"] = dict(config_section)
+        normalized_payload["config"]["platformLogin"] = login
+        normalized_payload["config"]["platformPassword"] = password
+
+        platform_section = normalized_payload["config"].get("platform")
+        if not isinstance(platform_section, dict):
+            platform_section = {}
+        normalized_payload["config"]["platform"] = dict(platform_section)
+        normalized_payload["config"]["platform"]["login"] = login
+        normalized_payload["config"]["platform"]["password"] = password
+
+        Tool.save_json_atomic(path, normalized_payload)
+
+    def _save_web_auth_credentials(self, login_raw: Any, password_raw: Any) -> None:
+        login = str(login_raw or "").strip()
+        password = str(password_raw or "")
+        if not login or not password:
+            return
+
+        if isinstance(Config.config, dict):
+            Config.config["platformLogin"] = login
+            Config.config["platformPassword"] = password
+
+        self._save_web_auth_credentials_to_path(
+            Path("config.json"),
+            login=login,
+            password=password,
+        )
+
+        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
+        if cfg_path:
+            cfg_file = Path(cfg_path).expanduser()
+            if cfg_file != Path("config.json"):
+                self._save_web_auth_credentials_to_path(
+                    cfg_file,
+                    login=login,
+                    password=password,
+                )
+
+    def _save_web_auth_to_root_config(self, cookies_raw: Any) -> None:
+        cookies = self._normalize_cookies(cookies_raw)
+        if not cookies:
+            return
+
+        config_path = Path("config.json")
+        payload: dict[str, Any] = {}
+        if config_path.exists():
+            try:
+                loaded = Tool.load_json(config_path)
+                if isinstance(loaded, dict):
+                    payload = loaded
+            except Exception as exc:
+                Tool.write_log(f"Не удалось прочитать config.json перед сохранением cookies: {exc}")
+                payload = {}
+
+        normalized_payload = Tool.merge_config_with_defaults(payload)
+        normalized_payload["cookies"] = cookies
+        config_section = normalized_payload.get("config")
+        if not isinstance(config_section, dict):
+            config_section = {}
+        normalized_payload["config"] = dict(config_section)
+        normalized_payload["config"]["cookies"] = cookies
+
+        Tool.save_json_atomic(config_path, normalized_payload)
+        if isinstance(Config.config, dict):
+            Config.config["cookies"] = cookies
+
     def load_cookies(self) -> dict[str, str]:
         candidate_paths: list[Path] = []
         cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
@@ -424,23 +690,36 @@ class PlatformMixin:
         if self._load_trades_worker is not None and self._load_trades_worker.isRunning():
             return
 
-        max_items = 50
-        try:
-            max_items = int(self.input_limit.text())
-        except (TypeError, ValueError, AttributeError):
-            max_items = 50
-        if max_items <= 0:
-            max_items = 50
+        max_items = self._parse_max_items_input()
+        login, password = self._load_web_auth_credentials()
+        if not login:
+            login = self.input_login.text().strip()
+        if not password:
+            password = self.input_password.text()
+        cookies: dict[str, str] = {}
+        load_cookies_error = ""
 
         try:
             cookies = self.load_cookies()
         except Exception as exc:
-            self.on_error(str(exc))
-            return
+            load_cookies_error = str(exc or "")
+            if not login or not password:
+                self.on_error(load_cookies_error)
+                return
+            Tool.write_log(
+                "Cookies не найдены или невалидны. "
+                "Будет выполнена авто-переавторизация перед загрузкой заявок."
+            )
 
         self._set_trades_loading_state(is_loading=True)
 
-        worker = LoadTradesWorker(cookies=cookies, max_items=max_items, parent=self)
+        worker = LoadTradesWorker(
+            cookies=cookies,
+            max_items=max_items,
+            login=login,
+            password=password,
+            parent=self,
+        )
         worker.finished.connect(self.on_trades_loaded)
         worker.error.connect(self.on_error)
         self._load_trades_worker = worker
@@ -449,17 +728,45 @@ class PlatformMixin:
     def load_trades(self) -> None:
         self.load_trades_clicked()
 
+    def load_retrades(self) -> None:
+        if (
+            self._load_retrades_worker is not None
+            and self._load_retrades_worker.isRunning()
+        ):
+            return
+
+        max_items = self._parse_max_items_input()
+
+        try:
+            cookies = self.load_cookies()
+        except Exception as exc:
+            self.on_retrades_error(str(exc))
+            return
+
+        self._set_retrades_loading_state(is_loading=True)
+
+        worker = LoadRetradesWorker(cookies=cookies, max_items=max_items, parent=self)
+        worker.finished.connect(self.on_retrades_loaded)
+        worker.error.connect(self.on_retrades_error)
+        self._load_retrades_worker = worker
+        worker.start()
+
     def on_trades_loaded(self, trades: list[dict[str, Any]]) -> None:
         self.all_trades = trades if isinstance(trades, list) else []
         self.filtered_trades = list(self.all_trades)
         self.apply_filters()
         self._finish_trades_loading(f"Загружено заявок: {len(self.all_trades)}")
 
+    def on_retrades_loaded(self, retrades: list[dict[str, Any]]) -> None:
+        self.retrades = retrades if isinstance(retrades, list) else []
+        self.populate_retrades_table(self.retrades)
+        self._finish_retrades_loading(f"Загружено переторжек: {len(self.retrades)}")
+
     def on_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка загрузки заявок: {error_text}")
         print(f"Ошибка загрузки заявок: {error_text}")
-        if "401" in error_text:
+        if "401" in error_text or "403" in error_text:
             self._set_auth_status(is_auth=False)
         QMessageBox.warning(self, "Ошибка загрузки заявок", error_text)
         self._finish_trades_loading("Ошибка загрузки заявок")
@@ -467,6 +774,12 @@ class PlatformMixin:
     def _set_trades_loading_state(self, *, is_loading: bool) -> None:
         self.btn_load_trades.setEnabled(not is_loading)
         self.btn_load_trades.setText("Загрузка..." if is_loading else "Загрузить заявки")
+
+    def _set_retrades_loading_state(self, *, is_loading: bool) -> None:
+        self.btn_load_retrades.setEnabled(not is_loading)
+        self.btn_load_retrades.setText(
+            "Загрузка..." if is_loading else "Загрузить переторжки"
+        )
 
     def _finish_trades_loading(self, status_message: str) -> None:
         self._set_trades_loading_state(is_loading=False)
@@ -477,6 +790,93 @@ class PlatformMixin:
         status_bar = self.statusBar()
         if status_bar is not None and status_message:
             status_bar.showMessage(status_message, 4000)
+
+    def _finish_retrades_loading(self, status_message: str) -> None:
+        self._set_retrades_loading_state(is_loading=False)
+        worker = self._load_retrades_worker
+        self._load_retrades_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        status_bar = self.statusBar()
+        if status_bar is not None and status_message:
+            status_bar.showMessage(status_message, 4000)
+
+    def on_retrades_error(self, message: str) -> None:
+        error_text = str(message or "Неизвестная ошибка")
+        Tool.write_log(f"Ошибка загрузки переторжек: {error_text}")
+        print(f"Ошибка загрузки переторжек: {error_text}")
+        if (
+            "401" in error_text
+            or "403" in error_text
+            or "Ошибка доступа — требуется повторная авторизация" in error_text
+            or "Ошибка авторизации — обновите cookies" in error_text
+        ):
+            self._set_auth_status(is_auth=False)
+        QMessageBox.warning(self, "Ошибка загрузки переторжек", error_text)
+        self._finish_retrades_loading("Ошибка загрузки переторжек")
+
+    def _setup_retrades_table(self) -> None:
+        table = self.table_retrades
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(("Номер", "Название", "Статус", "Дата окончания"))
+        table.setRowCount(0)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.setAlternatingRowColors(True)
+        table.setSortingEnabled(False)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(False)
+
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+
+    def populate_retrades_table(self, retrades: list[dict[str, Any]]) -> None:
+        table = self.table_retrades
+        rows = retrades if isinstance(retrades, list) else []
+
+        blocker = QSignalBlocker(table)
+        table.clearContents()
+        table.setRowCount(len(rows))
+
+        for row_idx, retrade in enumerate(rows):
+            if not isinstance(retrade, dict):
+                continue
+
+            values = (
+                retrade.get("number", "")
+                or retrade.get("registeredNumber", "")
+                or retrade.get("id", ""),
+                retrade.get("title", "") or "",
+                retrade.get("status", "") or retrade.get("processStatus", ""),
+                retrade.get("endDate", "") or retrade.get("bidSubmissionEndDate", ""),
+            )
+
+            for col_idx, value in enumerate(values):
+                item = QTableWidgetItem("" if value is None else str(value))
+                flags = item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+                flags &= ~Qt.ItemFlag.ItemIsEditable
+                item.setFlags(flags)
+                if col_idx == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, retrade)
+                table.setItem(row_idx, col_idx, item)
+
+        del blocker
+        table.resizeRowsToContents()
+        table.resizeColumnsToContents()
+
+    def _parse_max_items_input(self) -> int:
+        max_items = 50
+        try:
+            max_items = int(self.input_limit.text())
+        except (TypeError, ValueError, AttributeError):
+            max_items = 50
+        if max_items <= 0:
+            max_items = 50
+        return max_items
 
     def populate_trades_table(self, trades: list[dict[str, Any]]) -> None:
         table = self.ui.tradesTable

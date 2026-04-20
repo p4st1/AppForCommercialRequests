@@ -56,9 +56,10 @@ class ExportMixin:
         self.excel_processor = ExcelProcessor()
         self._ensure_export_button()
         self.btn_export_trade.clicked.connect(self.export_selected_trade)
+        self.btn_export_retrade.clicked.connect(self.export_selected_retrade)
 
     def _ensure_export_button(self) -> None:
-        if hasattr(self, "btn_export_trade"):
+        if hasattr(self, "btn_export_trade") and hasattr(self, "btn_export_retrade"):
             return
 
         ensure_tab = getattr(self, "_ensure_platform_tab", None)
@@ -81,10 +82,17 @@ class ExportMixin:
         if header_layout is None:
             raise RuntimeError("Не удалось найти layout заголовка вкладки заявок")
 
-        self.btn_export_trade = QPushButton("Экспорт", web_tab)
-        self.btn_export_trade.setObjectName("btn_export_trade")
-        self.ui.btn_export_trade = self.btn_export_trade
-        header_layout.addWidget(self.btn_export_trade)
+        if not hasattr(self, "btn_export_trade"):
+            self.btn_export_trade = QPushButton("Экспорт", web_tab)
+            self.btn_export_trade.setObjectName("btn_export_trade")
+            self.ui.btn_export_trade = self.btn_export_trade
+            header_layout.addWidget(self.btn_export_trade)
+
+        if not hasattr(self, "btn_export_retrade"):
+            self.btn_export_retrade = QPushButton("Экспорт переторжки", web_tab)
+            self.btn_export_retrade.setObjectName("btn_export_retrade")
+            self.ui.btn_export_retrade = self.btn_export_retrade
+            header_layout.addWidget(self.btn_export_retrade)
 
     def export_selected_trade(self) -> None:
         try:
@@ -95,6 +103,46 @@ class ExportMixin:
 
     def export_trade(self, lot_id: int) -> None:
         self._start_export_worker(lot_id=lot_id)
+
+    def export_selected_retrade(self) -> None:
+        table_retrades = getattr(self, "table_retrades", None)
+        if table_retrades is None:
+            table_retrades = getattr(getattr(self, "ui", None), "table_retrades", None)
+        if table_retrades is None:
+            QMessageBox.warning(self, "Ошибка", "Таблица переторжек не найдена")
+            return
+
+        selected = table_retrades.currentRow()
+        retrades = getattr(self, "retrades", [])
+        if selected < 0 or not isinstance(retrades, list) or selected >= len(retrades):
+            QMessageBox.warning(self, "Ошибка", "Выберите переторжку")
+            return
+
+        retr = retrades[selected]
+        if not isinstance(retr, dict):
+            QMessageBox.warning(self, "Ошибка", "Выберите переторжку")
+            return
+
+        try:
+            lot_id = retr.get("lot_id")
+            if lot_id not in (None, ""):
+                self.export_trade(int(lot_id))
+                return
+
+            lots = retr.get("lots")
+            if isinstance(lots, list) and lots:
+                first_lot = lots[0] if isinstance(lots[0], dict) else {}
+                nested_lot_id = first_lot.get("id")
+                if nested_lot_id not in (None, ""):
+                    self.export_trade(int(nested_lot_id))
+                    return
+
+            trade_id = retr.get("id")
+            if trade_id in (None, ""):
+                raise ValueError("Не удалось определить идентификатор переторжки для экспорта")
+            self._start_export_worker(trade_id=int(trade_id))
+        except Exception as exc:
+            self._on_export_error(str(exc))
 
     def _start_export_worker(
         self,
@@ -165,8 +213,14 @@ class ExportMixin:
         return str((base_dir / file_name).resolve())
 
     def _set_export_loading_state(self, *, is_loading: bool) -> None:
-        self.btn_export_trade.setEnabled(not is_loading)
-        self.btn_export_trade.setText("Экспорт..." if is_loading else "Экспорт")
+        if hasattr(self, "btn_export_trade"):
+            self.btn_export_trade.setEnabled(not is_loading)
+            self.btn_export_trade.setText("Экспорт..." if is_loading else "Экспорт")
+        if hasattr(self, "btn_export_retrade"):
+            self.btn_export_retrade.setEnabled(not is_loading)
+            self.btn_export_retrade.setText(
+                "Экспорт..." if is_loading else "Экспорт переторжки"
+            )
 
     def _finish_export(self, status_message: str) -> None:
         self._set_export_loading_state(is_loading=False)

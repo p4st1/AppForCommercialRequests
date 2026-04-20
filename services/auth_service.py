@@ -70,8 +70,10 @@ def save_config(data: dict) -> None:
 
 class AuthService:
     BASE_URL = "https://etp.metal-it.ru"
+    TRADES_URL = f"{BASE_URL}/trades"
     LOGIN_SUCCESS_SELECTOR = "text=Приём заявок"
     CAPTCHA_WAIT_TIMEOUT_MS = 120_000
+    POST_LOGIN_SETTLE_TIMEOUT_MS = 3_000
 
     def __init__(self, *, headless: bool = False, timeout_ms: int = 30_000) -> None:
         self._headless = headless
@@ -109,12 +111,27 @@ class AuthService:
 
                 print("Введите капчу вручную в браузере...")
                 self._wait_for_login_success(page)
+                page.wait_for_timeout(self.POST_LOGIN_SETTLE_TIMEOUT_MS)
+
+                page.goto(
+                    self.TRADES_URL,
+                    wait_until="domcontentloaded",
+                    timeout=self._timeout_ms,
+                )
+                page.wait_for_timeout(self.POST_LOGIN_SETTLE_TIMEOUT_MS)
 
                 cookies = self._extract_session_cookies(context.cookies())
                 if not cookies:
                     raise RuntimeError("Не удалось получить cookies после авторизации")
+                if "XSRF-TOKEN" not in cookies:
+                    cookie_names = ", ".join(sorted(cookies.keys()))
+                    raise RuntimeError(
+                        "После авторизации не найден XSRF-TOKEN. "
+                        f"Получены cookies: {cookie_names or 'пусто'}"
+                    )
 
                 save_config({"cookies": cookies})
+                self._save_cookies_to_root_config(cookies)
                 return cookies
             finally:
                 browser.close()
@@ -140,3 +157,34 @@ class AuthService:
                 continue
             collected[name] = value
         return collected
+
+    @staticmethod
+    def _save_cookies_to_root_config(cookies_raw: Any) -> None:
+        cookies = _normalize_cookies(cookies_raw)
+        if not cookies:
+            return
+
+        config_path = Path("config.json")
+        payload: dict[str, Any] = {}
+        if config_path.exists():
+            try:
+                loaded = Tool.load_json(config_path)
+                if isinstance(loaded, dict):
+                    payload = loaded
+            except Exception as exc:
+                Tool.write_log(
+                    f"Не удалось прочитать config.json перед сохранением cookies: {exc}"
+                )
+                payload = {}
+
+        normalized_payload = Tool.merge_config_with_defaults(payload)
+        normalized_payload["cookies"] = cookies
+        config_section = normalized_payload.get("config")
+        if not isinstance(config_section, dict):
+            config_section = {}
+        normalized_payload["config"] = dict(config_section)
+        normalized_payload["config"]["cookies"] = cookies
+
+        Tool.save_json_atomic(config_path, normalized_payload)
+        if isinstance(Config.config, dict):
+            Config.config["cookies"] = cookies
