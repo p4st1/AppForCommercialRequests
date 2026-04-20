@@ -55,10 +55,13 @@ class _FakeResponse:
 
 
 class _PostCaptureSession(_CaptureSession):
-    def __init__(self, responses):
+    def __init__(self, responses=None, *, get_responses=None, post_responses=None):
         super().__init__()
-        self._responses = list(responses)
+        normalized_post = post_responses if post_responses is not None else responses
+        self._post_responses = list(normalized_post or [])
+        self._get_responses = list(get_responses or [])
         self.post_calls = []
+        self.get_calls = []
 
     def post(self, url, json=None, headers=None, timeout=None):
         self.post_calls.append(
@@ -69,9 +72,21 @@ class _PostCaptureSession(_CaptureSession):
                 "timeout": timeout,
             }
         )
-        if not self._responses:
+        if not self._post_responses:
             raise AssertionError("Неожиданный вызов post без подготовленного ответа")
-        return self._responses.pop(0)
+        return self._post_responses.pop(0)
+
+    def get(self, url, headers=None, timeout=None):
+        self.get_calls.append(
+            {
+                "url": url,
+                "headers": headers,
+                "timeout": timeout,
+            }
+        )
+        if not self._get_responses:
+            raise AssertionError("Неожиданный вызов get без подготовленного ответа")
+        return self._get_responses.pop(0)
 
 
 class PlatformClientAuthTests(unittest.TestCase):
@@ -99,6 +114,15 @@ class PlatformClientAuthTests(unittest.TestCase):
         cookie_names = [call[0][0] for call in session.cookies.calls if call and call[0]]
         self.assertIn("JSESSIONID", cookie_names)
         self.assertIn("__Host-JSESSIONID", cookie_names)
+
+    def test_client_does_not_require_xsrf_token(self):
+        session = _CaptureSession()
+        MetalITClient({"JSESSIONID": "session-cookie"}, session=session)
+
+        self.assertIn("User-Agent", session.headers)
+        self.assertEqual(session.headers["Content-Type"], "application/json")
+        self.assertEqual(session.headers["Accept"], "application/json")
+        self.assertNotIn("X-XSRF-TOKEN", session.headers)
 
     def test_is_authenticated_returns_true_when_request_succeeds(self):
         client = MetalITClient({"JSESSIONID": "session-cookie"})
@@ -146,7 +170,11 @@ class PlatformClientAuthTests(unittest.TestCase):
                                         "registeredNumber": "RET-101",
                                         "title": "Переторжка 101",
                                         "processStatus": "RETRADING_ACTIVE",
-                                        "bidSubmissionEndDate": "2026-04-20T10:00:00Z",
+                                        "currentStage": {"id": 5001},
+                                        "lots": [{"id": 1001}],
+                                        "organizer": {"title": "Организатор 101"},
+                                        "customer": {"title": "Заказчик 101"},
+                                        "currency": {"title": "RUB"},
                                     }
                                 ],
                                 "total": 51,
@@ -165,7 +193,11 @@ class PlatformClientAuthTests(unittest.TestCase):
                                         "registeredNumber": "RET-102",
                                         "title": "Переторжка 102",
                                         "processStatus": "RETRADING_FINISHED",
-                                        "bidSubmissionEndDate": "2026-04-21T10:00:00Z",
+                                        "currentStage": {"id": 5002},
+                                        "lots": [{"id": 1002}],
+                                        "organizer": {"title": "Организатор 102"},
+                                        "customer": {"title": "Заказчик 102"},
+                                        "currency": {"title": "USD"},
                                     }
                                 ],
                                 "total": 51,
@@ -184,17 +216,29 @@ class PlatformClientAuthTests(unittest.TestCase):
             [
                 {
                     "id": 101,
+                    "stage_id": 5001,
                     "number": "RET-101",
                     "title": "Переторжка 101",
                     "status": "RETRADING_ACTIVE",
-                    "endDate": "2026-04-20T10:00:00Z",
+                    "endDate": "",
+                    "lot_id": 1001,
+                    "lots": [{"id": 1001}],
+                    "organizer": {"title": "Организатор 101"},
+                    "customer": {"title": "Заказчик 101"},
+                    "currency": {"title": "RUB"},
                 },
                 {
                     "id": 102,
+                    "stage_id": 5002,
                     "number": "RET-102",
                     "title": "Переторжка 102",
                     "status": "RETRADING_FINISHED",
-                    "endDate": "2026-04-21T10:00:00Z",
+                    "endDate": "",
+                    "lot_id": 1002,
+                    "lots": [{"id": 1002}],
+                    "organizer": {"title": "Организатор 102"},
+                    "customer": {"title": "Заказчик 102"},
+                    "currency": {"title": "USD"},
                 },
             ],
         )
@@ -223,6 +267,102 @@ class PlatformClientAuthTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "Ошибка авторизации — обновите cookies"):
             client.load_retrades()
+
+    def test_get_retrading_offers_parses_bid_places(self):
+        session = _PostCaptureSession(
+            get_responses=[
+                _FakeResponse(
+                    status_code=200,
+                    payload={
+                        "id": 101,
+                        "submissionStages": [
+                            {
+                                "tradeResult": {
+                                    "lotResults": [
+                                        {
+                                            "bidPlaces": [
+                                                {
+                                                    "bid": {
+                                                        "id": 7001,
+                                                        "number": "BID-001",
+                                                        "price": 12345.67,
+                                                        "status": {"title": "Подана"},
+                                                    }
+                                                },
+                                                {"bid": None},
+                                            ]
+                                        },
+                                        {
+                                            "bidPlaces": [
+                                                {
+                                                    "bid": {
+                                                        "id": 7002,
+                                                        "number": "BID-002",
+                                                        "price": 999.0,
+                                                        "status": {"title": "На рассмотрении"},
+                                                    }
+                                                },
+                                            ]
+                                        },
+                                    ]
+                                }
+                            }
+                        ],
+                    },
+                )
+            ]
+        )
+        client = MetalITClient({"JSESSIONID": "session-cookie"}, session=session)
+
+        offers = client.get_retrading_offers(101)
+
+        self.assertEqual(
+            offers,
+            [
+                {
+                    "bid_id": 7001,
+                    "number": "BID-001",
+                    "price": 12345.67,
+                    "status": "Подана",
+                },
+                {
+                    "bid_id": 7002,
+                    "number": "BID-002",
+                    "price": 999.0,
+                    "status": "На рассмотрении",
+                },
+            ],
+        )
+        self.assertEqual(len(session.get_calls), 1)
+        self.assertTrue(session.get_calls[0]["url"].endswith("/trade/101"))
+
+    def test_get_retrading_offers_returns_empty_when_no_bid_places(self):
+        session = _PostCaptureSession(
+            get_responses=[
+                _FakeResponse(
+                    status_code=200,
+                    payload={
+                        "id": 101,
+                        "submissionStages": [
+                            {
+                                "tradeResult": {
+                                    "lotResults": [
+                                        {"bidPlaces": []},
+                                        {"bidPlaces": []},
+                                    ]
+                                }
+                            }
+                        ],
+                    },
+                )
+            ]
+        )
+        client = MetalITClient({"JSESSIONID": "session-cookie"}, session=session)
+
+        offers = client.get_retrading_offers(101)
+
+        self.assertEqual(offers, [])
+        self.assertEqual(len(session.get_calls), 1)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -11,9 +12,269 @@ from config import Config
 from tools import DatabaseTools as Tool
 
 
+def open_retrading(page: Page, trade_id: int, stage_id: int) -> str:
+    trade_id_int = int(trade_id)
+    stage_id_int = int(stage_id)
+    url = (
+        "https://etp.metal-it.ru/trades/"
+        f"{trade_id_int}/submission-stages/{stage_id_int}"
+        "?page=purchases.trades.filters.RETRADING"
+    )
+    print(f"[RETRADE] open trade_id={trade_id_int}, stage_id={stage_id_int}")
+    print(f"[RETRADE] open url={url}")
+
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+    except Exception as exc:
+        print("Не удалось открыть страницу переторжки")
+        raise Exception("Не удалось открыть страницу переторжки") from exc
+
+    try:
+        page.wait_for_load_state("networkidle", timeout=60_000)
+    except Exception:
+        pass
+
+    try:
+        page.wait_for_selector("table", timeout=60_000)
+    except Exception:
+        page.wait_for_timeout(3_000)
+
+    if str(trade_id_int) not in str(page.url):
+        print("[WARNING] URL не содержит trade_id")
+
+    header_locator = page.locator("h1")
+    if header_locator.count() == 0:
+        print("[ERROR] Заголовок переторжки не найден")
+        raise Exception("Страница переторжки не загрузилась корректно")
+
+    title_text = str(header_locator.first.inner_text() or "").strip()
+    print(f"[DEBUG] Открыта страница: {title_text}")
+
+    page.evaluate(
+        """
+        document.body.style.border = "5px solid red";
+        """
+    )
+
+    filename = f"debug_retrading_{trade_id_int}.png"
+    page.screenshot(path=filename, full_page=True)
+    print(f"[DEBUG] Скриншот сохранён: {filename}")
+
+    return url
+
+
+def open_bid(page: Page, bid_id: int) -> str:
+    bid_id_int = int(bid_id)
+    url = f"https://etp.metal-it.ru/bids/{bid_id_int}/retrading"
+    page.goto(url, timeout=60_000)
+    page.wait_for_load_state("networkidle", timeout=60_000)
+    return url
+
+
+def _unwrap_trade_json(raw_payload: Any) -> dict[str, Any]:
+    if isinstance(raw_payload, dict) and isinstance(raw_payload.get("data"), dict):
+        return raw_payload["data"]
+    if isinstance(raw_payload, dict):
+        return raw_payload
+    return {}
+
+
+def _parse_bids_from_trade_data(data: dict[str, Any]) -> list[dict[str, Any]]:
+    submission_stages = data.get("submissionStages", [])
+    if not isinstance(submission_stages, list):
+        submission_stages = []
+    print("submissionStages:", len(submission_stages))
+
+    bids: list[dict[str, Any]] = []
+    seen_bid_ids: set[int] = set()
+
+    for stage in submission_stages:
+        if not isinstance(stage, dict):
+            continue
+        trade_result = stage.get("tradeResult")
+        if not isinstance(trade_result, dict):
+            continue
+
+        lot_results = trade_result.get("lotResults")
+        if not isinstance(lot_results, list):
+            lot_results = []
+        print("lotResults:", len(lot_results))
+
+        for lot in lot_results:
+            if not isinstance(lot, dict):
+                continue
+            bid_places = lot.get("bidPlaces")
+            if not isinstance(bid_places, list):
+                bid_places = []
+            print("bidPlaces:", len(bid_places))
+
+            for place in bid_places:
+                if not isinstance(place, dict):
+                    continue
+                bid = place.get("bid")
+                if not isinstance(bid, dict):
+                    continue
+
+                bid_id_raw = bid.get("id")
+                try:
+                    bid_id = int(bid_id_raw)
+                except (TypeError, ValueError):
+                    continue
+                if bid_id <= 0 or bid_id in seen_bid_ids:
+                    continue
+
+                status_title = ""
+                status_node = bid.get("status")
+                if isinstance(status_node, dict):
+                    status_title = str(status_node.get("title", "") or "")
+                elif status_node is not None:
+                    status_title = str(status_node)
+
+                bids.append(
+                    {
+                        "bid_id": bid_id,
+                        "number": str(bid.get("number", "") or ""),
+                        "price": bid.get("price"),
+                        "status": status_title,
+                    }
+                )
+                seen_bid_ids.add(bid_id)
+
+    return bids
+
+
+def get_trade_json_via_network(page: Page, trade_id: int) -> dict[str, Any]:
+    trade_id_int = int(trade_id)
+    target_url = f"https://etp.metal-it.ru/trades/{trade_id_int}"
+
+    captured_payload: Any = None
+    captured_url = ""
+    fallback_payload: Any = None
+    fallback_url = ""
+
+    def _on_response(response: Any) -> None:
+        nonlocal captured_payload, captured_url, fallback_payload, fallback_url
+
+        response_url = str(getattr(response, "url", "") or "")
+        lower_url = response_url.lower()
+        if "trade" not in lower_url and "bid" not in lower_url:
+            return
+
+        try:
+            response_json: Any = response.json()
+        except Exception:
+            return
+
+        try:
+            payload_text = json.dumps(response_json, ensure_ascii=False, default=str)
+        except Exception:
+            payload_text = str(response_json)
+
+        if f"/trades/{trade_id_int}" in response_url:
+            fallback_payload = response_json
+            fallback_url = response_url
+
+        if "bidPlaces" in payload_text or '"number"' in payload_text:
+            captured_payload = response_json
+            captured_url = response_url
+
+    page.on("response", _on_response)
+    try:
+        page.goto(target_url, wait_until="domcontentloaded", timeout=60_000)
+        for _ in range(14):
+            if captured_payload is not None:
+                break
+            page.wait_for_timeout(500)
+    finally:
+        try:
+            page.remove_listener("response", _on_response)
+        except Exception:
+            pass
+
+    if captured_payload is not None:
+        try:
+            payload_text = json.dumps(captured_payload, ensure_ascii=False, default=str)
+        except Exception:
+            payload_text = str(captured_payload)
+        print("FOUND TARGET API:", captured_url)
+        print(payload_text[:1000])
+        if isinstance(captured_payload, dict):
+            return captured_payload
+        return {"data": captured_payload}
+
+    if fallback_payload is not None:
+        try:
+            payload_text = json.dumps(fallback_payload, ensure_ascii=False, default=str)
+        except Exception:
+            payload_text = str(fallback_payload)
+        print("FOUND TARGET API:", fallback_url)
+        print(payload_text[:1000])
+        if isinstance(fallback_payload, dict):
+            return fallback_payload
+        return {"data": fallback_payload}
+
+    raise RuntimeError(
+        f"Не удалось автоматически найти API с заявками для trade_id={trade_id_int}"
+    )
+
+
+def get_trade_bids(page: Page, trade_id: int) -> list[dict[str, Any]]:
+    trade_id_int = int(trade_id)
+    endpoint = f"https://etp.metal-it.ru/trades/{trade_id_int}"
+    response = page.request.get(endpoint, timeout=60_000)
+
+    print(response.status)
+    response_text = response.text()
+    print(response_text[:1000])
+
+    if not response.ok:
+        raise RuntimeError(
+            f"Не удалось получить заявки переторжки trade_id={trade_id_int}: HTTP {response.status}"
+        )
+
+    raw_data: Any = {}
+    try:
+        raw_data = response.json()
+    except Exception as exc:
+        raise RuntimeError(
+            f"Некорректный JSON ответа /trades/{trade_id_int}: {response_text[:1000]}"
+        ) from exc
+
+    data = _unwrap_trade_json(raw_data)
+    print("data.keys():", list(data.keys()))
+
+    submission_stages = data.get("submissionStages")
+    if not isinstance(submission_stages, list):
+        print("submissionStages отсутствует — проблема авторизации")
+        raw_data = get_trade_json_via_network(page, trade_id_int)
+        data = _unwrap_trade_json(raw_data)
+
+    bids = _parse_bids_from_trade_data(data)
+
+    if not bids:
+        raw_data = get_trade_json_via_network(page, trade_id_int)
+        data = _unwrap_trade_json(raw_data)
+        bids = _parse_bids_from_trade_data(data)
+
+    if not bids:
+        raw_text = response_text
+        try:
+            raw_text = json.dumps(raw_data, ensure_ascii=False, default=str)
+        except Exception:
+            pass
+        print("response.text[:1000]:", raw_text[:1000])
+        print("data.keys():", list(data.keys()))
+
+    print(f"[DEBUG] найдено заявок: {len(bids)}")
+    return bids
+
+
 class TradeExporter:
     BASE_URL = "https://etp.metal-it.ru"
     TRADE_SEARCH_ENDPOINT = "https://etp.metal-it.ru/graphql/tradeSearch"
+    TRADE_WITH_CURRENT_STAGE_ENDPOINT = "https://etp.metal-it.ru/graphql/tradeWithCurrentStage"
+    GRAPHQL_FALLBACK_ENDPOINT = "https://etp.metal-it.ru/graphql"
+    RETRADING_SITEMAP_PAGE = "purchases.trades.filters.RETRADING"
     TRADE_SEARCH_QUERY = """
 query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
   trades(tradeQueryDto: $tradeQueryDto, limit: $limit, skip: $skip) {
@@ -21,6 +282,53 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
       id
       lots {
         id
+      }
+    }
+  }
+}
+"""
+    RETRADE_STAGE_SEARCH_QUERY = """
+query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
+  trades(tradeQueryDto: $tradeQueryDto, limit: $limit, skip: $skip) {
+    items {
+      id
+      currentStage {
+        id
+      }
+    }
+    total
+  }
+}
+"""
+    TRADE_WITH_CURRENT_STAGE_QUERY = """
+query tradeWithCurrentStage($tradeId: Int) {
+  trade(id: $tradeId) {
+    currentStage {
+      tradeResult {
+        lotResults {
+          bidPlaces {
+            bid {
+              id
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+    TRADE_WITH_CURRENT_STAGE_QUERY_ALT = """
+query tradeWithCurrentStage($id: Int) {
+  tradeWithCurrentStage(id: $id) {
+    currentStage {
+      tradeResult {
+        lotResults {
+          bidPlaces {
+            bid {
+              id
+            }
+          }
+        }
       }
     }
   }
@@ -119,7 +427,12 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
         ]
 
     @staticmethod
-    def _build_trade_search_variables(limit: int, skip: int) -> dict[str, Any]:
+    def _build_trade_search_variables(
+        limit: int,
+        skip: int,
+        *,
+        sitemap_page: str = "purchases.trades.filters.BID_SUBMISSION",
+    ) -> dict[str, Any]:
         return {
             "limit": limit,
             "skip": skip,
@@ -130,7 +443,7 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
                         {"ascending": False, "property": "ID"},
                     ]
                 },
-                "sitemapPage": "purchases.trades.filters.BID_SUBMISSION",
+                "sitemapPage": sitemap_page,
             },
         }
 
@@ -144,9 +457,11 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": cls.BASE_URL,
                 "Referer": f"{cls.BASE_URL}/",
-                "X-XSRF-TOKEN": str(cookies.get("XSRF-TOKEN", "")),
             }
         )
+        xsrf_token = str(cookies.get("XSRF-TOKEN", "") or "").strip()
+        if xsrf_token:
+            session.headers["X-XSRF-TOKEN"] = xsrf_token
         for key, value in cookies.items():
             session.cookies.set(str(key), str(value))
         return session
@@ -175,6 +490,269 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
         trades = data.get("trades", {})
         items = trades.get("items", [])
         return items if isinstance(items, list) else []
+
+    def _post_graphql(
+        self,
+        *,
+        session: requests.Session,
+        endpoint: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = session.post(
+            endpoint,
+            json=payload,
+            timeout=max(10.0, self._timeout_ms / 1000),
+        )
+        response.raise_for_status()
+        body = response.json()
+        if not isinstance(body, dict):
+            raise RuntimeError("Некорректный формат ответа GraphQL")
+        errors = body.get("errors")
+        if errors:
+            raise RuntimeError(f"GraphQL errors: {errors}")
+        return body
+
+    def _resolve_retrade_stage_id(
+        self,
+        *,
+        session: requests.Session,
+        trade_id: int,
+    ) -> int:
+        print(f"[PIPELINE] STEP 1: tradeSearch retrades for trade_id={trade_id}")
+        limit = 100
+        max_pages = 30
+        skip = 0
+        total = 0
+
+        for _ in range(max_pages):
+            payload = {
+                "operationName": "tradeSearch",
+                "variables": self._build_trade_search_variables(
+                    limit=limit,
+                    skip=skip,
+                    sitemap_page=self.RETRADING_SITEMAP_PAGE,
+                ),
+                "query": self.RETRADE_STAGE_SEARCH_QUERY,
+            }
+            body = self._post_graphql(
+                session=session,
+                endpoint=self.TRADE_SEARCH_ENDPOINT,
+                payload=payload,
+            )
+            data = body.get("data", {})
+            trades = data.get("trades", {}) if isinstance(data, dict) else {}
+            items = trades.get("items", []) if isinstance(trades, dict) else []
+            total_raw = trades.get("total", total) if isinstance(trades, dict) else total
+            try:
+                total = max(0, int(total_raw))
+            except (TypeError, ValueError):
+                total = 0
+
+            if not isinstance(items, list) or not items:
+                break
+
+            for trade in items:
+                if not isinstance(trade, dict):
+                    continue
+                trade_raw = trade.get("id")
+                try:
+                    current_trade_id = int(trade_raw)
+                except (TypeError, ValueError):
+                    continue
+                if current_trade_id != trade_id:
+                    continue
+
+                current_stage = trade.get("currentStage")
+                if not isinstance(current_stage, dict):
+                    raise RuntimeError(
+                        f"Не найден currentStage для trade_id={trade_id}"
+                    )
+                stage_id = self._parse_positive_int(
+                    current_stage.get("id"),
+                    name="stage_id",
+                )
+                print(f"[PIPELINE] STEP 1 DONE: trade_id={trade_id}, stage_id={stage_id}")
+                return stage_id
+
+            if total > 0 and skip + limit >= total:
+                break
+            if len(items) < limit and total <= 0:
+                break
+            skip += limit
+
+        raise RuntimeError(f"Не найдена переторжка trade_id={trade_id} в tradeSearch")
+
+    @staticmethod
+    def _extract_bid_id_from_trade_with_current_stage_data(
+        response_body: dict[str, Any],
+        *,
+        current_user_id: int | None = None,
+        trade_id: int | None = None,
+    ) -> int | None:
+        if not isinstance(response_body, dict):
+            print("Ошибка: некорректный формат response tradeWithCurrentStage")
+            return None
+
+        print(json.dumps(response_body, indent=2, ensure_ascii=False, default=str))
+
+        data_node = response_body.get("data")
+        if not isinstance(data_node, dict):
+            print("Ошибка: в response отсутствует data")
+            return None
+
+        trade_node = data_node.get("trade")
+        if not isinstance(trade_node, dict):
+            print("Ошибка: отсутствует data['trade'], пробуем data['tradeWithCurrentStage']")
+            trade_node = data_node.get("tradeWithCurrentStage")
+        if not isinstance(trade_node, dict):
+            print("Ошибка: не найден data['trade'] или data['tradeWithCurrentStage']")
+            return None
+
+        current_stage = trade_node.get("currentStage")
+        if not isinstance(current_stage, dict):
+            print("Ошибка: отсутствует data['trade']['currentStage']")
+            return None
+
+        trade_result = current_stage.get("tradeResult")
+        if not isinstance(trade_result, dict):
+            print("Ошибка: отсутствует data['trade']['currentStage']['tradeResult']")
+            return None
+
+        lot_results = trade_result.get("lotResults")
+        print("lotResults:", lot_results)
+        if not isinstance(lot_results, list) or not lot_results:
+            print("Нет bidPlaces — либо пользователь не участвует, либо API вернул пусто")
+            return None
+
+        has_bid = False
+        for lot in lot_results:
+            if isinstance(lot, dict) and lot.get("bidPlaces"):
+                has_bid = True
+                break
+        if not has_bid:
+            if trade_id is not None:
+                print(f"Пропуск: нет участия в переторжке {trade_id}")
+            print("Нет bidPlaces — либо пользователь не участвует, либо API вернул пусто")
+            return None
+
+        first_available_bid_id: int | None = None
+
+        for lot in lot_results:
+            print("lot:", lot)
+            if not isinstance(lot, dict):
+                print("bidPlaces:", None)
+                continue
+            bid_places = lot.get("bidPlaces")
+            print("bidPlaces:", bid_places)
+            if not isinstance(bid_places, list) or not bid_places:
+                continue
+
+            for place in bid_places:
+                if not isinstance(place, dict):
+                    continue
+                if "bid" not in place or place.get("bid") is None:
+                    continue
+
+                bid_node = place.get("bid")
+                if not isinstance(bid_node, dict):
+                    continue
+
+                bid_id_raw = bid_node.get("id")
+                try:
+                    bid_id = int(bid_id_raw)
+                except (TypeError, ValueError):
+                    continue
+                if bid_id <= 0:
+                    continue
+
+                if first_available_bid_id is None:
+                    first_available_bid_id = bid_id
+
+                if current_user_id is not None:
+                    bidder_node = bid_node.get("bidder")
+                    bidder_id_raw = bidder_node.get("id") if isinstance(bidder_node, dict) else None
+                    try:
+                        bidder_id = int(bidder_id_raw) if bidder_id_raw is not None else None
+                    except (TypeError, ValueError):
+                        bidder_id = None
+                    if bidder_id == current_user_id:
+                        print("Найден bid_id:", bid_id)
+                        return bid_id
+
+        if first_available_bid_id is not None:
+            print("Найден bid_id:", first_available_bid_id)
+            return first_available_bid_id
+
+        print("Нет bidPlaces — либо пользователь не участвует, либо API вернул пусто")
+        return None
+
+    def _resolve_bid_id_from_trade_with_current_stage(
+        self,
+        *,
+        session: requests.Session,
+        trade_id: int,
+        current_user_id: int | None = None,
+    ) -> int | None:
+        print(f"[PIPELINE] STEP 3: tradeWithCurrentStage for trade_id={trade_id}")
+        attempts: tuple[dict[str, Any], ...] = (
+            {
+                "endpoint": self.TRADE_WITH_CURRENT_STAGE_ENDPOINT,
+                "payload": {
+                    "operationName": "tradeWithCurrentStage",
+                    "variables": {"tradeId": trade_id},
+                    "query": self.TRADE_WITH_CURRENT_STAGE_QUERY,
+                },
+            },
+            {
+                "endpoint": self.TRADE_WITH_CURRENT_STAGE_ENDPOINT,
+                "payload": {
+                    "operationName": "tradeWithCurrentStage",
+                    "variables": {"id": trade_id},
+                    "query": self.TRADE_WITH_CURRENT_STAGE_QUERY_ALT,
+                },
+            },
+            {
+                "endpoint": self.GRAPHQL_FALLBACK_ENDPOINT,
+                "payload": {
+                    "operationName": "tradeWithCurrentStage",
+                    "variables": {"tradeId": trade_id},
+                    "query": self.TRADE_WITH_CURRENT_STAGE_QUERY,
+                },
+            },
+        )
+
+        last_error: Exception | None = None
+        for attempt in attempts:
+            endpoint = str(attempt.get("endpoint", "") or "").strip()
+            payload = attempt.get("payload")
+            if not endpoint or not isinstance(payload, dict):
+                continue
+            try:
+                body = self._post_graphql(
+                    session=session,
+                    endpoint=endpoint,
+                    payload=payload,
+                )
+                bid_id = self._extract_bid_id_from_trade_with_current_stage_data(
+                    body if isinstance(body, dict) else {},
+                    current_user_id=current_user_id,
+                    trade_id=trade_id,
+                )
+                print(f"[PIPELINE] STEP 3 DONE: trade_id={trade_id}, bid_id={bid_id}")
+                return bid_id
+            except Exception as exc:
+                last_error = exc
+                print(
+                    "[PIPELINE] tradeWithCurrentStage attempt failed:",
+                    endpoint,
+                    str(exc),
+                )
+
+        if last_error is not None:
+            print(
+                f"[PIPELINE] Не удалось получить bid_id через tradeWithCurrentStage для trade_id={trade_id}: {last_error}"
+            )
+        return None
 
     @staticmethod
     def _parse_lot_id(trade: dict[str, Any], trade_id: int) -> int:
@@ -325,6 +903,350 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
 
         return str(target_path.resolve())
 
+    @staticmethod
+    def _write_retrade_debug_dump(page: Page) -> None:
+        screenshot_path = Path("debug_retrade_open.png").resolve()
+        html_path = Path("debug_retrade_open.html").resolve()
+        try:
+            page.screenshot(path=str(screenshot_path))
+            print("[RETRADE] debug_screenshot:", str(screenshot_path))
+        except Exception as exc:
+            print("[RETRADE] debug_screenshot_error:", str(exc))
+        try:
+            html_path.write_text(page.content(), encoding="utf-8")
+            print("[RETRADE] debug_html:", str(html_path))
+        except Exception as exc:
+            print("[RETRADE] debug_html_error:", str(exc))
+
+    @staticmethod
+    def _write_export_debug_dump(page: Page) -> None:
+        screenshot_path = Path("export_debug.png").resolve()
+        html_path = Path("export_debug.html").resolve()
+        try:
+            page.screenshot(path=str(screenshot_path))
+            print("[RETRADE] export_screenshot:", str(screenshot_path))
+        except Exception as exc:
+            print("[RETRADE] export_screenshot_error:", str(exc))
+        try:
+            html_path.write_text(page.content(), encoding="utf-8")
+            print("[RETRADE] export_html:", str(html_path))
+        except Exception as exc:
+            print("[RETRADE] export_html_error:", str(exc))
+
+    @staticmethod
+    def _write_retrade_open_dump(page: Page) -> None:
+        screenshot_path = Path("retrade_open.png").resolve()
+        html_path = Path("retrade_open.html").resolve()
+        try:
+            page.screenshot(path=str(screenshot_path))
+            print("[RETRADE] open_screenshot:", str(screenshot_path))
+        except Exception as exc:
+            print("[RETRADE] open_screenshot_error:", str(exc))
+        try:
+            with open(html_path, "w", encoding="utf-8") as html_file:
+                html_file.write(page.content())
+            print("[RETRADE] open_html:", str(html_path))
+        except Exception as exc:
+            print("[RETRADE] open_html_error:", str(exc))
+
+    @staticmethod
+    def _is_probable_file_response_url(url: str) -> bool:
+        url_lower = str(url or "").lower()
+        return any(ext in url_lower for ext in (".xlsx", ".xls", "export", "download", "file"))
+
+    @staticmethod
+    def _is_probable_file_response_headers(headers: dict[str, str]) -> bool:
+        content_type = str(headers.get("content-type", "")).lower()
+        content_disposition = str(headers.get("content-disposition", "")).lower()
+        if "attachment" in content_disposition:
+            return True
+        if any(
+            marker in content_type
+            for marker in (
+                "spreadsheet",
+                "excel",
+                "octet-stream",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        ):
+            return True
+        return False
+
+    def _download_via_requests(
+        self,
+        *,
+        file_url: str,
+        target_path: Path,
+        cookies: dict[str, str],
+        referer_url: str,
+    ) -> None:
+        session = requests.Session()
+        try:
+            session.headers.update(
+                {
+                    "Accept": "*/*",
+                    "Referer": referer_url,
+                    "Origin": self.BASE_URL,
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/124.0.0.0 Safari/537.36"
+                    ),
+                }
+            )
+            for key, value in cookies.items():
+                key_text = str(key).strip()
+                value_text = str(value).strip()
+                if not key_text or not value_text:
+                    continue
+                session.cookies.set(key_text, value_text, domain="etp.metal-it.ru", path="/")
+                session.cookies.set(key_text, value_text)
+
+            response = session.get(
+                file_url,
+                timeout=max(30.0, self._timeout_ms / 1000),
+                stream=True,
+                allow_redirects=True,
+            )
+            response.raise_for_status()
+            content_type = str(response.headers.get("content-type", "")).lower()
+            if "application/json" in content_type:
+                raise RuntimeError("Сервер вернул JSON вместо файла")
+
+            with target_path.open("wb") as output_file:
+                for chunk in response.iter_content(chunk_size=65_536):
+                    if chunk:
+                        output_file.write(chunk)
+            if target_path.stat().st_size <= 0:
+                raise RuntimeError("Скачанный файл пустой")
+        finally:
+            session.close()
+
+    def _try_download_via_network_fallback(
+        self,
+        *,
+        candidate_urls: list[str],
+        target_path: Path,
+        cookies: dict[str, str],
+        referer_url: str,
+    ) -> bool:
+        seen_urls: set[str] = set()
+        ordered_candidates: list[str] = []
+        for url in reversed(candidate_urls):
+            url_text = str(url or "").strip()
+            if not url_text or url_text in seen_urls:
+                continue
+            seen_urls.add(url_text)
+            ordered_candidates.append(url_text)
+
+        for file_url in ordered_candidates:
+            if file_url.startswith("blob:"):
+                continue
+            try:
+                self._download_via_requests(
+                    file_url=file_url,
+                    target_path=target_path,
+                    cookies=cookies,
+                    referer_url=referer_url,
+                )
+                print("[RETRADE] fallback_download_url:", file_url)
+                return True
+            except Exception as exc:
+                print("[RETRADE] fallback_download_error:", str(exc))
+        return False
+
+    def _export_retrade_with_trade_id(
+        self,
+        *,
+        trade_id: int,
+        lot_id: int,
+        selected_bid_id: int | None = None,
+        target_path: Path,
+        cookies: dict[str, str],
+    ) -> str:
+        lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
+        trade_id_int = self._parse_positive_int(trade_id, name="trade_id")
+        retrade_timeout = max(self._timeout_ms, 60_000)
+        api_session = self._build_api_session(cookies)
+        stage_id: int | None = None
+        bid_id: int | None = None
+        final_target_path = target_path.with_name(f"retrade_{trade_id_int}.xlsx")
+
+        try:
+            stage_id = self._resolve_retrade_stage_id(
+                session=api_session,
+                trade_id=trade_id_int,
+            )
+            print(
+                f"[PIPELINE] IDs: trade_id={trade_id_int}, lot_id={lot_id_int}, stage_id={stage_id}"
+            )
+
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=self._headless)
+                try:
+                    context = browser.new_context(accept_downloads=True)
+                    context.add_cookies(self._build_playwright_cookies(cookies))
+                    page = context.new_page()
+
+                    print(
+                        "[PIPELINE] STEP 2: open stage page",
+                        f"trade_id={trade_id_int}",
+                        f"stage_id={stage_id}",
+                    )
+                    stage_url = open_retrading(
+                        page,
+                        trade_id=trade_id_int,
+                        stage_id=stage_id,
+                    )
+                    print("[PIPELINE] STEP 2 URL:", page.url)
+                    print("[PIPELINE] STEP 2 TITLE:", page.title())
+                    if "login" in str(page.url).lower():
+                        raise Exception("Playwright не авторизован")
+
+                    if selected_bid_id is not None:
+                        bid_id = self._parse_positive_int(
+                            selected_bid_id,
+                            name="bid_id",
+                        )
+                        print(f"[PIPELINE] STEP 3: используем выбранный bid_id={bid_id}")
+                    else:
+                        bids = get_trade_bids(page, trade_id_int)
+                        if bids:
+                            bid_id = self._parse_positive_int(
+                                bids[0].get("bid_id"),
+                                name="bid_id",
+                            )
+                            print(
+                                f"[PIPELINE] STEP 3: выбран первый bid_id из /trades/{trade_id_int}: {bid_id}"
+                            )
+                    if bid_id is None:
+                        print(f"Пропуск: нет участия в переторжке {trade_id_int}")
+                        return ""
+                    print(
+                        f"[PIPELINE] IDs: trade_id={trade_id_int}, stage_id={stage_id}, bid_id={bid_id}"
+                    )
+
+                    target_url = f"{self.BASE_URL}/bids/{bid_id}/retrading"
+                    print(f"[PIPELINE] STEP 4: open bid page {target_url}")
+                    open_bid(page, bid_id)
+                    current_url = page.url
+                    current_title = page.title()
+                    print("[RETRADE] url:", current_url)
+                    print("[RETRADE] title:", current_title)
+                    print("URL:", current_url)
+                    print("TITLE:", current_title)
+                    self._write_retrade_open_dump(page)
+                    self._write_export_debug_dump(page)
+
+                    if current_url.rstrip("/") != target_url.rstrip("/"):
+                        print("Redirected to:", current_url)
+
+                    spec_locator = page.locator("text=Спецификация")
+                    access_denied_locator = page.locator("text=Доступ запрещен")
+                    error_locator = page.locator("text=Ошибка")
+                    no_access_locator = page.locator("text=Нет доступа")
+                    spec_count = spec_locator.count()
+                    access_denied_count = access_denied_locator.count()
+                    error_count = error_locator.count()
+                    no_access_count = no_access_locator.count()
+
+                    print("Есть Спецификация:", spec_count)
+                    print("Есть Доступ запрещен:", access_denied_count)
+                    print("Есть Ошибка:", error_count)
+                    print("Есть Нет доступа:", no_access_count)
+
+                    if "login" in current_url.lower():
+                        raise Exception("Playwright не авторизован")
+
+                    if access_denied_count > 0 or no_access_count > 0:
+                        raise Exception("Не удалось открыть страницу переторжки: нет доступа")
+
+                    if spec_count == 0:
+                        try:
+                            page.wait_for_selector("text=Спецификация", timeout=20_000)
+                            spec_count = spec_locator.count()
+                        except Exception:
+                            spec_count = spec_locator.count()
+
+                    if spec_count == 0:
+                        self._write_retrade_debug_dump(page)
+                        if "login" in str(page.url).lower():
+                            raise Exception("Playwright не авторизован")
+                        if access_denied_locator.count() > 0 or no_access_locator.count() > 0:
+                            raise Exception("Не удалось открыть страницу переторжки: нет доступа")
+                        if error_locator.count() > 0:
+                            raise Exception("Не удалось открыть страницу переторжки: страница вернула ошибку")
+                        if str(page.url).rstrip("/") != target_url.rstrip("/"):
+                            raise Exception("Не удалось открыть страницу переторжки: неправильный URL или редирект")
+                        raise Exception("Не удалось открыть страницу переторжки: не найден блок 'Спецификация'")
+
+                    print("[PIPELINE] STEP 6: export Excel")
+                    export_button = page.locator("text=ЭКСПОРТ")
+                    if export_button.count() == 0:
+                        raise Exception("Кнопка ЭКСПОРТ не найдена")
+
+                    candidate_urls: list[str] = []
+
+                    def _collect_response(response: Any) -> None:
+                        try:
+                            response_url = str(response.url or "")
+                            if response.status < 200 or response.status >= 400:
+                                return
+                            headers = {
+                                str(key).lower(): str(value)
+                                for key, value in dict(response.headers).items()
+                            }
+                            if (
+                                self._is_probable_file_response_headers(headers)
+                                or self._is_probable_file_response_url(response_url)
+                            ):
+                                candidate_urls.append(response_url)
+                                print("[RETRADE] network_candidate:", response_url)
+                        except Exception:
+                            return
+
+                    page.on("response", _collect_response)
+                    try:
+                        try:
+                            with page.expect_download(timeout=30_000) as download_info:
+                                export_button.first.click()
+                            download = download_info.value
+                            download.save_as(str(final_target_path))
+                            print("Файл сохранен:", str(final_target_path))
+                        except Exception as exc:
+                            print("[RETRADE] expect_download_error:", str(exc))
+                            fallback_ok = self._try_download_via_network_fallback(
+                                candidate_urls=candidate_urls,
+                                target_path=final_target_path,
+                                cookies=cookies,
+                                referer_url=page.url,
+                            )
+                            if not fallback_ok:
+                                self._write_export_debug_dump(page)
+                                raise Exception("Не удалось скачать файл через кнопку ЭКСПОРТ") from exc
+                            print("Файл сохранен:", str(final_target_path))
+                    finally:
+                        try:
+                            page.remove_listener("response", _collect_response)
+                        except Exception:
+                            pass
+                finally:
+                    browser.close()
+        except Exception as exc:
+            print(
+                "[PIPELINE] ERROR:",
+                f"trade_id={trade_id_int}",
+                f"stage_id={stage_id}",
+                f"bid_id={bid_id}",
+                str(exc),
+            )
+            raise
+        finally:
+            api_session.close()
+
+        return str(final_target_path.resolve())
+
     def export_lot_data(self, lot_id: int, download_path: str) -> str:
         lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
         target_path = self._validate_target_path(download_path)
@@ -347,8 +1269,47 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
             cookies=cookies,
         )
 
+    def export_retrade_lot_data(
+        self,
+        lot_id: int,
+        download_path: str,
+        *,
+        trade_id: int | None = None,
+        bid_id: int | None = None,
+    ) -> str:
+        lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
+        if trade_id is None:
+            raise Exception("Не указан trade_id для открытия страницы переторжки")
+        target_path = self._validate_target_path(download_path)
+        cookies = self._load_cookies_for_export()
+        return self._export_retrade_with_trade_id(
+            trade_id=trade_id,
+            lot_id=lot_id_int,
+            selected_bid_id=bid_id,
+            target_path=target_path,
+            cookies=cookies,
+        )
+
     def export_trade(self, trade_id: int, download_path: str) -> str:
         return self.export_trade_data(trade_id=trade_id, download_path=download_path)
 
     def export_lot(self, lot_id: int, download_path: str) -> str:
         return self.export_lot_data(lot_id=lot_id, download_path=download_path)
+
+    def export_retrade_lot(self, lot_id: int, download_path: str) -> str:
+        return self.export_retrade_lot_data(lot_id=lot_id, download_path=download_path)
+
+    def export_retrade(
+        self,
+        lot_id: int,
+        download_path: str,
+        *,
+        trade_id: int | None = None,
+        bid_id: int | None = None,
+    ) -> str:
+        return self.export_retrade_lot_data(
+            lot_id=lot_id,
+            download_path=download_path,
+            trade_id=trade_id,
+            bid_id=bid_id,
+        )

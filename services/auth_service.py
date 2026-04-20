@@ -3,6 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+try:
+    import requests
+except ModuleNotFoundError:  # pragma: no cover - dependency may be absent in test env
+    requests = None  # type: ignore[assignment]
+
 from config import Config
 from tools import DatabaseTools as Tool
 
@@ -71,6 +76,7 @@ def save_config(data: dict) -> None:
 class AuthService:
     BASE_URL = "https://etp.metal-it.ru"
     TRADES_URL = f"{BASE_URL}/trades"
+    TRADE_SEARCH_ENDPOINT = f"{BASE_URL}/graphql/tradeSearch"
     LOGIN_SUCCESS_SELECTOR = "text=Приём заявок"
     CAPTCHA_WAIT_TIMEOUT_MS = 120_000
     POST_LOGIN_SETTLE_TIMEOUT_MS = 3_000
@@ -123,12 +129,17 @@ class AuthService:
                 cookies = self._extract_session_cookies(context.cookies())
                 if not cookies:
                     raise RuntimeError("Не удалось получить cookies после авторизации")
-                if "XSRF-TOKEN" not in cookies:
-                    cookie_names = ", ".join(sorted(cookies.keys()))
-                    raise RuntimeError(
-                        "После авторизации не найден XSRF-TOKEN. "
-                        f"Получены cookies: {cookie_names or 'пусто'}"
-                    )
+                print("Cookies после авторизации:", list(cookies.keys()))
+
+                has_host_session = "__Host-JSESSIONID" in cookies
+                has_session = "JSESSIONID" in cookies
+                if not has_host_session and not has_session:
+                    is_api_ok = self._is_trade_search_available(cookies)
+                    if not is_api_ok:
+                        raise RuntimeError(
+                            "После авторизации не найдены session cookies "
+                            "(__Host-JSESSIONID/JSESSIONID) и API недоступно"
+                        )
 
                 save_config({"cookies": cookies})
                 self._save_cookies_to_root_config(cookies)
@@ -188,3 +199,65 @@ class AuthService:
         Tool.save_json_atomic(config_path, normalized_payload)
         if isinstance(Config.config, dict):
             Config.config["cookies"] = cookies
+
+    def _is_trade_search_available(self, cookies: dict[str, str]) -> bool:
+        if requests is None:
+            return False
+
+        normalized_cookies = _normalize_cookies(cookies)
+        if not normalized_cookies:
+            return False
+
+        payload = {
+            "operationName": "tradeSearch",
+            "variables": {
+                "limit": 1,
+                "skip": 0,
+                "tradeQueryDto": {
+                    "order": {
+                        "expressions": [
+                            {"ascending": False, "property": "REGISTERED_DATE"},
+                            {"ascending": False, "property": "ID"},
+                        ]
+                    },
+                    "sitemapPage": "purchases.trades.filters.BID_SUBMISSION",
+                },
+            },
+            "query": (
+                "query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) { "
+                "trades(tradeQueryDto: $tradeQueryDto, limit: $limit, skip: $skip) { total } }"
+            ),
+        }
+        session = requests.Session()
+        try:
+            session.headers.update(
+                {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Origin": self.BASE_URL,
+                    "Referer": f"{self.BASE_URL}/",
+                }
+            )
+            xsrf_token = str(normalized_cookies.get("XSRF-TOKEN", "") or "").strip()
+            if xsrf_token:
+                session.headers["X-XSRF-TOKEN"] = xsrf_token
+
+            for key, value in normalized_cookies.items():
+                key_text = str(key).strip()
+                value_text = str(value).strip()
+                if not key_text or not value_text:
+                    continue
+                session.cookies.set(key_text, value_text, domain="etp.metal-it.ru", path="/")
+                session.cookies.set(key_text, value_text)
+
+            response = session.post(
+                self.TRADE_SEARCH_ENDPOINT,
+                json=payload,
+                timeout=max(10.0, self._timeout_ms / 1000),
+            )
+            return response.status_code == 200
+        except Exception:
+            return False
+        finally:
+            session.close()

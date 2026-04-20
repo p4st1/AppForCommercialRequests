@@ -11,26 +11,160 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
       id
       registeredNumber
       title
+      processStatus
+      currentStage {
+        id
+      }
       organizer {
         title
       }
-      procurementMethod {
+      customer {
         title
       }
-      bidSubmissionEndDate
-      processStatus
+      currency {
+        title
+      }
       lots {
         id
-        title
-        biddingData {
-          bidSubmissionEndDate
-        }
       }
     }
     total
   }
 }
 """
+TRADE_DETAILS_ENDPOINT_PATTERNS = (
+    "{base_url}/trade/{trade_id}",
+    "{base_url}/api/trade/{trade_id}",
+)
+
+
+def _extract_trade_payload(response_body: Any) -> dict[str, Any] | None:
+    if isinstance(response_body, dict):
+        if isinstance(response_body.get("submissionStages"), list):
+            return response_body
+
+        data_node = response_body.get("data")
+        if isinstance(data_node, dict):
+            if isinstance(data_node.get("submissionStages"), list):
+                return data_node
+            trade_node = data_node.get("trade")
+            if isinstance(trade_node, dict):
+                return trade_node
+
+        trade_node = response_body.get("trade")
+        if isinstance(trade_node, dict):
+            return trade_node
+    return None
+
+
+def _parse_retrading_bids_from_trade_payload(trade_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    submission_stages = trade_payload.get("submissionStages")
+    if not isinstance(submission_stages, list):
+        submission_stages = []
+
+    bids: list[dict[str, Any]] = []
+    seen_bid_ids: set[int] = set()
+
+    for stage in submission_stages:
+        if not isinstance(stage, dict):
+            continue
+        trade_result = stage.get("tradeResult")
+        if not isinstance(trade_result, dict):
+            continue
+
+        lot_results = trade_result.get("lotResults")
+        if not isinstance(lot_results, list):
+            continue
+
+        for lot in lot_results:
+            if not isinstance(lot, dict):
+                continue
+
+            bid_places = lot.get("bidPlaces")
+            if not isinstance(bid_places, list):
+                continue
+
+            for place in bid_places:
+                if not isinstance(place, dict):
+                    continue
+                bid = place.get("bid")
+                if not isinstance(bid, dict):
+                    continue
+
+                bid_id_raw = bid.get("id")
+                try:
+                    bid_id = int(bid_id_raw)
+                except (TypeError, ValueError):
+                    continue
+                if bid_id <= 0 or bid_id in seen_bid_ids:
+                    continue
+
+                status_title = ""
+                status_node = bid.get("status")
+                if isinstance(status_node, dict):
+                    status_title = str(status_node.get("title", "") or "")
+                elif status_node is not None:
+                    status_title = str(status_node)
+
+                bids.append(
+                    {
+                        "bid_id": bid_id,
+                        "number": str(bid.get("number", "") or ""),
+                        "price": bid.get("price"),
+                        "status": status_title,
+                    }
+                )
+                seen_bid_ids.add(bid_id)
+
+    return bids
+
+
+def get_retrading_offers(platform_client: Any, trade_id: int) -> list[dict]:
+    if platform_client is None:
+        raise ValueError("platform_client не передан")
+
+    try:
+        trade_id_int = int(trade_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Некорректный trade_id: {trade_id}") from exc
+    if trade_id_int <= 0:
+        raise ValueError(f"Некорректный trade_id: {trade_id_int}")
+
+    session = getattr(platform_client, "session", None)
+    if session is None:
+        raise RuntimeError("У platform_client отсутствует session")
+
+    headers = getattr(platform_client, "headers", None)
+    timeout = float(getattr(platform_client, "_timeout", 30.0) or 30.0)
+    base_url = str(getattr(platform_client, "BASE_URL", "https://etp.metal-it.ru"))
+
+    bids: list[dict[str, Any]] = []
+    for pattern in TRADE_DETAILS_ENDPOINT_PATTERNS:
+        endpoint = pattern.format(
+            base_url=base_url.rstrip("/"),
+            trade_id=trade_id_int,
+        )
+        response = session.get(
+            endpoint,
+            headers=headers,
+            timeout=timeout,
+        )
+        if response.status_code == 403:
+            raise RuntimeError("Ошибка авторизации — обновите cookies")
+        if response.status_code == 404:
+            continue
+        response.raise_for_status()
+
+        body = response.json()
+        trade_payload = _extract_trade_payload(body)
+        if not isinstance(trade_payload, dict):
+            continue
+
+        bids = _parse_retrading_bids_from_trade_payload(trade_payload)
+        break
+
+    print(f"[DEBUG] найдено заявок: {len(bids)}")
+    return bids
 
 
 class MetalITClient:
@@ -67,9 +201,11 @@ class MetalITClient:
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": self.BASE_URL,
                 "Referer": f"{self.BASE_URL}/",
-                "X-XSRF-TOKEN": str(cookies_with_aliases.get("XSRF-TOKEN", "")),
             }
         )
+        xsrf_token = str(cookies_with_aliases.get("XSRF-TOKEN", "") or "").strip()
+        if xsrf_token:
+            self.session.headers["X-XSRF-TOKEN"] = xsrf_token
         for key, value in cookies_with_aliases.items():
             key_text = str(key).strip()
             value_text = str(value).strip()
@@ -292,15 +428,31 @@ class MetalITClient:
             for trade in items:
                 if not isinstance(trade, dict):
                     continue
+
+                lots_raw = trade.get("lots")
+                lots = lots_raw if isinstance(lots_raw, list) else []
+                first_lot = lots[0] if lots and isinstance(lots[0], dict) else {}
+                lot_id = first_lot.get("id")
                 retrades.append(
                     {
                         "id": trade.get("id"),
+                        "stage_id": (
+                            trade.get("currentStage", {}).get("id")
+                            if isinstance(trade.get("currentStage"), dict)
+                            else None
+                        ),
                         "number": trade.get("registeredNumber"),
                         "title": trade.get("title"),
                         "status": trade.get("processStatus"),
-                        "endDate": trade.get("bidSubmissionEndDate"),
+                        "endDate": trade.get("bidSubmissionEndDate") or "",
+                        "lot_id": lot_id,
+                        "lots": lots,
+                        "organizer": trade.get("organizer"),
+                        "customer": trade.get("customer"),
+                        "currency": trade.get("currency"),
                     }
                 )
+                print("Loaded retrade:", trade.get("id"), trade.get("registeredNumber"))
 
             if total > 0 and current_skip + limit >= total:
                 break
@@ -313,6 +465,9 @@ class MetalITClient:
         self.retrades = retrades
         print(f"Загружено переторжек: {len(retrades)}")
         return retrades
+
+    def get_retrading_offers(self, trade_id: int) -> list[dict[str, Any]]:
+        return get_retrading_offers(self, trade_id)
 
 
 if __name__ == "__main__":

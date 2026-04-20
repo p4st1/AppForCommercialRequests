@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -22,12 +23,16 @@ class ExportTradeWorker(QThread):
         *,
         trade_id: int | None = None,
         lot_id: int | None = None,
+        bid_id: int | None = None,
+        is_retrade: bool = False,
         download_path: str,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
         self._trade_id = int(trade_id) if trade_id is not None else None
         self._lot_id = int(lot_id) if lot_id is not None else None
+        self._bid_id = int(bid_id) if bid_id is not None else None
+        self._is_retrade = bool(is_retrade)
         if self._trade_id is None and self._lot_id is None:
             raise ValueError("Не указан trade_id или lot_id для экспорта")
         self._download_path = str(download_path)
@@ -35,7 +40,14 @@ class ExportTradeWorker(QThread):
     def run(self) -> None:
         try:
             exporter = TradeExporter()
-            if self._lot_id is not None:
+            if self._lot_id is not None and self._is_retrade:
+                saved_path = exporter.export_retrade_lot_data(
+                    lot_id=self._lot_id,
+                    download_path=self._download_path,
+                    trade_id=self._trade_id,
+                    bid_id=self._bid_id,
+                )
+            elif self._lot_id is not None:
                 saved_path = exporter.export_lot_data(
                     lot_id=self._lot_id,
                     download_path=self._download_path,
@@ -124,49 +136,119 @@ class ExportMixin:
             return
 
         try:
-            lot_id = retr.get("lot_id")
-            if lot_id not in (None, ""):
-                self.export_trade(int(lot_id))
-                return
-
-            lots = retr.get("lots")
-            if isinstance(lots, list) and lots:
-                first_lot = lots[0] if isinstance(lots[0], dict) else {}
-                nested_lot_id = first_lot.get("id")
-                if nested_lot_id not in (None, ""):
-                    self.export_trade(int(nested_lot_id))
-                    return
-
-            trade_id = retr.get("id")
-            if trade_id in (None, ""):
-                raise ValueError("Не удалось определить идентификатор переторжки для экспорта")
-            self._start_export_worker(trade_id=int(trade_id))
+            trade_id = self._parse_positive_trade_id(retr.get("id"))
+            lot_id = self._get_retrade_lot_id_for_export(retr)
+            bid_id = self._get_selected_retrade_bid_id_for_export()
+            self._start_export_worker(
+                trade_id=trade_id,
+                lot_id=lot_id,
+                bid_id=bid_id,
+                is_retrade=True,
+            )
         except Exception as exc:
             self._on_export_error(str(exc))
+
+    @staticmethod
+    def _parse_positive_trade_id(raw_trade_id: Any) -> int:
+        try:
+            trade_id = int(raw_trade_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Некорректный trade_id переторжки: {raw_trade_id}") from exc
+        if trade_id <= 0:
+            raise ValueError(f"Некорректный trade_id переторжки: {trade_id}")
+        return trade_id
+
+    @staticmethod
+    def _parse_positive_lot_id(raw_lot_id: Any) -> int:
+        try:
+            lot_id = int(raw_lot_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Некорректный lot_id для экспорта переторжки: {raw_lot_id}") from exc
+        if lot_id <= 0:
+            raise ValueError(f"Некорректный lot_id для экспорта переторжки: {lot_id}")
+        return lot_id
+
+    def _get_retrade_lot_id_for_export(self, retrade: dict[str, Any]) -> int:
+        lots = retrade.get("lots")
+        if isinstance(lots, list) and lots:
+            first_lot = lots[0]
+            if isinstance(first_lot, dict):
+                return self._parse_positive_lot_id(first_lot.get("id"))
+
+        raise Exception("У выбранной переторжки отсутствует lot_id")
+
+    @staticmethod
+    def _parse_positive_bid_id(raw_bid_id: Any) -> int:
+        try:
+            bid_id = int(raw_bid_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Некорректный bid_id для экспорта переторжки: {raw_bid_id}") from exc
+        if bid_id <= 0:
+            raise ValueError(f"Некорректный bid_id для экспорта переторжки: {bid_id}")
+        return bid_id
+
+    def _get_selected_retrade_bid_id_for_export(self) -> int:
+        table_offers = getattr(self, "table_retrade_offers", None)
+        if table_offers is None:
+            table_offers = getattr(getattr(self, "ui", None), "table_retrade_offers", None)
+        if table_offers is None:
+            raise Exception("Таблица предложений переторжки не найдена")
+
+        offers = getattr(self, "retrade_offers", [])
+        if not isinstance(offers, list) or not offers:
+            raise Exception("Нет предложений переторжки для экспорта")
+
+        selected_row = table_offers.currentRow()
+        if selected_row < 0 or selected_row >= len(offers):
+            raise Exception("Выберите предложение переторжки")
+
+        selected_offer = offers[selected_row]
+        if not isinstance(selected_offer, dict):
+            raise Exception("Выберите предложение переторжки")
+
+        return self._parse_positive_bid_id(selected_offer.get("bid_id"))
 
     def _start_export_worker(
         self,
         *,
         trade_id: int | None = None,
         lot_id: int | None = None,
+        bid_id: int | None = None,
+        is_retrade: bool = False,
     ) -> None:
         if self._export_trade_worker is not None and self._export_trade_worker.isRunning():
             raise RuntimeError("Экспорт заявки уже выполняется")
 
         if trade_id is None and lot_id is None:
             raise ValueError("Не указан идентификатор для экспорта")
+        if trade_id is not None and int(trade_id) <= 0:
+            raise ValueError(f"Некорректный идентификатор для экспорта: {trade_id}")
+        if lot_id is not None and int(lot_id) <= 0:
+            raise ValueError(f"Некорректный идентификатор для экспорта: {lot_id}")
+        if bid_id is not None and int(bid_id) <= 0:
+            raise ValueError(f"Некорректный идентификатор для экспорта: {bid_id}")
+        if is_retrade and lot_id is None:
+            raise Exception("У выбранной переторжки отсутствует lot_id")
+        if is_retrade and (trade_id is None or int(trade_id) <= 0):
+            raise Exception("Не указан trade_id для открытия страницы переторжки")
+        if is_retrade and (bid_id is None or int(bid_id) <= 0):
+            raise Exception("Выберите предложение переторжки")
 
-        identifier = trade_id if trade_id is not None else lot_id
-        identifier_value = int(identifier)
-        if identifier_value <= 0:
-            raise ValueError(f"Некорректный идентификатор для экспорта: {identifier}")
-
-        download_path = self._build_export_download_path(identifier_value)
+        identifier_for_path: Any = (
+            trade_id
+            if trade_id is not None
+            else lot_id
+            if lot_id is not None
+            else "unknown"
+        )
+        download_path = self._build_export_download_path(identifier_for_path)
         self._set_export_loading_state(is_loading=True)
 
         worker = ExportTradeWorker(
             trade_id=trade_id,
             lot_id=lot_id,
+            bid_id=bid_id,
+            is_retrade=is_retrade,
             download_path=download_path,
             parent=self,
         )
@@ -201,15 +283,17 @@ class ExportMixin:
             raise ValueError(f"Некорректный trade_id в таблице: {trade_text}") from exc
 
     @staticmethod
-    def _build_export_download_path(trade_id: int) -> str:
+    def _build_export_download_path(identifier: Any) -> str:
         base_dir_raw = str(Config.config.get("pathToSaveExcel", "") or "").strip()
         base_dir = Path(base_dir_raw).expanduser() if base_dir_raw else (Path.home() / "Downloads")
         if base_dir.exists() and not base_dir.is_dir():
             raise NotADirectoryError(f"Папка для экспорта недоступна: {base_dir}")
         base_dir.mkdir(parents=True, exist_ok=True)
 
+        identifier_text = str(identifier or "").strip()
+        safe_identifier = re.sub(r"[^0-9A-Za-z_-]+", "_", identifier_text).strip("_") or "unknown"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_name = f"trade_{int(trade_id)}_{timestamp}.xlsx"
+        file_name = f"trade_{safe_identifier}_{timestamp}.xlsx"
         return str((base_dir / file_name).resolve())
 
     def _set_export_loading_state(self, *, is_loading: bool) -> None:
@@ -268,6 +352,16 @@ class ExportMixin:
 
     def _on_export_finished(self, file_path: str) -> None:
         file_path_text = str(file_path or "").strip()
+
+        if not file_path_text:
+            Tool.write_log("Экспорт переторжки пропущен: пользователь не участвует")
+            QMessageBox.information(
+                self,
+                "Экспорт заявки",
+                "Экспорт пропущен: нет участия в выбранной переторжке",
+            )
+            self._finish_export("Экспорт пропущен")
+            return
 
         if file_path_text:
             excel_processor = getattr(self, "excel_processor", None)

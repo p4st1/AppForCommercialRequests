@@ -193,6 +193,7 @@ class PlatformMixin:
         self.all_trades: list[dict[str, Any]] = []
         self.filtered_trades: list[dict[str, Any]] = []
         self.retrades: list[dict[str, Any]] = []
+        self.retrade_offers: list[dict[str, Any]] = []
         self._load_trades_worker: LoadTradesWorker | None = None
         self._load_retrades_worker: LoadRetradesWorker | None = None
         self._auth_login_worker: AuthLoginWorker | None = None
@@ -202,6 +203,7 @@ class PlatformMixin:
         self.btn_login.clicked.connect(self.login)
         self.btn_load_trades.clicked.connect(self.load_trades_clicked)
         self.btn_load_retrades.clicked.connect(self.load_retrades)
+        self.table_retrades.itemSelectionChanged.connect(self.on_retrade_selection_changed)
         self.search_input.textChanged.connect(self.apply_search)
         self.checkbox_active.stateChanged.connect(self.apply_filters)
         self.refresh_auth_status_on_startup()
@@ -210,6 +212,7 @@ class PlatformMixin:
         if (
             hasattr(self.ui, "tradesTable")
             and hasattr(self.ui, "table_retrades")
+            and hasattr(self.ui, "table_retrade_offers")
             and hasattr(self, "btn_load_trades")
             and hasattr(self, "btn_load_retrades")
             and hasattr(self.ui, "input_limit")
@@ -327,16 +330,26 @@ class PlatformMixin:
         self.table_retrades.setObjectName("table_retrades")
         self.ui.table_retrades = self.table_retrades
 
+        retrade_offers_label = QLabel("Предложения переторжки", self.ui.webTab)
+        retrade_offers_label.setObjectName("retradeOffersTitleLabel")
+
+        self.table_retrade_offers = QTableWidget(self.ui.webTab)
+        self.table_retrade_offers.setObjectName("table_retrade_offers")
+        self.ui.table_retrade_offers = self.table_retrade_offers
+
         root_layout.addLayout(auth_layout)
         root_layout.addLayout(header_layout)
         root_layout.addLayout(pipeline_status_layout)
         root_layout.addWidget(self.ui.tradesTable)
         root_layout.addWidget(retrades_label)
         root_layout.addWidget(self.table_retrades)
+        root_layout.addWidget(retrade_offers_label)
+        root_layout.addWidget(self.table_retrade_offers)
         self.ui.tabWidget.addTab(self.ui.webTab, "Веб")
 
         self._setup_trades_table()
         self._setup_retrades_table()
+        self._setup_retrade_offers_table()
 
     def login(self) -> None:
         if self._auth_login_worker is not None and self._auth_login_worker.isRunning():
@@ -759,7 +772,9 @@ class PlatformMixin:
 
     def on_retrades_loaded(self, retrades: list[dict[str, Any]]) -> None:
         self.retrades = retrades if isinstance(retrades, list) else []
+        self.retrade_offers = []
         self.populate_retrades_table(self.retrades)
+        self.populate_retrade_offers_table([])
         self._finish_retrades_loading(f"Загружено переторжек: {len(self.retrades)}")
 
     def on_error(self, message: str) -> None:
@@ -805,6 +820,8 @@ class PlatformMixin:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка загрузки переторжек: {error_text}")
         print(f"Ошибка загрузки переторжек: {error_text}")
+        self.retrade_offers = []
+        self.populate_retrade_offers_table([])
         if (
             "401" in error_text
             or "403" in error_text
@@ -833,6 +850,25 @@ class PlatformMixin:
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+
+    def _setup_retrade_offers_table(self) -> None:
+        table = self.table_retrade_offers
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(("bid_id", "number", "price", "status"))
+        table.setRowCount(0)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.setAlternatingRowColors(True)
+        table.setSortingEnabled(False)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(False)
+
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
 
     def populate_retrades_table(self, retrades: list[dict[str, Any]]) -> None:
         table = self.table_retrades
@@ -867,6 +903,79 @@ class PlatformMixin:
         del blocker
         table.resizeRowsToContents()
         table.resizeColumnsToContents()
+
+    def populate_retrade_offers_table(self, offers: list[dict[str, Any]]) -> None:
+        table = self.table_retrade_offers
+        rows = offers if isinstance(offers, list) else []
+
+        blocker = QSignalBlocker(table)
+        table.clearContents()
+        table.setRowCount(len(rows))
+
+        for row_idx, offer in enumerate(rows):
+            if not isinstance(offer, dict):
+                continue
+
+            values = (
+                offer.get("bid_id", ""),
+                offer.get("number", ""),
+                offer.get("price", ""),
+                offer.get("status", ""),
+            )
+            for col_idx, value in enumerate(values):
+                item = QTableWidgetItem("" if value is None else str(value))
+                flags = item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+                flags &= ~Qt.ItemFlag.ItemIsEditable
+                item.setFlags(flags)
+                if col_idx == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, offer)
+                table.setItem(row_idx, col_idx, item)
+
+        del blocker
+        table.resizeRowsToContents()
+        table.resizeColumnsToContents()
+
+    def on_retrade_selection_changed(self) -> None:
+        table = self.table_retrades
+        selected_row = table.currentRow()
+        if selected_row < 0 or selected_row >= len(self.retrades):
+            self.retrade_offers = []
+            self.populate_retrade_offers_table([])
+            return
+
+        retrade = self.retrades[selected_row]
+        if not isinstance(retrade, dict):
+            self.retrade_offers = []
+            self.populate_retrade_offers_table([])
+            return
+
+        offers_cached = retrade.get("offers")
+        if isinstance(offers_cached, list):
+            self.retrade_offers = offers_cached
+            self.populate_retrade_offers_table(self.retrade_offers)
+            return
+
+        trade_id_raw = retrade.get("id")
+        try:
+            trade_id = int(trade_id_raw)
+        except (TypeError, ValueError):
+            self.retrade_offers = []
+            self.populate_retrade_offers_table([])
+            return
+
+        try:
+            cookies = self.load_cookies()
+            client = MetalITClient(cookies)
+            offers = client.get_retrading_offers(trade_id)
+        except Exception as exc:
+            error_text = str(exc or "Неизвестная ошибка")
+            Tool.write_log(f"Ошибка загрузки предложений переторжки: {error_text}")
+            print(f"Ошибка загрузки предложений переторжки: {error_text}")
+            offers = []
+
+        retrade["offers"] = offers
+        self.retrade_offers = offers
+        self.populate_retrade_offers_table(offers)
 
     def _parse_max_items_input(self) -> int:
         max_items = 50
