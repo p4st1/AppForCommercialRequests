@@ -288,10 +288,17 @@ query tradeWithCurrentStage($id: Int) {
         page = context.new_page()
         target_path_resolved = target_path.expanduser().resolve()
         export_saved_via_response = False
+        export_saved_via_blob = False
         export_response_urls: list[str] = []
 
         def handle_request(request: Any) -> None:
             print("REQ:", str(getattr(request, "url", "") or ""))
+
+        def handle_console(message: Any) -> None:
+            try:
+                print("BROWSER:", str(getattr(message, "text", "") or ""))
+            except Exception:
+                pass
 
         def handle_response(response: Any) -> None:
             nonlocal export_saved_via_response
@@ -317,6 +324,7 @@ query tradeWithCurrentStage($id: Int) {
                 print("❌ Ошибка сохранения:", str(exc))
 
         page.on("request", handle_request)
+        page.on("console", handle_console)
         page.on("response", handle_response)
 
         try:
@@ -325,7 +333,7 @@ query tradeWithCurrentStage($id: Int) {
                 wait_until="domcontentloaded",
                 timeout=max(60_000, self._timeout_ms),
             )
-            page.wait_for_load_state("networkidle", timeout=60_000)
+            page.wait_for_timeout(3000)
             page.wait_for_timeout(5000)
 
             page.wait_for_selector("text=Спецификация", timeout=60_000)
@@ -352,28 +360,229 @@ query tradeWithCurrentStage($id: Int) {
                 raise RuntimeError("Кнопка Экспорт не найдена")
 
             print("[EXPORT] Кнопка найдена")
-            export_button.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
+            page.evaluate(
+                """
+                () => {
+                    if (!window.__codexClickLoggerInstalled) {
+                        window.__codexClickLoggerInstalled = true;
+                        document.addEventListener(
+                            "click",
+                            (event) => {
+                                const target = event.target && event.target.closest
+                                    ? event.target.closest("button,[role='button'],a,span,div")
+                                    : event.target;
+                                const text = target
+                                    ? String(target.innerText || target.textContent || "").trim().slice(0, 160)
+                                    : "";
+                                const tag = target && target.tagName
+                                    ? target.tagName.toLowerCase()
+                                    : "unknown";
+                                console.log(`🖱 CLICK ${tag}: ${text}`);
+                            },
+                            true
+                        );
+                    }
 
-            try:
-                export_button.click(force=True)
-            except Exception as exc:
-                print("[EXPORT] fallback JS click:", str(exc))
-                handle = export_button.element_handle()
-                if handle is None:
-                    raise RuntimeError("Кнопка Экспорт найдена, но недоступна для fallback JS click")
-                page.evaluate("(el) => el.click()", handle)
+                    window.__lastBlob = null;
+                    window.__fileName = null;
 
-            page.wait_for_timeout(10_000)
+                    const urlObject = window.URL || URL;
+                    if (!urlObject.__codexOriginalCreateObjectURL) {
+                        urlObject.__codexOriginalCreateObjectURL =
+                            urlObject.createObjectURL.bind(urlObject);
+                    }
 
-            if not export_saved_via_response:
-                Path("after_click.html").write_text(page.content(), encoding="utf-8")
-                print("⚠️ EXPORT не пойман — смотри HTML")
-                if export_response_urls:
-                    print("[EXPORT] candidate URLs:", export_response_urls)
-                raise RuntimeError("Не удалось поймать export response после клика")
+                    urlObject.createObjectURL = function(blob) {
+                        window.__lastBlob = blob || null;
+                        console.log("🔥 BLOB CAPTURED", blob);
+                        return urlObject.__codexOriginalCreateObjectURL(blob);
+                    };
 
-            return str(target_path_resolved)
+                    const originalSaveAs =
+                        typeof window.saveAs === "function" ? window.saveAs : null;
+
+                    window.saveAs = function(blob, name) {
+                        window.__lastBlob = blob || null;
+                        window.__fileName = name || null;
+                        console.log("🔥 saveAs intercepted");
+                        if (originalSaveAs) {
+                            return originalSaveAs.apply(this, arguments);
+                        }
+                        return undefined;
+                    };
+                }
+                """
+            )
+
+            def _save_blob_to_disk() -> bool:
+                nonlocal export_saved_via_blob
+                blob_data = page.evaluate(
+                    """
+                    async () => {
+                        if (!window.__lastBlob) return null;
+                        const arrayBuffer = await window.__lastBlob.arrayBuffer();
+                        return Array.from(new Uint8Array(arrayBuffer));
+                    }
+                    """
+                )
+                if isinstance(blob_data, list) and len(blob_data) > 0:
+                    target_path_resolved.parent.mkdir(parents=True, exist_ok=True)
+                    with target_path_resolved.open("wb") as file:
+                        file.write(bytes(blob_data))
+                    export_saved_via_blob = True
+                    print("✅ Excel сохранён через Blob")
+                    return True
+                return False
+
+            def _wait_for_export_signal(wait_ms: int = 3000) -> bool:
+                page.wait_for_timeout(wait_ms)
+                if _save_blob_to_disk():
+                    return True
+                return bool(export_saved_via_response)
+
+            def _realistic_click(locator: Any, label: str) -> bool:
+                try:
+                    locator.scroll_into_view_if_needed()
+                    page.wait_for_timeout(250)
+                    try:
+                        locator.hover(timeout=3000)
+                    except Exception as hover_exc:
+                        print("[EXPORT] hover skipped:", label, str(hover_exc))
+                    page.wait_for_timeout(300)
+                    locator.click(timeout=5000)
+                    print("[EXPORT] clicked:", label)
+                    return True
+                except Exception as click_exc:
+                    print("[EXPORT] click failed:", label, str(click_exc))
+                    return False
+
+            def _try_locator_group(group_label: str, locator: Any) -> bool:
+                try:
+                    count = locator.count()
+                except Exception:
+                    count = 0
+                if count <= 0:
+                    return False
+
+                for index in range(min(count, 3)):
+                    candidate = locator.nth(index)
+                    if _realistic_click(candidate, f"{group_label}#{index}"):
+                        if _wait_for_export_signal(3000):
+                            return True
+
+                    child_locator = candidate.locator(
+                        "[onclick], [ng-click], [data-bind*='click'], [role='button'], button, a, span, div"
+                    )
+                    try:
+                        child_count = child_locator.count()
+                    except Exception:
+                        child_count = 0
+                    for child_index in range(min(child_count, 3)):
+                        child = child_locator.nth(child_index)
+                        if _realistic_click(child, f"{group_label}#{index}/child#{child_index}"):
+                            if _wait_for_export_signal(3000):
+                                return True
+
+                return False
+
+            export_candidates: list[tuple[str, Any]] = [
+                ("spec role button", specification_block.first.get_by_role("button", name="Экспорт")),
+                ("spec button", specification_block.first.locator("button:has-text('Экспорт')")),
+                ("spec role='button'", specification_block.first.locator("[role='button']:has-text('Экспорт')")),
+                ("spec span", specification_block.first.locator("span:has-text('Экспорт')")),
+                ("spec div", specification_block.first.locator("div:has-text('Экспорт')")),
+                ("page role button", page.get_by_role("button", name="Экспорт")),
+                ("page button", page.locator("button:has-text('Экспорт')")),
+                ("page role='button'", page.locator("[role='button']:has-text('Экспорт')")),
+                ("page span", page.locator("span:has-text('Экспорт')")),
+                ("page div", page.locator("div:has-text('Экспорт')")),
+                ("page any text", page.locator("text=Экспорт")),
+            ]
+
+            export_started = False
+            for group_label, candidate_locator in export_candidates:
+                if _try_locator_group(group_label, candidate_locator):
+                    export_started = True
+                    break
+
+            if not export_started:
+                js_clicked = page.evaluate(
+                    """
+                    () => {
+                        const normalize = (value) => String(value || "").trim().toLowerCase();
+                        const hasExportText = (node) =>
+                            normalize(node.innerText || node.textContent).includes("экспорт");
+
+                        const selectors = [
+                            "button",
+                            "[role='button']",
+                            "a",
+                            "span",
+                            "div",
+                            "[ng-click]",
+                            "[onclick]",
+                            "[data-bind*='click']",
+                        ];
+
+                        const all = Array.from(document.querySelectorAll(selectors.join(",")));
+                        const target = all.find((node) => hasExportText(node));
+                        if (!target) return false;
+
+                        const child = target.querySelector(
+                            "[onclick], [ng-click], [data-bind*='click'], button, [role='button'], a, span, div"
+                        );
+                        const clickable = child || target;
+
+                        clickable.scrollIntoView({ block: "center", inline: "center" });
+                        clickable.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+                        clickable.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+                        clickable.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+                        clickable.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+                        clickable.click();
+                        console.log("🔥 JS EXPORT CLICK", String(clickable.innerText || clickable.textContent || "").trim());
+                        return true;
+                    }
+                    """
+                )
+                print("[EXPORT] JS fallback clicked:", bool(js_clicked))
+                if js_clicked and _wait_for_export_signal(4000):
+                    export_started = True
+
+            if not export_started:
+                internal_fn = page.evaluate(
+                    """
+                    () => {
+                        const keys = Object.keys(window).filter((key) =>
+                            /export|excel|download/i.test(key)
+                        );
+                        for (const key of keys.slice(0, 30)) {
+                            const candidate = window[key];
+                            if (typeof candidate !== "function" || candidate.length > 0) continue;
+                            try {
+                                candidate();
+                                console.log("🔥 WINDOW FUNCTION CALLED", key);
+                                return key;
+                            } catch (_error) {
+                                // keep probing safe no-arg functions
+                            }
+                        }
+                        return null;
+                    }
+                    """
+                )
+                if internal_fn:
+                    print("[EXPORT] internal function called:", str(internal_fn))
+                    if _wait_for_export_signal(4000):
+                        export_started = True
+
+            if export_saved_via_blob or export_saved_via_response or export_started:
+                return str(target_path_resolved)
+
+            Path("after_click.html").write_text(page.content(), encoding="utf-8")
+            print("⚠️ EXPORT не пойман — смотри HTML")
+            if export_response_urls:
+                print("[EXPORT] candidate URLs:", export_response_urls)
+            raise RuntimeError("Не удалось запустить экспорт после реалистичных кликов и JS fallback")
         except Exception:
             self._write_page_debug_dump(
                 page,
@@ -384,6 +593,10 @@ query tradeWithCurrentStage($id: Int) {
         finally:
             try:
                 page.remove_listener("request", handle_request)
+            except Exception:
+                pass
+            try:
+                page.remove_listener("console", handle_console)
             except Exception:
                 pass
             try:

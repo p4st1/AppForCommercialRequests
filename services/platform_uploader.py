@@ -150,10 +150,7 @@ class TradeUploader:
         self._click_with_log(btn.first, button_text=self.SUBMIT_BUTTON_TEXT, timeout_ms=4_000)
 
     def _wait_for_upload_confirmation(self, page: Page) -> None:
-        try:
-            page.wait_for_load_state("networkidle", timeout=10_000)
-        except PlaywrightTimeoutError:
-            pass
+        page.wait_for_timeout(3000)
 
         success_patterns = (
             re.compile(r"успеш", re.IGNORECASE),
