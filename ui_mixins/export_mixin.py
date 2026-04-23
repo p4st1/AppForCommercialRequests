@@ -5,8 +5,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QHBoxLayout, QMessageBox, QPushButton
+import pandas as pd
+from PySide6.QtCore import QThread, Signal, QTimer
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from config import Config
 from services.excel_processor import ExcelProcessor
@@ -63,12 +74,152 @@ class ExportTradeWorker(QThread):
 
 
 class ExportMixin:
+    AUTO_TRADE_TIMER_MIN_MINUTES = 1
+    AUTO_TRADE_TIMER_MAX_MINUTES = 1440
+
     def init_export_mixin(self) -> None:
         self._export_trade_worker: ExportTradeWorker | None = None
         self.excel_processor = ExcelProcessor()
+        self._auto_trade_timer: QTimer | None = None
+        self._ensure_auto_trade_timer()
+        self._ensure_retrade_tab()
         self._ensure_export_button()
         self.btn_export_trade.clicked.connect(self.export_selected_trade)
         self.btn_export_retrade.clicked.connect(self.export_selected_retrade)
+
+    def _ensure_retrade_tab(self) -> None:
+        if hasattr(self, "retrade_table") and hasattr(self, "retrade_tab"):
+            return
+
+        tabs = getattr(self, "tabWidget", None)
+        if tabs is None:
+            tabs = getattr(getattr(self, "ui", None), "tabWidget", None)
+        if not isinstance(tabs, QTabWidget):
+            raise RuntimeError("Не найден tabWidget для вкладки Переторжка")
+
+        retrade_tab = QWidget(tabs)
+        retrade_tab.setObjectName("retradeTab")
+        root_layout = QVBoxLayout(retrade_tab)
+
+        self.retrade_table = QTableWidget(retrade_tab)
+        self.retrade_table.setObjectName("retrade_table")
+        root_layout.addWidget(self.retrade_table, 1)
+
+        controls_layout = QHBoxLayout()
+        self.btn_auto_trade = QPushButton("Автоматическое ведение торгов", retrade_tab)
+        self.label_auto_trade_status = QLabel("Выключено", retrade_tab)
+        self._set_auto_trade_status(False)
+        controls_layout.addWidget(self.btn_auto_trade)
+        controls_layout.addWidget(self.label_auto_trade_status)
+        controls_layout.addStretch(1)
+        root_layout.addLayout(controls_layout)
+
+        self.btn_auto_trade.clicked.connect(self._toggle_auto_trade_status)
+
+        tab_index = tabs.addTab(retrade_tab, "Переторжка")
+        self.retrade_tab = retrade_tab
+        self.retrade_tab_index = tab_index
+        self.ui.retradeTab = retrade_tab
+        self.ui.update_retrade_table = self.update_retrade_table
+
+    def _toggle_auto_trade_status(self) -> None:
+        status_label = getattr(self, "label_auto_trade_status", None)
+        if status_label is None:
+            return
+        is_enabled = str(status_label.text() or "").strip() == "Включено"
+        if is_enabled:
+            self._stop_auto_trade_timer()
+            self._set_auto_trade_status(False)
+            self._log_ui("Автоматическое ведение торгов: Выключено")
+            return
+
+        if not self._confirm_auto_trade_enable_if_needed():
+            return
+
+        self._set_auto_trade_status(True)
+        self._log_ui("Автоматическое ведение торгов: Включено")
+        self._start_auto_trade_timer_if_needed()
+
+    def _set_auto_trade_status(self, is_enabled: bool) -> None:
+        status_label = getattr(self, "label_auto_trade_status", None)
+        if status_label is None:
+            return
+        if is_enabled:
+            status_label.setText("Включено")
+            status_label.setStyleSheet("color: #1f8f3a; font-weight: 600;")
+            return
+        status_label.setText("Выключено")
+        status_label.setStyleSheet("color: #c62828; font-weight: 600;")
+
+    def _confirm_auto_trade_enable(self) -> bool:
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setWindowTitle("Подтверждение включения")
+        dialog.setText(
+            "Вы собираетесь включить автоматическое ведение торгов.\n\n"
+            "ВНИМАНИЕ:\n"
+            "Данная функция работает в автоматическом режиме и может отправлять ценовые "
+            "предложения без дополнительного подтверждения.\n\n"
+            "Использование функции требует ОБЯЗАТЕЛЬНОГО контроля со стороны пользователя.\n\n"
+            "Рекомендуется не оставлять систему без присмотра во время работы.\n\n"
+            "Продолжить?"
+        )
+        yes_button = dialog.addButton("Да", QMessageBox.ButtonRole.YesRole)
+        cancel_button = dialog.addButton("Отмена", QMessageBox.ButtonRole.RejectRole)
+        dialog.setDefaultButton(cancel_button)
+        dialog.exec()
+        return dialog.clickedButton() is yes_button
+
+    def _confirm_auto_trade_enable_if_needed(self) -> bool:
+        if bool(Config.settings.get("skip_auto_trade_warning", False)):
+            return True
+        return self._confirm_auto_trade_enable()
+
+    def _ensure_auto_trade_timer(self) -> QTimer:
+        timer = getattr(self, "_auto_trade_timer", None)
+        if isinstance(timer, QTimer):
+            return timer
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self._on_auto_trade_timer_timeout)
+        self._auto_trade_timer = timer
+        return timer
+
+    def _stop_auto_trade_timer(self) -> None:
+        timer = self._ensure_auto_trade_timer()
+        if timer.isActive():
+            timer.stop()
+
+    def _start_auto_trade_timer_if_needed(self) -> None:
+        self._stop_auto_trade_timer()
+        if not bool(Config.settings.get("use_auto_trade_timer", False)):
+            return
+
+        default_minutes = int(Config.DEFAULT_SETTINGS.get("auto_trade_timer_minutes", 30))
+        raw_minutes = Config.settings.get("auto_trade_timer_minutes", default_minutes)
+        try:
+            minutes = int(raw_minutes)
+        except (TypeError, ValueError):
+            minutes = default_minutes
+        minutes = max(
+            self.AUTO_TRADE_TIMER_MIN_MINUTES,
+            min(self.AUTO_TRADE_TIMER_MAX_MINUTES, minutes),
+        )
+
+        timer = self._ensure_auto_trade_timer()
+        timer.start(minutes * 60 * 1000)
+        self._log_auto_trade(f"Таймер запущен на {minutes} мин")
+
+    def _on_auto_trade_timer_timeout(self) -> None:
+        self._set_auto_trade_status(False)
+        self._log_auto_trade("Автоматические торги выключены по таймеру")
+
+    @staticmethod
+    def _log_auto_trade(message: str) -> None:
+        text = f"[AUTO TRADE] {message}"
+        print(text)
+        Tool.write_log(text)
 
     def _ensure_export_button(self) -> None:
         if hasattr(self, "btn_export_trade") and hasattr(self, "btn_export_retrade"):
@@ -350,6 +501,45 @@ class ExportMixin:
 
         return rows
 
+    @staticmethod
+    def _log_ui(message: str) -> None:
+        text = f"[UI] {message}"
+        print(text)
+        Tool.write_log(text)
+
+    def update_retrade_table(self, df: pd.DataFrame) -> None:
+        table = getattr(self, "retrade_table", None)
+        if table is None:
+            raise RuntimeError("Таблица Переторжка не найдена")
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame()
+
+        self._log_ui("Обновление таблицы Переторжка")
+
+        table.clear()
+        table.setRowCount(len(df))
+        table.setColumnCount(len(df.columns))
+        table.setHorizontalHeaderLabels(df.columns.tolist())
+
+        for row_index in range(len(df)):
+            for col_index in range(len(df.columns)):
+                value = str(df.iloc[row_index, col_index])
+                table.setItem(row_index, col_index, QTableWidgetItem(value))
+
+        table.resizeRowsToContents()
+        table.resizeColumnsToContents()
+        self._log_ui(f"Строк: {len(df)}")
+
+    def _activate_retrade_tab(self) -> None:
+        tabs = getattr(self, "tabWidget", None)
+        if tabs is None:
+            tabs = getattr(getattr(self, "ui", None), "tabWidget", None)
+        retrade_tab = getattr(self, "retrade_tab", None)
+        if isinstance(tabs, QTabWidget) and retrade_tab is not None:
+            index = tabs.indexOf(retrade_tab)
+            if index >= 0:
+                tabs.setCurrentIndex(index)
+
     def _on_export_finished(self, file_path: str) -> None:
         file_path_text = str(file_path or "").strip()
 
@@ -379,6 +569,26 @@ class ExportMixin:
                     Tool.write_log(
                         "Пропуск пост-обработки Excel: файл сформирован напрямую из JSON"
                     )
+
+                export_path = Path(file_path_text).expanduser()
+                if not export_path.exists() or not export_path.is_file():
+                    raise FileNotFoundError(f"Excel файл не найден: {export_path}")
+
+                try:
+                    dataframe = pd.read_excel(export_path)
+                except ValueError as exc:
+                    if "No columns to parse from file" in str(exc):
+                        dataframe = pd.DataFrame()
+                    else:
+                        raise
+
+                self._log_ui("Excel загружен")
+                update_method = getattr(getattr(self, "ui", None), "update_retrade_table", None)
+                if callable(update_method):
+                    update_method(dataframe)
+                else:
+                    self.update_retrade_table(dataframe)
+                self._activate_retrade_tab()
             except Exception as exc:
                 error_text = str(exc or "Ошибка обработки Excel")
                 Tool.write_log(f"Ошибка пост-обработки Excel: {error_text}")
@@ -388,17 +598,6 @@ class ExportMixin:
                     set_pipeline_error_status()
                 self._finish_export("Ошибка пост-обработки Excel")
                 return
-
-            open_excel = getattr(self, "open_excel_in_new_tab", None)
-            if callable(open_excel):
-                try:
-                    open_excel(file_path_text)
-                except Exception as exc:
-                    preview_error = str(exc or "Неизвестная ошибка")
-                    Tool.write_log(f"Не удалось открыть Excel во вкладке: {preview_error}")
-                    status_bar = self.statusBar()
-                    if status_bar is not None:
-                        status_bar.showMessage("Файл экспортирован, но предпросмотр Excel не открыт", 5_000)
 
         info_text = (
             f"Файл успешно экспортирован:\n{file_path_text}"

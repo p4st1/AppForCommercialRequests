@@ -11,6 +11,9 @@ class Config:
         "openUpdateTab": True,
         "openLastTab": True,
         "testFeature": False,
+        "skip_auto_trade_warning": False,
+        "use_auto_trade_timer": False,
+        "auto_trade_timer_minutes": 30,
     }
 
     DEFAULT_CONFIG = {

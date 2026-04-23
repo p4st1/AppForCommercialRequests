@@ -68,6 +68,48 @@ class DatabaseTools:
         return default
 
     @staticmethod
+    def _coerce_setting_value(value, default):
+        if isinstance(default, bool):
+            return DatabaseTools._to_bool(value, default)
+
+        if isinstance(default, int):
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                text = value.strip().replace(",", ".")
+                if not text:
+                    return default
+                try:
+                    return int(float(text))
+                except ValueError:
+                    return default
+            return default
+
+        if isinstance(default, float):
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+            if isinstance(value, str):
+                text = value.strip().replace(",", ".")
+                if not text:
+                    return default
+                try:
+                    return float(text)
+                except ValueError:
+                    return default
+            return default
+
+        if isinstance(default, str):
+            if value is None:
+                return default
+            return str(value)
+
+        return value if value is not None else default
+
+    @staticmethod
     def _normalize_cookies_dict(raw_value) -> dict[str, str]:
         if not isinstance(raw_value, dict):
             return {}
@@ -139,8 +181,11 @@ class DatabaseTools:
 
         settings = Config.DEFAULT_SETTINGS.copy()
         if isinstance(raw_settings, dict):
-            for key in settings:
-                settings[key] = DatabaseTools._to_bool(raw_settings.get(key), settings[key])
+            for key, default_value in settings.items():
+                settings[key] = DatabaseTools._coerce_setting_value(
+                    raw_settings.get(key),
+                    default_value,
+                )
 
         result = {"config": config, "settings": settings}
         if normalized_cookies:

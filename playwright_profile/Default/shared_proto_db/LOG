@@ -1,3 +1,6 @@
-2026/04/23-17:32:08.256 6af32 Reusing MANIFEST /Users/andrewzemcov/Desktop/project/playwright_profile/Default/shared_proto_db/MANIFEST-000001
-2026/04/23-17:32:08.256 6af32 Recovering log #3
-2026/04/23-17:32:08.258 6af32 Reusing old log /Users/andrewzemcov/Desktop/project/playwright_profile/Default/shared_proto_db/000003.log 
+2026/04/23-20:12:56.539 7c66e Reusing MANIFEST /Users/andrewzemcov/Desktop/project/playwright_profile/Default/shared_proto_db/MANIFEST-000001
+2026/04/23-20:12:56.539 7c66e Recovering log #3
+2026/04/23-20:12:56.542 7c66e Reusing old log /Users/andrewzemcov/Desktop/project/playwright_profile/Default/shared_proto_db/000003.log 
+2026/04/23-20:13:07.728 7c661 Level-0 table #5: started
+2026/04/23-20:13:07.730 7c661 Level-0 table #5: 408956 bytes OK
+2026/04/23-20:13:07.732 7c661 Delete type=0 #3
