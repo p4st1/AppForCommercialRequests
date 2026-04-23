@@ -370,10 +370,15 @@ class ExportMixin:
                 self.excel_processor = excel_processor
 
             try:
-                excel_processor.fill_exported_excel(
-                    file_path_text,
-                    self.get_table_rows(),
-                )
+                if excel_processor.can_fill_exported_excel(file_path_text):
+                    excel_processor.fill_exported_excel(
+                        file_path_text,
+                        self.get_table_rows(),
+                    )
+                else:
+                    Tool.write_log(
+                        "Пропуск пост-обработки Excel: файл сформирован напрямую из JSON"
+                    )
             except Exception as exc:
                 error_text = str(exc or "Ошибка обработки Excel")
                 Tool.write_log(f"Ошибка пост-обработки Excel: {error_text}")

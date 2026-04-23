@@ -18,6 +18,28 @@ class ExcelProcessorTests(unittest.TestCase):
         self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
         return path
 
+    def test_can_fill_exported_excel_checks_required_columns(self):
+        valid_path = self._create_excel(
+            [
+                {
+                    ExcelProcessor.PRICE_COLUMN: 0,
+                    ExcelProcessor.MANUFACTURER_COLUMN: "old",
+                    ExcelProcessor.TECH_COLUMN: "old",
+                }
+            ]
+        )
+        invalid_path = self._create_excel(
+            [
+                {
+                    ExcelProcessor.PRICE_COLUMN: 0,
+                    ExcelProcessor.MANUFACTURER_COLUMN: "old",
+                }
+            ]
+        )
+
+        self.assertTrue(self.processor.can_fill_exported_excel(valid_path))
+        self.assertFalse(self.processor.can_fill_exported_excel(invalid_path))
+
     def test_fill_exported_excel_transfers_rows(self):
         path = self._create_excel(
             [

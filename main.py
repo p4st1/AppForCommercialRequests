@@ -6,7 +6,7 @@ if __name__ == "__main__" and "--storage-state" in sys.argv:
     from exporter import export_all
 
     parser = argparse.ArgumentParser(
-        description="Экспорт Excel по bid_id через страницу переторжки и Playwright download.",
+        description="Экспорт Excel по bid_id напрямую из API JSON (без UI-кнопки Экспорт).",
     )
     parser.add_argument(
         "bid_ids",
@@ -18,7 +18,7 @@ if __name__ == "__main__" and "--storage-state" in sys.argv:
         "--storage-state",
         dest="storage_state_path",
         required=True,
-        help="Путь до storage_state.json с авторизацией Playwright.",
+        help="Путь до storage_state.json (из него берутся cookies авторизации).",
     )
     parser.add_argument(
         "--output-dir",
@@ -29,7 +29,7 @@ if __name__ == "__main__" and "--storage-state" in sys.argv:
     parser.add_argument(
         "--headed",
         action="store_true",
-        help="Запуск браузера в headed-режиме (по умолчанию headless).",
+        help="Аргумент сохранен для совместимости; браузер больше не используется.",
     )
     bootstrap_args = parser.parse_args()
 

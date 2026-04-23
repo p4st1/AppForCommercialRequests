@@ -8,6 +8,15 @@ class ExcelProcessor:
     MANUFACTURER_COLUMN = "Производитель"
     TECH_COLUMN = "Технические характеристики"
 
+    def can_fill_exported_excel(self, file_path: str) -> bool:
+        df = pd.read_excel(file_path, nrows=0)
+        required_columns = (
+            self.PRICE_COLUMN,
+            self.MANUFACTURER_COLUMN,
+            self.TECH_COLUMN,
+        )
+        return all(col in df.columns for col in required_columns)
+
     def fill_exported_excel(self, file_path: str, source_rows: list) -> None:
         df = pd.read_excel(file_path)
 
