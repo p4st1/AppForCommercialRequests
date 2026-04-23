@@ -115,10 +115,19 @@ query tradeWithCurrentStage($id: Int) {
         "ID",
     )
 
-    def __init__(self, *, headless: bool = True, timeout_ms: int = 30_000) -> None:
+    def __init__(
+        self,
+        *,
+        headless: bool = True,
+        timeout_ms: int = 30_000,
+        debug_manual_export: bool = False,
+        retrade_profile_dir: str = "playwright_profile",
+    ) -> None:
         # headless сохранен для обратной совместимости сигнатуры.
         self._headless = bool(headless)
         self._timeout_ms = int(timeout_ms)
+        self._debug_manual_export = bool(debug_manual_export)
+        self._retrade_profile_dir = Path(retrade_profile_dir).expanduser()
 
     @staticmethod
     def _normalize_cookies(raw_value: Any) -> dict[str, str]:
@@ -287,45 +296,6 @@ query tradeWithCurrentStage($id: Int) {
         retrading_url = f"{self.BASE_URL}/bids/{bid_id_int}/retrading"
         page = context.new_page()
         target_path_resolved = target_path.expanduser().resolve()
-        export_saved_via_response = False
-        export_saved_via_blob = False
-        export_response_urls: list[str] = []
-
-        def handle_request(request: Any) -> None:
-            print("REQ:", str(getattr(request, "url", "") or ""))
-
-        def handle_console(message: Any) -> None:
-            try:
-                print("BROWSER:", str(getattr(message, "text", "") or ""))
-            except Exception:
-                pass
-
-        def handle_response(response: Any) -> None:
-            nonlocal export_saved_via_response
-
-            url = str(getattr(response, "url", "") or "")
-            lower_url = url.lower()
-            if not any(token in lower_url for token in ("export", "excel", "xlsx", "download", "report")):
-                return
-
-            export_response_urls.append(url)
-            print("🔥 EXPORT RESPONSE:", url)
-
-            try:
-                response_body = response.body()
-                if not isinstance(response_body, (bytes, bytearray)) or len(response_body) == 0:
-                    raise RuntimeError("Пустое тело ответа")
-                target_path_resolved.parent.mkdir(parents=True, exist_ok=True)
-                with target_path_resolved.open("wb") as file:
-                    file.write(bytes(response_body))
-                export_saved_via_response = True
-                print("✅ Файл сохранён через response")
-            except Exception as exc:
-                print("❌ Ошибка сохранения:", str(exc))
-
-        page.on("request", handle_request)
-        page.on("console", handle_console)
-        page.on("response", handle_response)
 
         try:
             page.goto(
@@ -333,256 +303,48 @@ query tradeWithCurrentStage($id: Int) {
                 wait_until="domcontentloaded",
                 timeout=max(60_000, self._timeout_ms),
             )
-            page.wait_for_timeout(3000)
-            page.wait_for_timeout(5000)
+            page.wait_for_timeout(4000)
 
             page.wait_for_selector("text=Спецификация", timeout=60_000)
             print("[EXPORT] Блок спецификации найден")
 
-            for _ in range(10):
-                page.mouse.wheel(0, 3000)
-                page.wait_for_timeout(500)
-
-            specification_block = page.locator("section, article, div").filter(
+            specification_section = page.locator("section, article, div").filter(
                 has_text="Спецификация"
-            )
-            export_button = specification_block.first.locator("button:has-text('Экспорт')").first
-            if export_button.count() == 0:
-                export_button = page.locator("button:has-text('Экспорт')").first
+            ).first
+            if specification_section.count() == 0:
+                raise RuntimeError("Не найден блок 'Спецификация'")
 
+            export_button = specification_section.locator("button:has-text('Экспорт')").first
+            print("[EXPORT] export_button найден:", export_button.count() > 0)
             if export_button.count() == 0:
-                print("❌ Кнопка не найдена — сохраняю debug")
                 self._write_page_debug_dump(
                     page,
                     screenshot_path="no_export.png",
                     html_path="no_export.html",
                 )
-                raise RuntimeError("Кнопка Экспорт не найдена")
+                raise RuntimeError("Кнопка 'Экспорт' не найдена в блоке 'Спецификация'")
 
-            print("[EXPORT] Кнопка найдена")
-            page.evaluate(
-                """
-                () => {
-                    if (!window.__codexClickLoggerInstalled) {
-                        window.__codexClickLoggerInstalled = true;
-                        document.addEventListener(
-                            "click",
-                            (event) => {
-                                const target = event.target && event.target.closest
-                                    ? event.target.closest("button,[role='button'],a,span,div")
-                                    : event.target;
-                                const text = target
-                                    ? String(target.innerText || target.textContent || "").trim().slice(0, 160)
-                                    : "";
-                                const tag = target && target.tagName
-                                    ? target.tagName.toLowerCase()
-                                    : "unknown";
-                                console.log(`🖱 CLICK ${tag}: ${text}`);
-                            },
-                            true
-                        );
-                    }
+            export_button.scroll_into_view_if_needed()
 
-                    window.__lastBlob = null;
-                    window.__fileName = null;
+            try:
+                with page.expect_download(timeout=15_000) as download_info:
+                    export_button.click()
+            except Exception as exc:
+                raise RuntimeError("Скачивание не произошло после клика по кнопке 'Экспорт'") from exc
 
-                    const urlObject = window.URL || URL;
-                    if (!urlObject.__codexOriginalCreateObjectURL) {
-                        urlObject.__codexOriginalCreateObjectURL =
-                            urlObject.createObjectURL.bind(urlObject);
-                    }
+            try:
+                download = download_info.value
+            except Exception as exc:
+                raise RuntimeError("Не удалось получить объект скачивания после клика") from exc
 
-                    urlObject.createObjectURL = function(blob) {
-                        window.__lastBlob = blob || null;
-                        console.log("🔥 BLOB CAPTURED", blob);
-                        return urlObject.__codexOriginalCreateObjectURL(blob);
-                    };
+            suggested_filename = str(download.suggested_filename or "").strip()
+            print("[EXPORT] suggested_filename:", suggested_filename or "<empty>")
 
-                    const originalSaveAs =
-                        typeof window.saveAs === "function" ? window.saveAs : null;
+            target_path_resolved.parent.mkdir(parents=True, exist_ok=True)
+            download.save_as(str(target_path_resolved))
+            print("[EXPORT] сохранено в:", str(target_path_resolved))
 
-                    window.saveAs = function(blob, name) {
-                        window.__lastBlob = blob || null;
-                        window.__fileName = name || null;
-                        console.log("🔥 saveAs intercepted");
-                        if (originalSaveAs) {
-                            return originalSaveAs.apply(this, arguments);
-                        }
-                        return undefined;
-                    };
-                }
-                """
-            )
-
-            def _save_blob_to_disk() -> bool:
-                nonlocal export_saved_via_blob
-                blob_data = page.evaluate(
-                    """
-                    async () => {
-                        if (!window.__lastBlob) return null;
-                        const arrayBuffer = await window.__lastBlob.arrayBuffer();
-                        return Array.from(new Uint8Array(arrayBuffer));
-                    }
-                    """
-                )
-                if isinstance(blob_data, list) and len(blob_data) > 0:
-                    target_path_resolved.parent.mkdir(parents=True, exist_ok=True)
-                    with target_path_resolved.open("wb") as file:
-                        file.write(bytes(blob_data))
-                    export_saved_via_blob = True
-                    print("✅ Excel сохранён через Blob")
-                    return True
-                return False
-
-            def _wait_for_export_signal(wait_ms: int = 3000) -> bool:
-                page.wait_for_timeout(wait_ms)
-                if _save_blob_to_disk():
-                    return True
-                return bool(export_saved_via_response)
-
-            def _realistic_click(locator: Any, label: str) -> bool:
-                try:
-                    locator.scroll_into_view_if_needed()
-                    page.wait_for_timeout(250)
-                    try:
-                        locator.hover(timeout=3000)
-                    except Exception as hover_exc:
-                        print("[EXPORT] hover skipped:", label, str(hover_exc))
-                    page.wait_for_timeout(300)
-                    locator.click(timeout=5000)
-                    print("[EXPORT] clicked:", label)
-                    return True
-                except Exception as click_exc:
-                    print("[EXPORT] click failed:", label, str(click_exc))
-                    return False
-
-            def _try_locator_group(group_label: str, locator: Any) -> bool:
-                try:
-                    count = locator.count()
-                except Exception:
-                    count = 0
-                if count <= 0:
-                    return False
-
-                for index in range(min(count, 3)):
-                    candidate = locator.nth(index)
-                    if _realistic_click(candidate, f"{group_label}#{index}"):
-                        if _wait_for_export_signal(3000):
-                            return True
-
-                    child_locator = candidate.locator(
-                        "[onclick], [ng-click], [data-bind*='click'], [role='button'], button, a, span, div"
-                    )
-                    try:
-                        child_count = child_locator.count()
-                    except Exception:
-                        child_count = 0
-                    for child_index in range(min(child_count, 3)):
-                        child = child_locator.nth(child_index)
-                        if _realistic_click(child, f"{group_label}#{index}/child#{child_index}"):
-                            if _wait_for_export_signal(3000):
-                                return True
-
-                return False
-
-            export_candidates: list[tuple[str, Any]] = [
-                ("spec role button", specification_block.first.get_by_role("button", name="Экспорт")),
-                ("spec button", specification_block.first.locator("button:has-text('Экспорт')")),
-                ("spec role='button'", specification_block.first.locator("[role='button']:has-text('Экспорт')")),
-                ("spec span", specification_block.first.locator("span:has-text('Экспорт')")),
-                ("spec div", specification_block.first.locator("div:has-text('Экспорт')")),
-                ("page role button", page.get_by_role("button", name="Экспорт")),
-                ("page button", page.locator("button:has-text('Экспорт')")),
-                ("page role='button'", page.locator("[role='button']:has-text('Экспорт')")),
-                ("page span", page.locator("span:has-text('Экспорт')")),
-                ("page div", page.locator("div:has-text('Экспорт')")),
-                ("page any text", page.locator("text=Экспорт")),
-            ]
-
-            export_started = False
-            for group_label, candidate_locator in export_candidates:
-                if _try_locator_group(group_label, candidate_locator):
-                    export_started = True
-                    break
-
-            if not export_started:
-                js_clicked = page.evaluate(
-                    """
-                    () => {
-                        const normalize = (value) => String(value || "").trim().toLowerCase();
-                        const hasExportText = (node) =>
-                            normalize(node.innerText || node.textContent).includes("экспорт");
-
-                        const selectors = [
-                            "button",
-                            "[role='button']",
-                            "a",
-                            "span",
-                            "div",
-                            "[ng-click]",
-                            "[onclick]",
-                            "[data-bind*='click']",
-                        ];
-
-                        const all = Array.from(document.querySelectorAll(selectors.join(",")));
-                        const target = all.find((node) => hasExportText(node));
-                        if (!target) return false;
-
-                        const child = target.querySelector(
-                            "[onclick], [ng-click], [data-bind*='click'], button, [role='button'], a, span, div"
-                        );
-                        const clickable = child || target;
-
-                        clickable.scrollIntoView({ block: "center", inline: "center" });
-                        clickable.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-                        clickable.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
-                        clickable.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-                        clickable.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-                        clickable.click();
-                        console.log("🔥 JS EXPORT CLICK", String(clickable.innerText || clickable.textContent || "").trim());
-                        return true;
-                    }
-                    """
-                )
-                print("[EXPORT] JS fallback clicked:", bool(js_clicked))
-                if js_clicked and _wait_for_export_signal(4000):
-                    export_started = True
-
-            if not export_started:
-                internal_fn = page.evaluate(
-                    """
-                    () => {
-                        const keys = Object.keys(window).filter((key) =>
-                            /export|excel|download/i.test(key)
-                        );
-                        for (const key of keys.slice(0, 30)) {
-                            const candidate = window[key];
-                            if (typeof candidate !== "function" || candidate.length > 0) continue;
-                            try {
-                                candidate();
-                                console.log("🔥 WINDOW FUNCTION CALLED", key);
-                                return key;
-                            } catch (_error) {
-                                // keep probing safe no-arg functions
-                            }
-                        }
-                        return null;
-                    }
-                    """
-                )
-                if internal_fn:
-                    print("[EXPORT] internal function called:", str(internal_fn))
-                    if _wait_for_export_signal(4000):
-                        export_started = True
-
-            if export_saved_via_blob or export_saved_via_response or export_started:
-                return str(target_path_resolved)
-
-            Path("after_click.html").write_text(page.content(), encoding="utf-8")
-            print("⚠️ EXPORT не пойман — смотри HTML")
-            if export_response_urls:
-                print("[EXPORT] candidate URLs:", export_response_urls)
-            raise RuntimeError("Не удалось запустить экспорт после реалистичных кликов и JS fallback")
+            return str(target_path_resolved)
         except Exception:
             self._write_page_debug_dump(
                 page,
@@ -591,18 +353,6 @@ query tradeWithCurrentStage($id: Int) {
             )
             raise
         finally:
-            try:
-                page.remove_listener("request", handle_request)
-            except Exception:
-                pass
-            try:
-                page.remove_listener("console", handle_console)
-            except Exception:
-                pass
-            try:
-                page.remove_listener("response", handle_response)
-            except Exception:
-                pass
             try:
                 page.close()
             except Exception:
@@ -1235,9 +985,29 @@ query tradeWithCurrentStage($id: Int) {
             raise RuntimeError("Не удалось подготовить cookies для Playwright")
 
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=self._headless)
+            profile_dir = self._retrade_profile_dir.resolve()
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            context: BrowserContext
+
             try:
-                context = browser.new_context(accept_downloads=True)
+                context = playwright.chromium.launch_persistent_context(
+                    user_data_dir=str(profile_dir),
+                    headless=False,
+                    channel="chrome",
+                    args=["--disable-blink-features=AutomationControlled"],
+                    accept_downloads=True,
+                )
+                print("[EXPORT] launched persistent headed Chrome context")
+            except Exception as chrome_exc:
+                print("[EXPORT] chrome channel launch failed, fallback to chromium:", str(chrome_exc))
+                context = playwright.chromium.launch_persistent_context(
+                    user_data_dir=str(profile_dir),
+                    headless=False,
+                    args=["--disable-blink-features=AutomationControlled"],
+                    accept_downloads=True,
+                )
+
+            try:
                 context.add_cookies(playwright_cookies)
                 return self._export_retrade_bid_via_page(
                     context=context,
@@ -1245,7 +1015,7 @@ query tradeWithCurrentStage($id: Int) {
                     target_path=target_path,
                 )
             finally:
-                browser.close()
+                context.close()
 
     def export_trade(self, trade_id: int, download_path: str) -> str:
         return self.export_trade_data(trade_id=trade_id, download_path=download_path)
