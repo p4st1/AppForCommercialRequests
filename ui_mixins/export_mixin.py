@@ -6,8 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from openpyxl import load_workbook
 from PySide6.QtCore import QThread, Signal, QTimer
 from PySide6.QtWidgets import (
+    QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -76,11 +79,15 @@ class ExportTradeWorker(QThread):
 class ExportMixin:
     AUTO_TRADE_TIMER_MIN_MINUTES = 1
     AUTO_TRADE_TIMER_MAX_MINUTES = 1440
+    RETRADE_INNER_TAB_MAIN = 0
+    RETRADE_INNER_TAB_CALCULATIONS = 1
+    RETRADE_INNER_TAB_HISTORY = 2
 
     def init_export_mixin(self) -> None:
         self._export_trade_worker: ExportTradeWorker | None = None
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
+        self.retrade_calculations_loaded = False
         self._ensure_auto_trade_timer()
         self._ensure_retrade_tab()
         self._ensure_export_button()
@@ -100,27 +107,320 @@ class ExportMixin:
         retrade_tab = QWidget(tabs)
         retrade_tab.setObjectName("retradeTab")
         root_layout = QVBoxLayout(retrade_tab)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
 
-        self.retrade_table = QTableWidget(retrade_tab)
+        self.retrade_inner_tabs = QTabWidget(retrade_tab)
+        self.retrade_inner_tabs.setObjectName("retrade_inner_tabs")
+
+        main_table_tab = QWidget(self.retrade_inner_tabs)
+        main_table_tab.setObjectName("retrade_main_table_tab")
+        main_table_layout = QVBoxLayout(main_table_tab)
+        main_table_layout.setContentsMargins(0, 0, 0, 0)
+        main_table_layout.setSpacing(0)
+
+        self.retrade_table = QTableWidget(main_table_tab)
         self.retrade_table.setObjectName("retrade_table")
-        root_layout.addWidget(self.retrade_table, 1)
+        main_table_layout.addWidget(self.retrade_table, 1)
+        self.retrade_inner_tabs.addTab(main_table_tab, "Основная таблица")
+
+        calculations_tab = QWidget(self.retrade_inner_tabs)
+        calculations_tab.setObjectName("retrade_calculations_tab")
+        calculations_layout = QVBoxLayout(calculations_tab)
+        calculations_layout.setContentsMargins(0, 0, 0, 0)
+        calculations_layout.setSpacing(0)
+        calculations_title = QLabel("Расчеты", calculations_tab)
+        calculations_layout.addWidget(calculations_title)
+
+        calculations_container = QWidget(calculations_tab)
+        calculations_container.setObjectName("retrade_calculations_container")
+        calculations_container_layout = QVBoxLayout(calculations_container)
+        calculations_container_layout.setContentsMargins(0, 0, 0, 0)
+        calculations_container_layout.setSpacing(0)
+
+        self.retrade_calculations_table = QTableWidget(calculations_container)
+        self.retrade_calculations_table.setObjectName("retrade_calculations_table")
+        calculations_container_layout.addWidget(self.retrade_calculations_table, 1)
+
+        totals_container = QWidget(calculations_container)
+        totals_container.setObjectName("retrade_calculations_totals")
+        totals_layout = QFormLayout(totals_container)
+        totals_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.sum_label = QLabel("-", totals_container)
+        self.total_label = QLabel("-", totals_container)
+        self.profit_label = QLabel("-", totals_container)
+
+        totals_layout.addRow("Сумма:", self.sum_label)
+        totals_layout.addRow("Итого:", self.total_label)
+        totals_layout.addRow("Прибыль:", self.profit_label)
+        calculations_container_layout.addWidget(totals_container)
+        calculations_layout.addWidget(calculations_container, 1)
+        self.retrade_inner_tabs.addTab(calculations_tab, "Расчеты")
+
+        history_tab = QWidget(self.retrade_inner_tabs)
+        history_tab.setObjectName("retrade_history_tab")
+        history_layout = QVBoxLayout(history_tab)
+        history_layout.setContentsMargins(0, 0, 0, 0)
+        history_layout.setSpacing(0)
+        history_title = QLabel("История", history_tab)
+        history_placeholder = QLabel(
+            "История изменений будет добавлена позже",
+            history_tab,
+        )
+        history_layout.addWidget(history_title)
+        history_layout.addWidget(history_placeholder)
+        history_layout.addStretch(1)
+        self.retrade_inner_tabs.addTab(history_tab, "История")
+
+        self.retrade_inner_tabs.setCurrentIndex(self.RETRADE_INNER_TAB_MAIN)
+        root_layout.addWidget(self.retrade_inner_tabs, 1)
 
         controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(0, 0, 0, 0)
         self.btn_auto_trade = QPushButton("Автоматическое ведение торгов", retrade_tab)
+        self.btn_open_retrade_calculations = QPushButton("Открыть расчеты", retrade_tab)
         self.label_auto_trade_status = QLabel("Выключено", retrade_tab)
+        self.label_retrade_calculations_status = QLabel(
+            "Расчеты не подключены",
+            retrade_tab,
+        )
         self._set_auto_trade_status(False)
+        self._set_retrade_calculations_loaded_status(False)
         controls_layout.addWidget(self.btn_auto_trade)
+        controls_layout.addWidget(self.btn_open_retrade_calculations)
         controls_layout.addWidget(self.label_auto_trade_status)
+        controls_layout.addWidget(self.label_retrade_calculations_status)
         controls_layout.addStretch(1)
         root_layout.addLayout(controls_layout)
 
         self.btn_auto_trade.clicked.connect(self._toggle_auto_trade_status)
+        self.btn_open_retrade_calculations.clicked.connect(
+            self._open_retrade_calculations
+        )
 
         tab_index = tabs.addTab(retrade_tab, "Переторжка")
         self.retrade_tab = retrade_tab
         self.retrade_tab_index = tab_index
+        self.retrade_main_table_tab = main_table_tab
+        self.retrade_calculations_tab = calculations_tab
+        self.retrade_history_tab = history_tab
+        self.retrade_calculations_container = calculations_container
+        self.retrade_calculations_container_layout = calculations_container_layout
+        self.retrade_calculations_totals = totals_container
         self.ui.retradeTab = retrade_tab
+        self.ui.retrade_inner_tabs = self.retrade_inner_tabs
+        self.ui.retrade_calculations_table = self.retrade_calculations_table
+        self.ui.sum_label = self.sum_label
+        self.ui.total_label = self.total_label
+        self.ui.profit_label = self.profit_label
+        self.ui.label_retrade_calculations_status = self.label_retrade_calculations_status
         self.ui.update_retrade_table = self.update_retrade_table
+        self._clear_retrade_calculations_view()
+
+    def _open_retrade_calculations_tab(self) -> None:
+        inner_tabs = getattr(self, "retrade_inner_tabs", None)
+        if isinstance(inner_tabs, QTabWidget):
+            inner_tabs.setCurrentIndex(self.RETRADE_INNER_TAB_CALCULATIONS)
+
+    def _open_retrade_calculations(self) -> None:
+        default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
+        default_dir = (
+            str(Path(default_dir_raw).expanduser())
+            if default_dir_raw
+            else str(Path.home())
+        )
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите Excel файл расчетов",
+            default_dir,
+            "Excel Files (*.xlsx)",
+        )
+        if not file_path:
+            return
+
+        try:
+            dataframe = self._load_retrade_calculations_dataframe(file_path)
+        except Exception as exc:
+            error_text = f"Не удалось прочитать Excel файл: {exc}"
+            Tool.write_log(error_text)
+            QMessageBox.warning(self, "Ошибка", error_text)
+            return
+
+        parsed = self._parse_retrade_calculations(dataframe)
+        headers = parsed["headers"]
+        rows = parsed["rows"]
+        self._fill_retrade_calculations_view(headers, rows)
+        self._open_retrade_calculations_tab()
+
+        self._log_calc("файл загружен")
+        self._log_calc(f"заголовков: {len(headers)}")
+        self._log_calc(f"строк данных: {len(rows)}")
+
+    @staticmethod
+    def _load_retrade_calculations_dataframe(file_path: str) -> pd.DataFrame:
+        workbook_values = load_workbook(file_path, data_only=True)
+        worksheet_values = workbook_values.active
+
+        data: list[list[Any]] = []
+        for row in worksheet_values.iter_rows(values_only=True):
+            data.append(list(row))
+
+        warning_message = (
+            "WARNING: Some formula cells returned None. Excel file may need recalculation."
+        )
+        workbook_formulas = None
+        try:
+            workbook_formulas = load_workbook(file_path, data_only=False)
+            worksheet_formulas = workbook_formulas.active
+
+            has_unresolved_formula = False
+            for formula_row in worksheet_formulas.iter_rows(values_only=False):
+                for formula_cell in formula_row:
+                    formula_value = formula_cell.value
+                    if not (isinstance(formula_value, str) and formula_value.startswith("=")):
+                        continue
+
+                    calculated_value = worksheet_values.cell(
+                        row=formula_cell.row,
+                        column=formula_cell.column,
+                    ).value
+                    if calculated_value is None:
+                        has_unresolved_formula = True
+                        break
+                if has_unresolved_formula:
+                    break
+
+            if has_unresolved_formula:
+                print(warning_message)
+                Tool.write_log(warning_message)
+        finally:
+            try:
+                workbook_formulas.close()
+            except Exception:
+                pass
+            try:
+                workbook_values.close()
+            except Exception:
+                pass
+
+        return pd.DataFrame(data)
+
+    def _clear_retrade_calculations_view(self) -> None:
+        table = getattr(self, "retrade_calculations_table", None)
+        if isinstance(table, QTableWidget):
+            table.clear()
+            table.setRowCount(0)
+            table.setColumnCount(0)
+
+        for label_name in ("sum_label", "total_label", "profit_label"):
+            label = getattr(self, label_name, None)
+            if isinstance(label, QLabel):
+                label.setText("-")
+
+        self._set_retrade_calculations_loaded_status(False)
+
+    @staticmethod
+    def _normalize_retrade_calculations_cell(value: Any) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value).strip()
+
+    @staticmethod
+    def _log_calc(message: str) -> None:
+        text = f"[CALC] {message}"
+        print(text)
+        Tool.write_log(text)
+
+    @classmethod
+    def _parse_retrade_calculations(
+        cls,
+        dataframe: pd.DataFrame,
+    ) -> dict[str, list]:
+        headers: list[str] = []
+        rows: list[list[str]] = []
+        header_found = False
+
+        for _, raw_row in dataframe.iterrows():
+            raw_values = raw_row.tolist()
+            if not any(pd.notna(x) for x in raw_values):
+                continue
+
+            row_values = [
+                cls._normalize_retrade_calculations_cell(cell_value)
+                for cell_value in raw_values
+            ]
+            while row_values and not row_values[-1]:
+                row_values.pop()
+            if not row_values:
+                continue
+            if not any(str(value or "").strip() for value in row_values):
+                continue
+
+            if not header_found:
+                headers = row_values
+                header_found = True
+                continue
+
+            rows.append(row_values)
+
+        return {
+            "headers": headers,
+            "rows": rows,
+        }
+
+    def _fill_retrade_calculations_view(
+        self,
+        headers: list[str],
+        rows: list[list[str]],
+    ) -> None:
+        self._clear_retrade_calculations_view()
+
+        table = getattr(self, "retrade_calculations_table", None)
+        if isinstance(table, QTableWidget):
+            column_count = max(len(headers), max((len(row) for row in rows), default=0))
+            table.setRowCount(len(rows))
+            table.setColumnCount(column_count)
+            if column_count > 0:
+                header_labels = list(headers[:column_count])
+                if len(header_labels) < column_count:
+                    header_labels.extend(
+                        f"Колонка {index + 1}"
+                        for index in range(len(header_labels), column_count)
+                    )
+                table.setHorizontalHeaderLabels(header_labels)
+            for row_index, row_values in enumerate(rows):
+                for col_index in range(column_count):
+                    value = row_values[col_index] if col_index < len(row_values) else ""
+                    table.setItem(row_index, col_index, QTableWidgetItem(str(value)))
+            table.resizeRowsToContents()
+            table.resizeColumnsToContents()
+
+        sum_label = getattr(self, "sum_label", None)
+        if isinstance(sum_label, QLabel):
+            sum_label.setText("-")
+        total_label = getattr(self, "total_label", None)
+        if isinstance(total_label, QLabel):
+            total_label.setText("-")
+        profit_label = getattr(self, "profit_label", None)
+        if isinstance(profit_label, QLabel):
+            profit_label.setText("-")
+
+        self._set_retrade_calculations_loaded_status(bool(headers or rows))
+
+    def _set_retrade_calculations_loaded_status(self, is_loaded: bool) -> None:
+        self.retrade_calculations_loaded = bool(is_loaded)
+        status_label = getattr(self, "label_retrade_calculations_status", None)
+        if not isinstance(status_label, QLabel):
+            return
+
+        if self.retrade_calculations_loaded:
+            status_label.setText("Расчеты подключены")
+            status_label.setStyleSheet("color: #1f8f3a; font-weight: 600;")
+            return
+
+        status_label.setText("Расчеты не подключены")
+        status_label.setStyleSheet("color: #c62828; font-weight: 600;")
 
     def _toggle_auto_trade_status(self) -> None:
         status_label = getattr(self, "label_auto_trade_status", None)
@@ -523,7 +823,8 @@ class ExportMixin:
 
         for row_index in range(len(df)):
             for col_index in range(len(df.columns)):
-                value = str(df.iloc[row_index, col_index])
+                cell_value = df.iloc[row_index, col_index]
+                value = "" if pd.isna(cell_value) else str(cell_value)
                 table.setItem(row_index, col_index, QTableWidgetItem(value))
 
         table.resizeRowsToContents()
@@ -539,6 +840,9 @@ class ExportMixin:
             index = tabs.indexOf(retrade_tab)
             if index >= 0:
                 tabs.setCurrentIndex(index)
+        inner_tabs = getattr(self, "retrade_inner_tabs", None)
+        if isinstance(inner_tabs, QTabWidget):
+            inner_tabs.setCurrentIndex(self.RETRADE_INNER_TAB_MAIN)
 
     def _on_export_finished(self, file_path: str) -> None:
         file_path_text = str(file_path or "").strip()
