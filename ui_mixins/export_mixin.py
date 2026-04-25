@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 from PySide6.QtCore import QThread, Signal, QTimer, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -83,13 +84,56 @@ class ExportMixin:
     RETRADE_INNER_TAB_MAIN = 0
     RETRADE_INNER_TAB_CALCULATIONS = 1
     RETRADE_INNER_TAB_HISTORY = 2
+    RETRADE_TABLE_EXCEL_STYLESHEET = """
+QTableWidget {
+    background-color: white;
+    gridline-color: #d0d0d0;
+    font-size: 13px;
+}
+
+QHeaderView::section {
+    background-color: #f3f3f3;
+    font-weight: bold;
+    border: 1px solid #d0d0d0;
+    padding: 4px;
+}
+
+QTableWidget::item {
+    border: 1px solid #e0e0e0;
+    padding: 4px;
+}
+
+QTableWidget::item:selected {
+    background-color: #cce5ff;
+    color: black;
+}
+
+QTableWidget::item:hover {
+    background-color: #f5f5f5;
+}
+"""
 
     def init_export_mixin(self) -> None:
         self._export_trade_worker: ExportTradeWorker | None = None
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
         self.retrade_calculations_loaded = False
-        self.retrade_calculations_data: dict[str, list] = {"headers": [], "rows": []}
+        self.retrade_calculations_data: dict[str, Any] = {
+            "headers": [],
+            "rows": [],
+            "total_without_vat": None,
+            "total_without_vat_currency": None,
+            "totals": {
+                "price": 0.0,
+                "logistic": 0.0,
+                "customs": 0.0,
+            },
+            "totals_currency": {
+                "price": None,
+                "logistic": None,
+                "customs": None,
+            },
+        }
         self._ensure_auto_trade_timer()
         self._ensure_retrade_tab()
         self._ensure_auto_resize_columns_action()
@@ -121,6 +165,22 @@ class ExportMixin:
             width = table.columnWidth(column_index)
             if width > max_width:
                 table.setColumnWidth(column_index, max_width)
+
+    @classmethod
+    def _configure_excel_like_table(cls, table: QTableWidget) -> None:
+        table.setShowGrid(True)
+        table.setGridStyle(Qt.PenStyle.SolidLine)
+        table.setStyleSheet(cls.RETRADE_TABLE_EXCEL_STYLESHEET)
+        table.setAlternatingRowColors(True)
+        table.setMouseTracking(True)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        horizontal_header = table.horizontalHeader()
+        horizontal_header.setStretchLastSection(True)
+        horizontal_header.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
     def _get_active_retrade_table(self) -> QTableWidget | None:
         tabs = getattr(self, "tabWidget", None)
@@ -178,6 +238,7 @@ class ExportMixin:
 
         self.retrade_table = QTableWidget(main_table_tab)
         self.retrade_table.setObjectName("retrade_table")
+        self._configure_excel_like_table(self.retrade_table)
         main_table_layout.addWidget(self.retrade_table, 1)
         self.retrade_inner_tabs.addTab(main_table_tab, "Основная таблица")
 
@@ -197,7 +258,26 @@ class ExportMixin:
 
         self.retrade_calculations_table = QTableWidget(calculations_container)
         self.retrade_calculations_table.setObjectName("retrade_calculations_table")
+        self._configure_excel_like_table(self.retrade_calculations_table)
         calculations_container_layout.addWidget(self.retrade_calculations_table, 1)
+
+        self.total_without_vat_label = QLabel("", calculations_container)
+        self.total_without_vat_label.setObjectName("retrade_total_without_vat_label")
+        self.total_without_vat_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.total_without_vat_label.setStyleSheet("font-weight: 700;")
+        self.total_without_vat_label.setVisible(False)
+        calculations_container_layout.addWidget(self.total_without_vat_label)
+
+        self.price_total_label = QLabel("", calculations_container)
+        self.price_total_label.setObjectName("retrade_price_total_label")
+        self.price_total_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.price_total_label.setStyleSheet("font-weight: 700;")
+        self.price_total_label.setVisible(False)
+        calculations_container_layout.addWidget(self.price_total_label)
 
         totals_container = QWidget(calculations_container)
         totals_container.setObjectName("retrade_calculations_totals")
@@ -208,9 +288,9 @@ class ExportMixin:
         self.total_label = QLabel("-", totals_container)
         self.profit_label = QLabel("-", totals_container)
 
-        totals_layout.addRow("Сумма:", self.sum_label)
-        totals_layout.addRow("Итого:", self.total_label)
-        totals_layout.addRow("Прибыль:", self.profit_label)
+        totals_layout.addRow("Сумма товаров:", self.sum_label)
+        totals_layout.addRow("Логистика:", self.total_label)
+        totals_layout.addRow("Таможня:", self.profit_label)
         calculations_container_layout.addWidget(totals_container)
         calculations_layout.addWidget(calculations_container, 1)
         self.retrade_inner_tabs.addTab(calculations_tab, "Расчеты")
@@ -268,6 +348,8 @@ class ExportMixin:
         self.ui.retradeTab = retrade_tab
         self.ui.retrade_inner_tabs = self.retrade_inner_tabs
         self.ui.retrade_calculations_table = self.retrade_calculations_table
+        self.ui.total_without_vat_label = self.total_without_vat_label
+        self.ui.price_total_label = self.price_total_label
         self.ui.sum_label = self.sum_label
         self.ui.total_label = self.total_label
         self.ui.profit_label = self.profit_label
@@ -307,12 +389,26 @@ class ExportMixin:
         parsed = self._parse_retrade_calculations(cells_data)
         headers = parsed["headers"]
         rows = parsed["rows"]
-        self._fill_retrade_calculations_view(headers, rows)
+        total_without_vat = parsed.get("total_without_vat")
+        total_without_vat_currency = parsed.get("total_without_vat_currency")
+        totals = parsed.get("totals", {})
+        totals_currency = parsed.get("totals_currency", {})
+        self._fill_retrade_calculations_view(
+            headers,
+            rows,
+            total_without_vat=total_without_vat,
+            total_without_vat_currency=total_without_vat_currency,
+            totals=totals,
+            totals_currency=totals_currency,
+        )
         self._open_retrade_calculations_tab()
 
         self._log_calc("файл загружен")
         self._log_calc(f"заголовков: {len(headers)}")
         self._log_calc(f"строк данных: {len(rows)}")
+        self._log_calc(f"сумма товаров: {totals.get('price', 0)}")
+        self._log_calc(f"логистика: {totals.get('logistic', 0)}")
+        self._log_calc(f"таможня: {totals.get('customs', 0)}")
 
     @staticmethod
     def _load_retrade_calculations_cells_data(file_path: str) -> list[list[dict[str, Any]]]:
@@ -405,7 +501,30 @@ class ExportMixin:
             if isinstance(label, QLabel):
                 label.setText("-")
 
-        self.retrade_calculations_data = {"headers": [], "rows": []}
+        self.retrade_calculations_data = {
+            "headers": [],
+            "rows": [],
+            "total_without_vat": None,
+            "total_without_vat_currency": None,
+            "totals": {
+                "price": 0.0,
+                "logistic": 0.0,
+                "customs": 0.0,
+            },
+            "totals_currency": {
+                "price": None,
+                "logistic": None,
+                "customs": None,
+            },
+        }
+        total_without_vat_label = getattr(self, "total_without_vat_label", None)
+        if isinstance(total_without_vat_label, QLabel):
+            total_without_vat_label.setText("")
+            total_without_vat_label.setVisible(False)
+        price_total_label = getattr(self, "price_total_label", None)
+        if isinstance(price_total_label, QLabel):
+            price_total_label.setText("")
+            price_total_label.setVisible(False)
         self._set_retrade_calculations_loaded_status(False)
 
     @staticmethod
@@ -436,6 +555,17 @@ class ExportMixin:
             return float(candidate)
         except Exception:
             return None
+
+    @staticmethod
+    def _is_numeric_table_value(value: Any) -> bool:
+        if value is None or isinstance(value, bool):
+            return False
+        if not isinstance(value, (int, float)):
+            return False
+        try:
+            return not pd.isna(value)
+        except Exception:
+            return True
 
     @classmethod
     def _format_number_ru(cls, value: Any) -> str:
@@ -482,6 +612,99 @@ class ExportMixin:
             return cls._is_retrade_calculations_value_present(value) or bool(currency)
         return cls._is_retrade_calculations_value_present(cell_data)
 
+    @classmethod
+    def _is_retrade_position_cell(cls, value: Any) -> bool:
+        if value is None or isinstance(value, bool):
+            return False
+
+        if isinstance(value, (int, float)):
+            try:
+                if pd.isna(value):
+                    return False
+            except Exception:
+                pass
+            return True
+
+        if isinstance(value, str):
+            return value.strip().isdigit()
+
+        return False
+
+    @staticmethod
+    def _is_service_retrade_column_header(header: str) -> bool:
+        lowered = header.lower()
+        return "сумма" in lowered or "итого" in lowered or "прибыль" in lowered
+
+    @staticmethod
+    def _is_price_per_unit_header(header: Any) -> bool:
+        return isinstance(header, str) and "цена за ед" in header.lower()
+
+    @staticmethod
+    def _find_retrade_column(headers: list[Any], keywords: list[str]) -> int | None:
+        for index, header in enumerate(headers):
+            if not isinstance(header, str):
+                continue
+            lowered_header = header.lower()
+            if any(keyword in lowered_header for keyword in keywords):
+                return index
+        return None
+
+    @classmethod
+    def _sum_retrade_column(
+        cls,
+        rows: list[list[dict[str, Any]]],
+        col_index: int | None,
+    ) -> tuple[float, str | None]:
+        if col_index is None:
+            return 0.0, None
+
+        total = 0.0
+        detected_currency: str | None = None
+        for row in rows:
+            if col_index >= len(row):
+                continue
+            cell = row[col_index]
+            if isinstance(cell, dict):
+                value = cell.get("value")
+                if detected_currency is None and cell.get("currency"):
+                    detected_currency = cell.get("currency")
+            else:
+                value = cell
+
+            numeric_value = cls._parse_retrade_numeric_value(value)
+            if numeric_value is None:
+                continue
+            total += numeric_value
+
+        return total, detected_currency
+
+    @staticmethod
+    def _is_total_without_vat_marker(value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        return "итого без ндс" in value.lower()
+
+    @classmethod
+    def _extract_total_without_vat_from_row(
+        cls,
+        row_cells: list[dict[str, Any]],
+    ) -> tuple[Any, str | None]:
+        numeric_candidates: list[tuple[Any, str | None]] = []
+        for cell in row_cells:
+            if not isinstance(cell, dict):
+                continue
+            value = cell.get("value")
+            numeric = cls._parse_retrade_numeric_value(value)
+            if numeric is None:
+                continue
+            numeric_candidates.append((value, cell.get("currency")))
+
+        if not numeric_candidates:
+            return None, None
+
+        selected_value, selected_currency = numeric_candidates[-1]
+        return selected_value, selected_currency
+
     @staticmethod
     def _log_calc(message: str) -> None:
         text = f"[CALC] {message}"
@@ -492,9 +715,11 @@ class ExportMixin:
     def _parse_retrade_calculations(
         cls,
         cells_data: list[list[dict[str, Any]]],
-    ) -> dict[str, list]:
+    ) -> dict[str, Any]:
         headers: list[str] = []
-        rows: list[list[dict[str, Any]]] = []
+        position_rows: list[list[dict[str, Any]]] = []
+        total_without_vat: Any = None
+        total_without_vat_currency: str | None = None
         header_found = False
 
         for raw_row in cells_data:
@@ -531,22 +756,110 @@ class ExportMixin:
             if not normalized_row:
                 continue
 
-            rows.append(normalized_row)
+            if any(
+                cls._is_total_without_vat_marker(cell.get("value"))
+                for cell in normalized_row
+                if isinstance(cell, dict)
+            ):
+                extracted_value, extracted_currency = cls._extract_total_without_vat_from_row(
+                    normalized_row
+                )
+                if extracted_value is not None:
+                    total_without_vat = extracted_value
+                    total_without_vat_currency = extracted_currency
+                continue
+
+            first_cell_value = (
+                normalized_row[0].get("value")
+                if normalized_row and isinstance(normalized_row[0], dict)
+                else None
+            )
+            if not cls._is_retrade_position_cell(first_cell_value):
+                continue
+
+            position_rows.append(normalized_row)
+
+        filtered_headers: list[str] = []
+        filtered_indices: list[int] = []
+        for index, header in enumerate(headers):
+            if not isinstance(header, str):
+                continue
+            if cls._is_service_retrade_column_header(header):
+                continue
+            filtered_headers.append(header)
+            filtered_indices.append(index)
+
+        filtered_rows: list[list[dict[str, Any]]] = []
+        for row in position_rows:
+            new_row: list[dict[str, Any]] = []
+            for index in filtered_indices:
+                if index < len(row):
+                    new_row.append(row[index])
+                else:
+                    new_row.append({"value": None, "currency": None})
+
+            while new_row and not cls._is_retrade_calculations_cell_present(new_row[-1]):
+                new_row.pop()
+            if not new_row:
+                continue
+            filtered_rows.append(new_row)
+
+        price_col_index = cls._find_retrade_column(filtered_headers, ["цена за ед"])
+        logistic_col_index = cls._find_retrade_column(
+            filtered_headers,
+            ["логист", "доставк", "транспорт"],
+        )
+        customs_col_index = cls._find_retrade_column(filtered_headers, ["тамож", "пошлин"])
+
+        if price_col_index is None:
+            cls._log_calc("Ошибка: столбец 'Цена за ед. без НДС' не найден")
+        if logistic_col_index is None:
+            cls._log_calc("Ошибка: столбец 'Логистика' не найден")
+        if customs_col_index is None:
+            cls._log_calc("Ошибка: столбец 'Таможня' не найден")
+
+        price_total, price_total_currency = cls._sum_retrade_column(filtered_rows, price_col_index)
+        logistic_total, logistic_total_currency = cls._sum_retrade_column(
+            filtered_rows,
+            logistic_col_index,
+        )
+        customs_total, customs_total_currency = cls._sum_retrade_column(
+            filtered_rows,
+            customs_col_index,
+        )
 
         return {
-            "headers": headers,
-            "rows": rows,
+            "headers": filtered_headers,
+            "rows": filtered_rows,
+            "total_without_vat": total_without_vat,
+            "total_without_vat_currency": total_without_vat_currency,
+            "totals": {
+                "price": price_total,
+                "logistic": logistic_total,
+                "customs": customs_total,
+            },
+            "totals_currency": {
+                "price": price_total_currency,
+                "logistic": logistic_total_currency,
+                "customs": customs_total_currency,
+            },
         }
 
     def _fill_retrade_calculations_view(
         self,
         headers: list[str],
         rows: list[list[dict[str, Any]]],
+        *,
+        total_without_vat: Any = None,
+        total_without_vat_currency: str | None = None,
+        totals: dict[str, float] | None = None,
+        totals_currency: dict[str, str | None] | None = None,
     ) -> None:
         self._clear_retrade_calculations_view()
 
         table = getattr(self, "retrade_calculations_table", None)
         if isinstance(table, QTableWidget):
+            self._configure_excel_like_table(table)
             column_count = max(len(headers), max((len(row) for row in rows), default=0))
             table.setRowCount(len(rows))
             table.setColumnCount(column_count)
@@ -573,25 +886,96 @@ class ExportMixin:
                     display_value = self._format_retrade_calculations_cell_for_display(cell_payload)
                     item = QTableWidgetItem(display_value)
                     item.setData(Qt.ItemDataRole.UserRole, cell_payload)
+                    raw_value = cell_payload.get("value") if isinstance(cell_payload, dict) else cell_payload
+                    if self._is_numeric_table_value(raw_value):
+                        item.setTextAlignment(
+                            int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                        )
+                    else:
+                        item.setTextAlignment(
+                            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                        )
                     if currency:
                         item.setToolTip(f"Валюта: {currency}")
                     table.setItem(row_index, col_index, item)
             table.resizeRowsToContents()
             self._auto_resize_columns(table)
 
+        totals_data = totals or {}
+        totals_currency_data = totals_currency or {}
+        default_currency = total_without_vat_currency
+        price_currency = totals_currency_data.get("price") or default_currency
+        logistic_currency = totals_currency_data.get("logistic") or default_currency
+        customs_currency = totals_currency_data.get("customs") or default_currency
+
+        price_display = self._format_retrade_calculations_cell_for_display(
+            {
+                "value": totals_data.get("price", 0.0),
+                "currency": price_currency,
+            }
+        )
+        logistic_display = self._format_retrade_calculations_cell_for_display(
+            {
+                "value": totals_data.get("logistic", 0.0),
+                "currency": logistic_currency,
+            }
+        )
+        customs_display = self._format_retrade_calculations_cell_for_display(
+            {
+                "value": totals_data.get("customs", 0.0),
+                "currency": customs_currency,
+            }
+        )
+
         sum_label = getattr(self, "sum_label", None)
         if isinstance(sum_label, QLabel):
-            sum_label.setText("-")
+            sum_label.setText(price_display or "0,00")
         total_label = getattr(self, "total_label", None)
         if isinstance(total_label, QLabel):
-            total_label.setText("-")
+            total_label.setText(logistic_display or "0,00")
         profit_label = getattr(self, "profit_label", None)
         if isinstance(profit_label, QLabel):
-            profit_label.setText("-")
+            profit_label.setText(customs_display or "0,00")
+
+        total_without_vat_label = getattr(self, "total_without_vat_label", None)
+        if isinstance(total_without_vat_label, QLabel):
+            if total_without_vat is None:
+                total_without_vat_label.setText("")
+                total_without_vat_label.setVisible(False)
+            else:
+                formatted_total = self._format_retrade_calculations_cell_for_display(
+                    {
+                        "value": total_without_vat,
+                        "currency": total_without_vat_currency,
+                    }
+                )
+                if formatted_total:
+                    total_without_vat_label.setText(f"Итого без НДС: {formatted_total}")
+                    total_without_vat_label.setVisible(True)
+                else:
+                    total_without_vat_label.setText("")
+                    total_without_vat_label.setVisible(False)
+
+        price_total_label = getattr(self, "price_total_label", None)
+        if isinstance(price_total_label, QLabel):
+            price_total_label.setText("")
+            price_total_label.setVisible(False)
 
         self.retrade_calculations_data = {
             "headers": list(headers),
             "rows": [list(row) for row in rows],
+            "total_without_vat": total_without_vat,
+            "total_without_vat_currency": total_without_vat_currency,
+            "totals": {
+                "price": totals_data.get("price", 0.0),
+                "logistic": totals_data.get("logistic", 0.0),
+                "customs": totals_data.get("customs", 0.0),
+            },
+            "totals_currency": {
+                "price": price_currency,
+                "logistic": logistic_currency,
+                "customs": customs_currency,
+            },
         }
         self._set_retrade_calculations_loaded_status(bool(headers or rows))
 
@@ -1003,6 +1387,7 @@ class ExportMixin:
 
         self._log_ui("Обновление таблицы Переторжка")
 
+        self._configure_excel_like_table(table)
         table.clear()
         table.setRowCount(len(df))
         table.setColumnCount(len(df.columns))
@@ -1012,7 +1397,16 @@ class ExportMixin:
             for col_index in range(len(df.columns)):
                 cell_value = df.iloc[row_index, col_index]
                 value = "" if pd.isna(cell_value) else str(cell_value)
-                table.setItem(row_index, col_index, QTableWidgetItem(value))
+                item = QTableWidgetItem(value)
+                if self._is_numeric_table_value(cell_value):
+                    item.setTextAlignment(
+                        int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    )
+                else:
+                    item.setTextAlignment(
+                        int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                    )
+                table.setItem(row_index, col_index, item)
 
         table.resizeRowsToContents()
         self._auto_resize_columns(table)

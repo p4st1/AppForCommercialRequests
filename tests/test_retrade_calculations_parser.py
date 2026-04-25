@@ -30,6 +30,13 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 ],
             ],
         )
+        self.assertIsNone(parsed["total_without_vat"])
+        self.assertIsNone(parsed["total_without_vat_currency"])
+        self.assertEqual(parsed["totals"], {"price": 0.0, "logistic": 0.0, "customs": 0.0})
+        self.assertEqual(
+            parsed["totals_currency"],
+            {"price": None, "logistic": None, "customs": None},
+        )
 
     def test_parse_skips_fully_empty_rows_and_keeps_all_data_rows(self):
         parsed = ExportMixin._parse_retrade_calculations(
@@ -54,6 +61,13 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 ],
             ],
         )
+        self.assertIsNone(parsed["total_without_vat"])
+        self.assertIsNone(parsed["total_without_vat_currency"])
+        self.assertEqual(parsed["totals"], {"price": 0.0, "logistic": 0.0, "customs": 0.0})
+        self.assertEqual(
+            parsed["totals_currency"],
+            {"price": None, "logistic": None, "customs": None},
+        )
 
     def test_parse_returns_empty_structure_for_empty_file(self):
         parsed = ExportMixin._parse_retrade_calculations(
@@ -62,7 +76,150 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 [{"value": "", "currency": None}],
             ]
         )
-        self.assertEqual(parsed, {"headers": [], "rows": []})
+        self.assertEqual(
+            parsed,
+            {
+                "headers": [],
+                "rows": [],
+                "total_without_vat": None,
+                "total_without_vat_currency": None,
+                "totals": {"price": 0.0, "logistic": 0.0, "customs": 0.0},
+                "totals_currency": {"price": None, "logistic": None, "customs": None},
+            },
+        )
+
+    def test_parse_extracts_total_without_vat_and_removes_service_row(self):
+        parsed = ExportMixin._parse_retrade_calculations(
+            [
+                [{"value": "Наименование", "currency": None}, {"value": "Сумма", "currency": None}],
+                [{"value": 1, "currency": None}, {"value": 1250000, "currency": "RUB"}],
+                [{"value": "Итого без НДС", "currency": None}, {"value": 1250000, "currency": "RUB"}],
+            ]
+        )
+        self.assertEqual(
+            parsed["headers"],
+            ["Наименование"],
+        )
+        self.assertEqual(
+            parsed["rows"],
+            [[{"value": 1, "currency": None}]],
+        )
+        self.assertEqual(parsed["total_without_vat"], 1250000)
+        self.assertEqual(parsed["total_without_vat_currency"], "RUB")
+        self.assertEqual(parsed["totals"], {"price": 0.0, "logistic": 0.0, "customs": 0.0})
+        self.assertEqual(
+            parsed["totals_currency"],
+            {"price": None, "logistic": None, "customs": None},
+        )
+
+    def test_parse_keeps_only_position_rows_by_first_cell(self):
+        parsed = ExportMixin._parse_retrade_calculations(
+            [
+                [{"value": "№", "currency": None}, {"value": "Сумма", "currency": None}],
+                [{"value": 1, "currency": None}, {"value": 1000, "currency": "RUB"}],
+                [{"value": "2", "currency": None}, {"value": 2000, "currency": "RUB"}],
+                [{"value": "Прибыль", "currency": None}, {"value": 500, "currency": "RUB"}],
+                [{"value": "Итого", "currency": None}, {"value": 3000, "currency": "RUB"}],
+            ]
+        )
+        self.assertEqual(
+            parsed["headers"],
+            ["№"],
+        )
+        self.assertEqual(
+            parsed["rows"],
+            [
+                [{"value": 1, "currency": None}],
+                [{"value": "2", "currency": None}],
+            ],
+        )
+        self.assertIsNone(parsed["total_without_vat"])
+        self.assertIsNone(parsed["total_without_vat_currency"])
+        self.assertEqual(parsed["totals"], {"price": 0.0, "logistic": 0.0, "customs": 0.0})
+        self.assertEqual(
+            parsed["totals_currency"],
+            {"price": None, "logistic": None, "customs": None},
+        )
+
+    def test_parse_filters_service_columns_and_calculates_price_total(self):
+        parsed = ExportMixin._parse_retrade_calculations(
+            [
+                [
+                    {"value": "№", "currency": None},
+                    {"value": "Цена за ед. без НДС", "currency": None},
+                    {"value": "Сумма", "currency": None},
+                    {"value": "Прибыль", "currency": None},
+                ],
+                [
+                    {"value": 1, "currency": None},
+                    {"value": 1000, "currency": "RUB"},
+                    {"value": 3000, "currency": "RUB"},
+                    {"value": 100, "currency": "RUB"},
+                ],
+                [
+                    {"value": "2", "currency": None},
+                    {"value": 2500.5, "currency": "RUB"},
+                    {"value": 7501.5, "currency": "RUB"},
+                    {"value": 250, "currency": "RUB"},
+                ],
+                [
+                    {"value": "Итого", "currency": None},
+                    {"value": None, "currency": None},
+                    {"value": 10501.5, "currency": "RUB"},
+                    {"value": 350, "currency": "RUB"},
+                ],
+            ]
+        )
+        self.assertEqual(parsed["headers"], ["№", "Цена за ед. без НДС"])
+        self.assertEqual(
+            parsed["rows"],
+            [
+                [
+                    {"value": 1, "currency": None},
+                    {"value": 1000, "currency": "RUB"},
+                ],
+                [
+                    {"value": "2", "currency": None},
+                    {"value": 2500.5, "currency": "RUB"},
+                ],
+            ],
+        )
+        self.assertEqual(parsed["totals"]["price"], 3500.5)
+        self.assertEqual(parsed["totals"]["logistic"], 0.0)
+        self.assertEqual(parsed["totals"]["customs"], 0.0)
+        self.assertEqual(parsed["totals_currency"]["price"], "RUB")
+        self.assertIsNone(parsed["totals_currency"]["logistic"])
+        self.assertIsNone(parsed["totals_currency"]["customs"])
+
+    def test_parse_calculates_logistic_and_customs_totals(self):
+        parsed = ExportMixin._parse_retrade_calculations(
+            [
+                [
+                    {"value": "№", "currency": None},
+                    {"value": "Цена за ед. без НДС", "currency": None},
+                    {"value": "Логистика", "currency": None},
+                    {"value": "Таможня", "currency": None},
+                ],
+                [
+                    {"value": 1, "currency": None},
+                    {"value": 1000, "currency": "RUB"},
+                    {"value": 100, "currency": "RUB"},
+                    {"value": 50, "currency": "RUB"},
+                ],
+                [
+                    {"value": 2, "currency": None},
+                    {"value": 2000, "currency": "RUB"},
+                    {"value": 200, "currency": "RUB"},
+                    {"value": 80, "currency": "RUB"},
+                ],
+            ]
+        )
+
+        self.assertEqual(parsed["totals"], {"price": 3000.0, "logistic": 300.0, "customs": 130.0})
+        self.assertEqual(
+            parsed["totals_currency"],
+            {"price": "RUB", "logistic": "RUB", "customs": "RUB"},
+        )
 
     def test_detect_currency_from_number_format(self):
         self.assertEqual(ExportMixin._detect_currency(1000, '#,##0.00 "₽"'), "RUB")
