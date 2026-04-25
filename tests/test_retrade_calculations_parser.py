@@ -1,62 +1,78 @@
 import unittest
 
-import pandas as pd
-
 from ui_mixins.export_mixin import ExportMixin
 
 
 class RetradeCalculationsParserTests(unittest.TestCase):
     def test_parse_uses_first_non_empty_row_as_headers(self):
-        dataframe = pd.DataFrame(
+        parsed = ExportMixin._parse_retrade_calculations(
             [
-                ["", "", ""],
-                [None, None, None],
-                ["№", "Наименование", "Цена"],
-                ["1", "Позиция 1", 100],
-                ["2", "Позиция 2", 250],
-                ["", "", ""],
+                [{"value": "", "currency": None}, {"value": None, "currency": None}],
+                [{"value": "№", "currency": None}, {"value": "Цена", "currency": None}],
+                [{"value": 1, "currency": None}, {"value": 1000, "currency": "RUB"}],
+                [{"value": 2, "currency": None}, {"value": 5, "currency": None}],
             ]
         )
-
-        parsed = ExportMixin._parse_retrade_calculations(dataframe)
-
         self.assertEqual(
             parsed["headers"],
-            ["№", "Наименование", "Цена"],
+            ["№", "Цена"],
         )
         self.assertEqual(
             parsed["rows"],
-            [["1", "Позиция 1", "100"], ["2", "Позиция 2", "250"]],
+            [
+                [
+                    {"value": 1, "currency": None},
+                    {"value": 1000, "currency": "RUB"},
+                ],
+                [
+                    {"value": 2, "currency": None},
+                    {"value": 5, "currency": None},
+                ],
+            ],
         )
 
     def test_parse_skips_fully_empty_rows_and_keeps_all_data_rows(self):
-        dataframe = pd.DataFrame(
+        parsed = ExportMixin._parse_retrade_calculations(
             [
-                ["Код", "Описание", "Значение"],
-                [1, "Строка 1", 10],
-                ["", "", ""],
-                [None, None, None],
-                [2, "Строка 2", 20],
-                [3, "Итого: 30", 30],
+                [{"value": "Код", "currency": None}, {"value": "Значение", "currency": None}],
+                [{"value": "", "currency": None}, {"value": None, "currency": None}],
+                [{"value": 2, "currency": None}, {"value": 20, "currency": "USD"}],
+                [{"value": 3, "currency": None}, {"value": "30 руб", "currency": "RUB"}],
             ]
         )
-
-        parsed = ExportMixin._parse_retrade_calculations(dataframe)
-
-        self.assertEqual(parsed["headers"], ["Код", "Описание", "Значение"])
+        self.assertEqual(parsed["headers"], ["Код", "Значение"])
         self.assertEqual(
             parsed["rows"],
             [
-                ["1", "Строка 1", "10"],
-                ["2", "Строка 2", "20"],
-                ["3", "Итого: 30", "30"],
+                [
+                    {"value": 2, "currency": None},
+                    {"value": 20, "currency": "USD"},
+                ],
+                [
+                    {"value": 3, "currency": None},
+                    {"value": "30 руб", "currency": "RUB"},
+                ],
             ],
         )
 
     def test_parse_returns_empty_structure_for_empty_file(self):
-        dataframe = pd.DataFrame([[None, None], ["", ""]])
-        parsed = ExportMixin._parse_retrade_calculations(dataframe)
+        parsed = ExportMixin._parse_retrade_calculations(
+            [
+                [{"value": None, "currency": None}],
+                [{"value": "", "currency": None}],
+            ]
+        )
         self.assertEqual(parsed, {"headers": [], "rows": []})
+
+    def test_detect_currency_from_number_format(self):
+        self.assertEqual(ExportMixin._detect_currency(1000, '#,##0.00 "₽"'), "RUB")
+        self.assertEqual(ExportMixin._detect_currency(1000, '#,##0.00 "$"'), "USD")
+        self.assertEqual(ExportMixin._detect_currency(1000, '#,##0.00 "EUR"'), "EUR")
+
+    def test_detect_currency_from_string_fallback(self):
+        self.assertEqual(ExportMixin._detect_currency("1000 руб", "General"), "RUB")
+        self.assertEqual(ExportMixin._detect_currency("Total $100", "General"), "USD")
+        self.assertEqual(ExportMixin._detect_currency("Amount 50 eur", "General"), "EUR")
 
 
 if __name__ == "__main__":

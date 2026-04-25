@@ -88,6 +88,7 @@ class ExportMixin:
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
         self.retrade_calculations_loaded = False
+        self.retrade_calculations_data: dict[str, list] = {"headers": [], "rows": []}
         self._ensure_auto_trade_timer()
         self._ensure_retrade_tab()
         self._ensure_export_button()
@@ -240,14 +241,14 @@ class ExportMixin:
             return
 
         try:
-            dataframe = self._load_retrade_calculations_dataframe(file_path)
+            cells_data = self._load_retrade_calculations_cells_data(file_path)
         except Exception as exc:
             error_text = f"Не удалось прочитать Excel файл: {exc}"
             Tool.write_log(error_text)
             QMessageBox.warning(self, "Ошибка", error_text)
             return
 
-        parsed = self._parse_retrade_calculations(dataframe)
+        parsed = self._parse_retrade_calculations(cells_data)
         headers = parsed["headers"]
         rows = parsed["rows"]
         self._fill_retrade_calculations_view(headers, rows)
@@ -258,13 +259,23 @@ class ExportMixin:
         self._log_calc(f"строк данных: {len(rows)}")
 
     @staticmethod
-    def _load_retrade_calculations_dataframe(file_path: str) -> pd.DataFrame:
+    def _load_retrade_calculations_cells_data(file_path: str) -> list[list[dict[str, Any]]]:
         workbook_values = load_workbook(file_path, data_only=True)
         worksheet_values = workbook_values.active
 
-        data: list[list[Any]] = []
-        for row in worksheet_values.iter_rows(values_only=True):
-            data.append(list(row))
+        data: list[list[dict[str, Any]]] = []
+        for row in worksheet_values.iter_rows(values_only=False):
+            parsed_row: list[dict[str, Any]] = []
+            for cell in row:
+                value = cell.value
+                currency = ExportMixin._detect_currency(value, cell.number_format)
+                parsed_row.append(
+                    {
+                        "value": value,
+                        "currency": currency,
+                    }
+                )
+            data.append(parsed_row)
 
         warning_message = (
             "WARNING: Some formula cells returned None. Excel file may need recalculation."
@@ -304,7 +315,27 @@ class ExportMixin:
             except Exception:
                 pass
 
-        return pd.DataFrame(data)
+        return data
+
+    @staticmethod
+    def _detect_currency(value: Any, number_format: Any) -> str | None:
+        number_format_text = str(number_format or "").upper()
+        if "₽" in number_format_text or "RUB" in number_format_text:
+            return "RUB"
+        if "$" in number_format_text or "USD" in number_format_text:
+            return "USD"
+        if "€" in number_format_text or "EUR" in number_format_text:
+            return "EUR"
+
+        if isinstance(value, str):
+            text_lower = value.lower()
+            if "руб" in text_lower or "rub" in text_lower:
+                return "RUB"
+            if "$" in value or "usd" in text_lower:
+                return "USD"
+            if "€" in value or "eur" in text_lower:
+                return "EUR"
+        return None
 
     def _clear_retrade_calculations_view(self) -> None:
         table = getattr(self, "retrade_calculations_table", None)
@@ -318,13 +349,33 @@ class ExportMixin:
             if isinstance(label, QLabel):
                 label.setText("-")
 
+        self.retrade_calculations_data = {"headers": [], "rows": []}
         self._set_retrade_calculations_loaded_status(False)
 
     @staticmethod
     def _normalize_retrade_calculations_cell(value: Any) -> str:
-        if pd.isna(value):
+        if value is None:
             return ""
+        if isinstance(value, str):
+            return value.strip()
+        try:
+            if pd.isna(value):
+                return ""
+        except Exception:
+            pass
         return str(value).strip()
+
+    @classmethod
+    def _is_retrade_calculations_value_present(cls, value: Any) -> bool:
+        return bool(cls._normalize_retrade_calculations_cell(value))
+
+    @classmethod
+    def _is_retrade_calculations_cell_present(cls, cell_data: Any) -> bool:
+        if isinstance(cell_data, dict):
+            value = cell_data.get("value")
+            currency = cell_data.get("currency")
+            return cls._is_retrade_calculations_value_present(value) or bool(currency)
+        return cls._is_retrade_calculations_value_present(cell_data)
 
     @staticmethod
     def _log_calc(message: str) -> None:
@@ -335,34 +386,47 @@ class ExportMixin:
     @classmethod
     def _parse_retrade_calculations(
         cls,
-        dataframe: pd.DataFrame,
+        cells_data: list[list[dict[str, Any]]],
     ) -> dict[str, list]:
         headers: list[str] = []
-        rows: list[list[str]] = []
+        rows: list[list[dict[str, Any]]] = []
         header_found = False
 
-        for _, raw_row in dataframe.iterrows():
-            raw_values = raw_row.tolist()
-            if not any(pd.notna(x) for x in raw_values):
-                continue
-
-            row_values = [
-                cls._normalize_retrade_calculations_cell(cell_value)
-                for cell_value in raw_values
-            ]
-            while row_values and not row_values[-1]:
-                row_values.pop()
-            if not row_values:
-                continue
-            if not any(str(value or "").strip() for value in row_values):
+        for raw_row in cells_data:
+            row_data = list(raw_row or [])
+            if not any(cls._is_retrade_calculations_cell_present(cell) for cell in row_data):
                 continue
 
             if not header_found:
-                headers = row_values
+                headers = [
+                    cls._normalize_retrade_calculations_cell(
+                        cell.get("value") if isinstance(cell, dict) else cell
+                    )
+                    for cell in row_data
+                ]
+                while headers and not headers[-1]:
+                    headers.pop()
                 header_found = True
                 continue
 
-            rows.append(row_values)
+            normalized_row: list[dict[str, Any]] = []
+            for cell in row_data:
+                if isinstance(cell, dict):
+                    normalized_row.append(
+                        {
+                            "value": cell.get("value"),
+                            "currency": cell.get("currency"),
+                        }
+                    )
+                else:
+                    normalized_row.append({"value": cell, "currency": None})
+
+            while normalized_row and not cls._is_retrade_calculations_cell_present(normalized_row[-1]):
+                normalized_row.pop()
+            if not normalized_row:
+                continue
+
+            rows.append(normalized_row)
 
         return {
             "headers": headers,
@@ -372,7 +436,7 @@ class ExportMixin:
     def _fill_retrade_calculations_view(
         self,
         headers: list[str],
-        rows: list[list[str]],
+        rows: list[list[dict[str, Any]]],
     ) -> None:
         self._clear_retrade_calculations_view()
 
@@ -391,8 +455,23 @@ class ExportMixin:
                 table.setHorizontalHeaderLabels(header_labels)
             for row_index, row_values in enumerate(rows):
                 for col_index in range(column_count):
-                    value = row_values[col_index] if col_index < len(row_values) else ""
-                    table.setItem(row_index, col_index, QTableWidgetItem(str(value)))
+                    cell_payload = (
+                        row_values[col_index]
+                        if col_index < len(row_values)
+                        else {"value": None, "currency": None}
+                    )
+                    if isinstance(cell_payload, dict):
+                        raw_value = cell_payload.get("value")
+                        currency = cell_payload.get("currency")
+                    else:
+                        raw_value = cell_payload
+                        currency = None
+
+                    value = self._normalize_retrade_calculations_cell(raw_value)
+                    item = QTableWidgetItem(value)
+                    if currency:
+                        item.setToolTip(f"Валюта: {currency}")
+                    table.setItem(row_index, col_index, item)
             table.resizeRowsToContents()
             table.resizeColumnsToContents()
 
@@ -406,6 +485,10 @@ class ExportMixin:
         if isinstance(profit_label, QLabel):
             profit_label.setText("-")
 
+        self.retrade_calculations_data = {
+            "headers": list(headers),
+            "rows": [list(row) for row in rows],
+        }
         self._set_retrade_calculations_loaded_status(bool(headers or rows))
 
     def _set_retrade_calculations_loaded_status(self, is_loaded: bool) -> None:
