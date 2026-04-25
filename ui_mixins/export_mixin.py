@@ -7,7 +7,8 @@ from typing import Any
 
 import pandas as pd
 from openpyxl import load_workbook
-from PySide6.QtCore import QThread, Signal, QTimer
+from PySide6.QtCore import QThread, Signal, QTimer, Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
@@ -91,9 +92,64 @@ class ExportMixin:
         self.retrade_calculations_data: dict[str, list] = {"headers": [], "rows": []}
         self._ensure_auto_trade_timer()
         self._ensure_retrade_tab()
+        self._ensure_auto_resize_columns_action()
         self._ensure_export_button()
         self.btn_export_trade.clicked.connect(self.export_selected_trade)
         self.btn_export_retrade.clicked.connect(self.export_selected_retrade)
+
+    def _ensure_auto_resize_columns_action(self) -> None:
+        if hasattr(self, "action_auto_resize_columns"):
+            return
+
+        action = QAction("Подогнать ширину столбцов", self)
+        action.setObjectName("action_auto_resize_columns")
+        action.setShortcut("Ctrl+Alt+A")
+        action.triggered.connect(self._handle_auto_resize_columns)
+
+        edit_menu = getattr(getattr(self, "ui", None), "EditMenu", None)
+        if edit_menu is not None:
+            edit_menu.addAction(action)
+
+        self.action_auto_resize_columns = action
+        self.ui.action_auto_resize_columns = action
+
+    @staticmethod
+    def _auto_resize_columns(table: QTableWidget) -> None:
+        table.resizeColumnsToContents()
+        max_width = 400
+        for column_index in range(table.columnCount()):
+            width = table.columnWidth(column_index)
+            if width > max_width:
+                table.setColumnWidth(column_index, max_width)
+
+    def _get_active_retrade_table(self) -> QTableWidget | None:
+        tabs = getattr(self, "tabWidget", None)
+        if tabs is None:
+            tabs = getattr(getattr(self, "ui", None), "tabWidget", None)
+        retrade_tab = getattr(self, "retrade_tab", None)
+        if not isinstance(tabs, QTabWidget) or retrade_tab is None:
+            return None
+        if tabs.currentWidget() is not retrade_tab:
+            return None
+
+        inner_tabs = getattr(self, "retrade_inner_tabs", None)
+        if not isinstance(inner_tabs, QTabWidget):
+            return None
+
+        current_index = inner_tabs.currentIndex()
+        if current_index == self.RETRADE_INNER_TAB_MAIN:
+            table = getattr(self, "retrade_table", None)
+            return table if isinstance(table, QTableWidget) else None
+        if current_index == self.RETRADE_INNER_TAB_CALCULATIONS:
+            table = getattr(self, "retrade_calculations_table", None)
+            return table if isinstance(table, QTableWidget) else None
+        return None
+
+    def _handle_auto_resize_columns(self) -> None:
+        table = self._get_active_retrade_table()
+        if table is None:
+            return
+        self._auto_resize_columns(table)
 
     def _ensure_retrade_tab(self) -> None:
         if hasattr(self, "retrade_table") and hasattr(self, "retrade_tab"):
@@ -366,6 +422,55 @@ class ExportMixin:
         return str(value).strip()
 
     @classmethod
+    def _parse_retrade_numeric_value(cls, value: Any) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            candidate = text.replace(" ", "").replace(",", ".")
+        else:
+            candidate = value
+        try:
+            return float(candidate)
+        except Exception:
+            return None
+
+    @classmethod
+    def _format_number_ru(cls, value: Any) -> str:
+        numeric_value = cls._parse_retrade_numeric_value(value)
+        if numeric_value is None:
+            return cls._normalize_retrade_calculations_cell(value)
+
+        formatted = f"{numeric_value:,.2f}"
+        return formatted.replace(",", " ").replace(".", ",")
+
+    @classmethod
+    def _format_retrade_calculations_cell_for_display(cls, cell: Any) -> str:
+        if isinstance(cell, dict):
+            raw_value = cell.get("value")
+            currency = cell.get("currency")
+        else:
+            raw_value = cell
+            currency = None
+
+        formatted_value = cls._format_number_ru(raw_value)
+        if not formatted_value:
+            return ""
+
+        if cls._parse_retrade_numeric_value(raw_value) is None:
+            return formatted_value
+
+        if currency == "RUB":
+            return f"{formatted_value} ₽"
+        if currency == "USD":
+            return f"{formatted_value} $"
+        if currency == "EUR":
+            return f"{formatted_value} €"
+        return formatted_value
+
+    @classmethod
     def _is_retrade_calculations_value_present(cls, value: Any) -> bool:
         return bool(cls._normalize_retrade_calculations_cell(value))
 
@@ -461,19 +566,18 @@ class ExportMixin:
                         else {"value": None, "currency": None}
                     )
                     if isinstance(cell_payload, dict):
-                        raw_value = cell_payload.get("value")
                         currency = cell_payload.get("currency")
                     else:
-                        raw_value = cell_payload
                         currency = None
 
-                    value = self._normalize_retrade_calculations_cell(raw_value)
-                    item = QTableWidgetItem(value)
+                    display_value = self._format_retrade_calculations_cell_for_display(cell_payload)
+                    item = QTableWidgetItem(display_value)
+                    item.setData(Qt.ItemDataRole.UserRole, cell_payload)
                     if currency:
                         item.setToolTip(f"Валюта: {currency}")
                     table.setItem(row_index, col_index, item)
             table.resizeRowsToContents()
-            table.resizeColumnsToContents()
+            self._auto_resize_columns(table)
 
         sum_label = getattr(self, "sum_label", None)
         if isinstance(sum_label, QLabel):
@@ -911,7 +1015,7 @@ class ExportMixin:
                 table.setItem(row_index, col_index, QTableWidgetItem(value))
 
         table.resizeRowsToContents()
-        table.resizeColumnsToContents()
+        self._auto_resize_columns(table)
         self._log_ui(f"Строк: {len(df)}")
 
     def _activate_retrade_tab(self) -> None:

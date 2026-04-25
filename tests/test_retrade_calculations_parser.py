@@ -74,6 +74,39 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertEqual(ExportMixin._detect_currency("Total $100", "General"), "USD")
         self.assertEqual(ExportMixin._detect_currency("Amount 50 eur", "General"), "EUR")
 
+    def test_format_number_ru(self):
+        self.assertEqual(ExportMixin._format_number_ru(100000), "100 000,00")
+        self.assertEqual(ExportMixin._format_number_ru(1500.5), "1 500,50")
+        self.assertEqual(ExportMixin._format_number_ru(100), "100,00")
+
+    def test_format_cell_displays_currency_suffix(self):
+        self.assertEqual(
+            ExportMixin._format_retrade_calculations_cell_for_display(
+                {"value": 100000, "currency": "RUB"}
+            ),
+            "100 000,00 ₽",
+        )
+        self.assertEqual(
+            ExportMixin._format_retrade_calculations_cell_for_display(
+                {"value": 5000, "currency": "USD"}
+            ),
+            "5 000,00 $",
+        )
+        self.assertEqual(
+            ExportMixin._format_retrade_calculations_cell_for_display(
+                {"value": 1234.5, "currency": "EUR"}
+            ),
+            "1 234,50 €",
+        )
+
+    def test_format_cell_returns_non_numeric_as_is(self):
+        self.assertEqual(
+            ExportMixin._format_retrade_calculations_cell_for_display(
+                {"value": "N/A", "currency": "RUB"}
+            ),
+            "N/A",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
