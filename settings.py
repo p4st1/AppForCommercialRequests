@@ -1,9 +1,13 @@
-from PySide6.QtCore import Signal
+from functools import partial
+
+from PySide6.QtCore import QSettings, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QMainWindow,
     QFileDialog,
     QAbstractItemView,
     QCheckBox,
+    QColorDialog,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -23,6 +27,18 @@ class mainWindow(QMainWindow):
     windowClosed = Signal()
     AUTO_TRADE_TIMER_MIN_MINUTES = 1
     AUTO_TRADE_TIMER_MAX_MINUTES = 1440
+    TABLE_SETTINGS_ORG = "MyApp"
+    TABLE_SETTINGS_APP = "TableSettings"
+    TABLE_FONT_MIN = 8
+    TABLE_FONT_MAX = 24
+    TABLE_SETTINGS_DEFAULTS = {
+        "font_size": 13,
+        "bg_color": "#ffffff",
+        "text_color": "#000000",
+        "header_color": "#f3f3f3",
+        "selection_color": "#cce5ff",
+        "alternating": True,
+    }
 
     def __init__(self, parent=None):
         super(mainWindow, self).__init__(parent)
@@ -42,6 +58,7 @@ class mainWindow(QMainWindow):
             bool(Config.settings.get('autoFillWebAuth', False))
         )
         self._setup_auto_trade_settings_block()
+        self._setup_table_settings_block()
         self.skip_auto_trade_warning_checkbox.setChecked(
             bool(Config.settings.get('skip_auto_trade_warning', False))
         )
@@ -56,6 +73,7 @@ class mainWindow(QMainWindow):
             self.use_auto_trade_timer_checkbox.isChecked()
         )
         Config.settings['auto_trade_timer_minutes'] = timer_minutes
+        self._load_table_settings_into_ui()
 
         self.ui.autoFillCheckBox.toggled.connect(self.autoFillChange)
         self.ui.closeTableCheckBox.toggled.connect(self.closeTableChange)
@@ -69,6 +87,11 @@ class mainWindow(QMainWindow):
         self.auto_trade_timer_minutes_spinbox.valueChanged.connect(
             self.autoTradeTimerMinutesChange
         )
+        self.table_font_size_spinbox.valueChanged.connect(self.tableFontSizeChange)
+        self.table_alternating_rows_checkbox.toggled.connect(
+            self.tableAlternatingRowsChange
+        )
+        self.table_settings_reset_button.clicked.connect(self.resetTableSettings)
 
         default_dir = Path.home() / "Documents"
         cp_dir = Tool.ensure_directory(Config.config.get('pathToSaveCP'), default_dir)
@@ -121,6 +144,154 @@ class mainWindow(QMainWindow):
     def autoTradeTimerMinutesChange(self, value):
         minutes = self._normalize_auto_trade_timer_minutes(value)
         Config.settings['auto_trade_timer_minutes'] = minutes
+
+    def _table_settings_store(self):
+        return QSettings(self.TABLE_SETTINGS_ORG, self.TABLE_SETTINGS_APP)
+
+    @staticmethod
+    def _normalize_bool_setting(raw_value, default):
+        if isinstance(raw_value, bool):
+            return raw_value
+        if isinstance(raw_value, (int, float)):
+            return bool(raw_value)
+        if isinstance(raw_value, str):
+            normalized = raw_value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        return bool(default)
+
+    @staticmethod
+    def _normalize_color_setting(raw_value, default):
+        color = QColor(str(raw_value or "").strip())
+        if color.isValid():
+            return color.name()
+        fallback = QColor(str(default or "").strip())
+        if fallback.isValid():
+            return fallback.name()
+        return "#ffffff"
+
+    def _read_table_settings(self):
+        defaults = self.TABLE_SETTINGS_DEFAULTS
+        settings = self._table_settings_store()
+        font_size_raw = settings.value("font_size", defaults["font_size"])
+        try:
+            font_size = int(font_size_raw)
+        except (TypeError, ValueError):
+            font_size = int(defaults["font_size"])
+        font_size = max(self.TABLE_FONT_MIN, min(self.TABLE_FONT_MAX, font_size))
+
+        return {
+            "font_size": font_size,
+            "bg_color": self._normalize_color_setting(
+                settings.value("bg_color", defaults["bg_color"]),
+                defaults["bg_color"],
+            ),
+            "text_color": self._normalize_color_setting(
+                settings.value("text_color", defaults["text_color"]),
+                defaults["text_color"],
+            ),
+            "header_color": self._normalize_color_setting(
+                settings.value("header_color", defaults["header_color"]),
+                defaults["header_color"],
+            ),
+            "selection_color": self._normalize_color_setting(
+                settings.value("selection_color", defaults["selection_color"]),
+                defaults["selection_color"],
+            ),
+            "alternating": self._normalize_bool_setting(
+                settings.value("alternating", defaults["alternating"]),
+                defaults["alternating"],
+            ),
+        }
+
+    def _write_table_settings(self):
+        settings = self._table_settings_store()
+        for key, value in self.table_settings_values.items():
+            settings.setValue(key, value)
+
+    def _set_table_color_button_preview(self, key):
+        button = self.table_color_buttons.get(key)
+        if button is None:
+            return
+        color_hex = self.table_settings_values.get(
+            key,
+            self.TABLE_SETTINGS_DEFAULTS.get(key, "#ffffff"),
+        )
+        color = QColor(color_hex)
+        if not color.isValid():
+            color_hex = self.TABLE_SETTINGS_DEFAULTS.get(key, "#ffffff")
+            color = QColor(color_hex)
+        text_color = "#000000" if color.lightnessF() >= 0.55 else "#ffffff"
+        button.setText(color_hex)
+        button.setStyleSheet(
+            f"background-color: {color_hex};"
+            f"color: {text_color};"
+            "border: 1px solid #9e9e9e;"
+            "padding: 4px;"
+        )
+
+    def _apply_table_settings_values_to_controls(self):
+        font_size = int(self.table_settings_values.get("font_size", self.TABLE_SETTINGS_DEFAULTS["font_size"]))
+        self.table_font_size_spinbox.blockSignals(True)
+        self.table_font_size_spinbox.setValue(font_size)
+        self.table_font_size_spinbox.blockSignals(False)
+
+        alternating = bool(
+            self.table_settings_values.get(
+                "alternating",
+                self.TABLE_SETTINGS_DEFAULTS["alternating"],
+            )
+        )
+        self.table_alternating_rows_checkbox.blockSignals(True)
+        self.table_alternating_rows_checkbox.setChecked(alternating)
+        self.table_alternating_rows_checkbox.blockSignals(False)
+
+        for key in self.table_color_buttons:
+            self._set_table_color_button_preview(key)
+
+    def _load_table_settings_into_ui(self):
+        self.table_settings_values = self._read_table_settings()
+        self._apply_table_settings_values_to_controls()
+        self._apply_table_settings_to_open_tables()
+
+    def _apply_table_settings_to_open_tables(self):
+        parent_window = self.parent()
+        refresh_method = getattr(parent_window, "refresh_retrade_table_settings", None)
+        if callable(refresh_method):
+            refresh_method()
+
+    def tableFontSizeChange(self, value):
+        font_size = max(self.TABLE_FONT_MIN, min(self.TABLE_FONT_MAX, int(value)))
+        self.table_settings_values["font_size"] = font_size
+        self._write_table_settings()
+        self._apply_table_settings_to_open_tables()
+
+    def tableAlternatingRowsChange(self, signal):
+        self.table_settings_values["alternating"] = bool(signal)
+        self._write_table_settings()
+        self._apply_table_settings_to_open_tables()
+
+    def selectTableColor(self, key):
+        current_color = self.table_settings_values.get(
+            key,
+            self.TABLE_SETTINGS_DEFAULTS.get(key, "#ffffff"),
+        )
+        selected_color = QColorDialog.getColor(QColor(current_color), self, "Выберите цвет")
+        if not selected_color.isValid():
+            return
+
+        self.table_settings_values[key] = selected_color.name()
+        self._set_table_color_button_preview(key)
+        self._write_table_settings()
+        self._apply_table_settings_to_open_tables()
+
+    def resetTableSettings(self):
+        self.table_settings_values = self.TABLE_SETTINGS_DEFAULTS.copy()
+        self._apply_table_settings_values_to_controls()
+        self._write_table_settings()
+        self._apply_table_settings_to_open_tables()
 
     @staticmethod
     def _normalize_auto_trade_timer_minutes(raw_value):
@@ -212,6 +383,89 @@ class mainWindow(QMainWindow):
         self.ui.skip_auto_trade_warning_checkbox = skip_checkbox
         self.ui.use_auto_trade_timer_checkbox = timer_checkbox
         self.ui.auto_trade_timer_minutes_spinbox = timer_spinbox
+
+    def _setup_table_settings_block(self):
+        section_widget = QLabel("Настройки таблиц", self.ui.scrollAreaWidgetContents)
+        section_widget.setStyleSheet(
+            "color: #2c3e50;\n"
+            "font-size: 16px;\n"
+            "font-weight: 600;\n"
+            "padding: 2px;"
+        )
+
+        container = QVBoxLayout()
+        container.setSpacing(8)
+        container.setContentsMargins(0, 0, 0, 0)
+
+        font_row = QHBoxLayout()
+        font_row.setSpacing(10)
+        font_row.setContentsMargins(7, 0, -1, -1)
+        font_label = QLabel("Размер шрифта:", self.ui.scrollAreaWidgetContents)
+        font_spinbox = QSpinBox(self.ui.scrollAreaWidgetContents)
+        font_spinbox.setObjectName("tableFontSizeSpinBox")
+        font_spinbox.setMinimum(self.TABLE_FONT_MIN)
+        font_spinbox.setMaximum(self.TABLE_FONT_MAX)
+        font_spinbox.setValue(int(self.TABLE_SETTINGS_DEFAULTS["font_size"]))
+        font_row.addWidget(font_label)
+        font_row.addWidget(font_spinbox)
+        font_row.addStretch(1)
+        container.addLayout(font_row)
+
+        button_style = self.ui.dirOpenButton.styleSheet()
+        color_controls = [
+            ("Цвет фона ячеек:", "bg_color", "tableBgColorButton"),
+            ("Цвет текста:", "text_color", "tableTextColorButton"),
+            ("Цвет заголовка:", "header_color", "tableHeaderColorButton"),
+            ("Цвет выделения:", "selection_color", "tableSelectionColorButton"),
+        ]
+        self.table_color_buttons = {}
+        for title, key, object_name in color_controls:
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            row.setContentsMargins(7, 0, -1, -1)
+            label = QLabel(title, self.ui.scrollAreaWidgetContents)
+            button = QPushButton(self.ui.scrollAreaWidgetContents)
+            button.setObjectName(object_name)
+            button.setMinimumSize(120, 32)
+            button.setStyleSheet(button_style)
+            button.clicked.connect(partial(self.selectTableColor, key))
+            row.addWidget(label)
+            row.addWidget(button)
+            row.addStretch(1)
+            container.addLayout(row)
+            self.table_color_buttons[key] = button
+
+        alternating_checkbox = QCheckBox(
+            "Чередование строк",
+            self.ui.scrollAreaWidgetContents,
+        )
+        alternating_checkbox.setObjectName("tableAlternatingRowsCheckBox")
+        alternating_checkbox.setStyleSheet(self.ui.openUpdateTab.styleSheet())
+        alternating_checkbox.setFont(self.ui.openUpdateTab.font())
+        container.addWidget(alternating_checkbox)
+
+        reset_button = QPushButton("Сбросить настройки", self.ui.scrollAreaWidgetContents)
+        reset_button.setObjectName("resetTableSettingsButton")
+        reset_button.setMinimumSize(180, 32)
+        reset_button.setStyleSheet(button_style)
+        container.addWidget(reset_button)
+
+        insert_index = self.ui.verticalLayout.indexOf(self.ui.line_2)
+        if insert_index < 0:
+            insert_index = self.ui.verticalLayout.count()
+        self.ui.verticalLayout.insertLayout(insert_index, container)
+        self.ui.verticalLayout.insertWidget(insert_index, section_widget)
+
+        self.table_settings_label = section_widget
+        self.table_settings_layout = container
+        self.table_font_size_spinbox = font_spinbox
+        self.table_alternating_rows_checkbox = alternating_checkbox
+        self.table_settings_reset_button = reset_button
+        self.table_settings_values = self.TABLE_SETTINGS_DEFAULTS.copy()
+        self.ui.table_settings_label = section_widget
+        self.ui.table_font_size_spinbox = font_spinbox
+        self.ui.table_alternating_rows_checkbox = alternating_checkbox
+        self.ui.table_settings_reset_button = reset_button
 
     def _setup_payment_templates_editor(self):
         self.paymentTemplatesLabel = QLabel("Шаблоны оплаты", self.ui.scrollAreaWidgetContents)

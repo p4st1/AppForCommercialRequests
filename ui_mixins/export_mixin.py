@@ -7,8 +7,8 @@ from typing import Any
 
 import pandas as pd
 from openpyxl import load_workbook
-from PySide6.QtCore import QThread, Signal, QTimer, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QSettings, QThread, Signal, QTimer, Qt
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -84,34 +84,18 @@ class ExportMixin:
     RETRADE_INNER_TAB_MAIN = 0
     RETRADE_INNER_TAB_CALCULATIONS = 1
     RETRADE_INNER_TAB_HISTORY = 2
-    RETRADE_TABLE_EXCEL_STYLESHEET = """
-QTableWidget {
-    background-color: white;
-    gridline-color: #d0d0d0;
-    font-size: 13px;
-}
-
-QHeaderView::section {
-    background-color: #f3f3f3;
-    font-weight: bold;
-    border: 1px solid #d0d0d0;
-    padding: 4px;
-}
-
-QTableWidget::item {
-    border: 1px solid #e0e0e0;
-    padding: 4px;
-}
-
-QTableWidget::item:selected {
-    background-color: #cce5ff;
-    color: black;
-}
-
-QTableWidget::item:hover {
-    background-color: #f5f5f5;
-}
-"""
+    TABLE_SETTINGS_ORG = "MyApp"
+    TABLE_SETTINGS_APP = "TableSettings"
+    TABLE_SETTINGS_FONT_MIN = 8
+    TABLE_SETTINGS_FONT_MAX = 24
+    TABLE_SETTINGS_DEFAULTS = {
+        "font_size": 13,
+        "bg_color": "#ffffff",
+        "text_color": "#000000",
+        "header_color": "#f3f3f3",
+        "selection_color": "#cce5ff",
+        "alternating": True,
+    }
 
     def init_export_mixin(self) -> None:
         self._export_trade_worker: ExportTradeWorker | None = None
@@ -167,11 +151,115 @@ QTableWidget::item:hover {
                 table.setColumnWidth(column_index, max_width)
 
     @classmethod
-    def _configure_excel_like_table(cls, table: QTableWidget) -> None:
+    def _normalize_table_bool_setting(cls, raw_value: Any, default: bool) -> bool:
+        if isinstance(raw_value, bool):
+            return raw_value
+        if isinstance(raw_value, (int, float)):
+            return bool(raw_value)
+        if isinstance(raw_value, str):
+            text = raw_value.strip().lower()
+            if text in {"1", "true", "yes", "on"}:
+                return True
+            if text in {"0", "false", "no", "off"}:
+                return False
+        return bool(default)
+
+    @classmethod
+    def _normalize_table_color_setting(cls, raw_value: Any, default: str) -> str:
+        text = str(raw_value or "").strip()
+        color = QColor(text)
+        if color.isValid():
+            return color.name()
+        fallback = QColor(default)
+        if fallback.isValid():
+            return fallback.name()
+        return "#ffffff"
+
+    @classmethod
+    def _load_table_settings(cls) -> dict[str, Any]:
+        defaults = cls.TABLE_SETTINGS_DEFAULTS
+        settings = QSettings(cls.TABLE_SETTINGS_ORG, cls.TABLE_SETTINGS_APP)
+
+        font_size_raw = settings.value("font_size", defaults["font_size"])
+        try:
+            font_size = int(font_size_raw)
+        except (TypeError, ValueError):
+            font_size = int(defaults["font_size"])
+        font_size = max(cls.TABLE_SETTINGS_FONT_MIN, min(cls.TABLE_SETTINGS_FONT_MAX, font_size))
+
+        bg_color = cls._normalize_table_color_setting(
+            settings.value("bg_color", defaults["bg_color"]),
+            str(defaults["bg_color"]),
+        )
+        text_color = cls._normalize_table_color_setting(
+            settings.value("text_color", defaults["text_color"]),
+            str(defaults["text_color"]),
+        )
+        header_color = cls._normalize_table_color_setting(
+            settings.value("header_color", defaults["header_color"]),
+            str(defaults["header_color"]),
+        )
+        selection_color = cls._normalize_table_color_setting(
+            settings.value("selection_color", defaults["selection_color"]),
+            str(defaults["selection_color"]),
+        )
+        alternating = cls._normalize_table_bool_setting(
+            settings.value("alternating", defaults["alternating"]),
+            bool(defaults["alternating"]),
+        )
+
+        return {
+            "font_size": font_size,
+            "bg_color": bg_color,
+            "text_color": text_color,
+            "header_color": header_color,
+            "selection_color": selection_color,
+            "alternating": alternating,
+        }
+
+    @classmethod
+    def apply_table_settings(cls, table: QTableWidget) -> None:
+        table_settings = cls._load_table_settings()
+        font_size = int(table_settings["font_size"])
+        bg_color = str(table_settings["bg_color"])
+        text_color = str(table_settings["text_color"])
+        header_color = str(table_settings["header_color"])
+        selection_color = str(table_settings["selection_color"])
+
         table.setShowGrid(True)
         table.setGridStyle(Qt.PenStyle.SolidLine)
-        table.setStyleSheet(cls.RETRADE_TABLE_EXCEL_STYLESHEET)
-        table.setAlternatingRowColors(True)
+        table.setStyleSheet(
+            f"""
+QTableWidget {{
+    background-color: {bg_color};
+    color: {text_color};
+    gridline-color: #d0d0d0;
+    font-size: {font_size}px;
+}}
+
+QHeaderView::section {{
+    background-color: {header_color};
+    font-weight: bold;
+    border: 1px solid #d0d0d0;
+    padding: 4px;
+}}
+
+QTableWidget::item {{
+    border: 1px solid #e0e0e0;
+    padding: 4px;
+}}
+
+QTableWidget::item:selected {{
+    background-color: {selection_color};
+    color: black;
+}}
+
+QTableWidget::item:hover {{
+    background-color: #f5f5f5;
+}}
+"""
+        )
+        table.setAlternatingRowColors(bool(table_settings["alternating"]))
         table.setMouseTracking(True)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -181,6 +269,10 @@ QTableWidget::item:hover {
         horizontal_header.setDefaultAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
+
+    @classmethod
+    def _configure_excel_like_table(cls, table: QTableWidget) -> None:
+        cls.apply_table_settings(table)
 
     def _get_active_retrade_table(self) -> QTableWidget | None:
         tabs = getattr(self, "tabWidget", None)
@@ -204,6 +296,12 @@ QTableWidget::item:hover {
             table = getattr(self, "retrade_calculations_table", None)
             return table if isinstance(table, QTableWidget) else None
         return None
+
+    def refresh_retrade_table_settings(self) -> None:
+        for table_name in ("retrade_table", "retrade_calculations_table"):
+            table = getattr(self, table_name, None)
+            if isinstance(table, QTableWidget):
+                self.apply_table_settings(table)
 
     def _handle_auto_resize_columns(self) -> None:
         table = self._get_active_retrade_table()
