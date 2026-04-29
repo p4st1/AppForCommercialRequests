@@ -119,6 +119,7 @@ class ExportMixin:
             },
         }
         self._ensure_auto_trade_timer()
+        self._apply_main_table_font_settings()
         self._ensure_retrade_tab()
         self._ensure_auto_resize_columns_action()
         self._ensure_export_button()
@@ -218,6 +219,38 @@ class ExportMixin:
         }
 
     @classmethod
+    def _apply_font_size_and_geometry(
+        cls,
+        table: QTableWidget,
+        font_size: int,
+        *,
+        bold_header: bool = True,
+    ) -> None:
+        table_font = table.font()
+        table_font.setPixelSize(font_size)
+        table.setFont(table_font)
+
+        row_height = max(24, table.fontMetrics().height() + 10)
+        vertical_header = table.verticalHeader()
+        vertical_header.setMinimumSectionSize(row_height)
+        vertical_header.setDefaultSectionSize(row_height)
+
+        horizontal_header = table.horizontalHeader()
+        header_font = horizontal_header.font()
+        header_font.setPixelSize(font_size)
+        header_font.setBold(bold_header)
+        horizontal_header.setFont(header_font)
+
+        header_height = max(28, horizontal_header.fontMetrics().height() + 12)
+        horizontal_header.setFixedHeight(header_height)
+
+        if table.rowCount() > 0:
+            table.resizeRowsToContents()
+            for row_index in range(table.rowCount()):
+                if table.rowHeight(row_index) < row_height:
+                    table.setRowHeight(row_index, row_height)
+
+    @classmethod
     def apply_table_settings(cls, table: QTableWidget) -> None:
         table_settings = cls._load_table_settings()
         font_size = int(table_settings["font_size"])
@@ -225,6 +258,8 @@ class ExportMixin:
         text_color = str(table_settings["text_color"])
         header_color = str(table_settings["header_color"])
         selection_color = str(table_settings["selection_color"])
+
+        cls._apply_font_size_and_geometry(table, font_size, bold_header=True)
 
         table.setShowGrid(True)
         table.setGridStyle(Qt.PenStyle.SolidLine)
@@ -263,12 +298,23 @@ QTableWidget::item:hover {{
         table.setMouseTracking(True)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.verticalHeader().setVisible(False)
+        vertical_header = table.verticalHeader()
+        vertical_header.setVisible(False)
+
         horizontal_header = table.horizontalHeader()
         horizontal_header.setStretchLastSection(True)
         horizontal_header.setDefaultAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
+
+    def _apply_main_table_font_settings(self) -> None:
+        table = getattr(getattr(self, "ui", None), "KpTable", None)
+        if not isinstance(table, QTableWidget):
+            return
+
+        table_settings = self._load_table_settings()
+        font_size = int(table_settings["font_size"])
+        self._apply_font_size_and_geometry(table, font_size, bold_header=True)
 
     @classmethod
     def _configure_excel_like_table(cls, table: QTableWidget) -> None:
@@ -298,6 +344,7 @@ QTableWidget::item:hover {{
         return None
 
     def refresh_retrade_table_settings(self) -> None:
+        self._apply_main_table_font_settings()
         for table_name in ("retrade_table", "retrade_calculations_table"):
             table = getattr(self, table_name, None)
             if isinstance(table, QTableWidget):
@@ -415,6 +462,7 @@ QTableWidget::item:hover {{
         controls_layout.setContentsMargins(0, 0, 0, 0)
         self.btn_auto_trade = QPushButton("Автоматическое ведение торгов", retrade_tab)
         self.btn_open_retrade_calculations = QPushButton("Открыть расчеты", retrade_tab)
+        self.btn_load_retrade_excel = QPushButton("Загрузить Excel", retrade_tab)
         self.label_auto_trade_status = QLabel("Выключено", retrade_tab)
         self.label_retrade_calculations_status = QLabel(
             "Расчеты не подключены",
@@ -424,6 +472,7 @@ QTableWidget::item:hover {{
         self._set_retrade_calculations_loaded_status(False)
         controls_layout.addWidget(self.btn_auto_trade)
         controls_layout.addWidget(self.btn_open_retrade_calculations)
+        controls_layout.addWidget(self.btn_load_retrade_excel)
         controls_layout.addWidget(self.label_auto_trade_status)
         controls_layout.addWidget(self.label_retrade_calculations_status)
         controls_layout.addStretch(1)
@@ -433,6 +482,7 @@ QTableWidget::item:hover {{
         self.btn_open_retrade_calculations.clicked.connect(
             self._open_retrade_calculations
         )
+        self.btn_load_retrade_excel.clicked.connect(self.load_retrade_excel)
 
         tab_index = tabs.addTab(retrade_tab, "Переторжка")
         self.retrade_tab = retrade_tab
@@ -445,6 +495,7 @@ QTableWidget::item:hover {{
         self.retrade_calculations_totals = totals_container
         self.ui.retradeTab = retrade_tab
         self.ui.retrade_inner_tabs = self.retrade_inner_tabs
+        self.ui.btn_load_retrade_excel = self.btn_load_retrade_excel
         self.ui.retrade_calculations_table = self.retrade_calculations_table
         self.ui.total_without_vat_label = self.total_without_vat_label
         self.ui.price_total_label = self.price_total_label
@@ -454,6 +505,87 @@ QTableWidget::item:hover {{
         self.ui.label_retrade_calculations_status = self.label_retrade_calculations_status
         self.ui.update_retrade_table = self.update_retrade_table
         self._clear_retrade_calculations_view()
+
+    @staticmethod
+    def _load_retrade_excel_rows(file_path: str) -> list[list[Any]]:
+        workbook = load_workbook(file_path, data_only=True)
+        try:
+            worksheet = workbook.active
+            return [list(row) for row in worksheet.iter_rows(values_only=True)]
+        finally:
+            workbook.close()
+
+    def _fill_retrade_table_from_excel_rows(self, data: list[list[Any]]) -> None:
+        table = getattr(self, "retrade_table", None)
+        if table is None:
+            raise RuntimeError("Таблица Переторжка не найдена")
+
+        rows = [list(row or []) for row in data]
+        rows_count = len(rows)
+        cols_count = max((len(row) for row in rows), default=0)
+
+        self._configure_excel_like_table(table)
+        table.clear()
+        table.setRowCount(rows_count)
+        table.setColumnCount(cols_count)
+
+        if rows_count > 0 and cols_count > 0:
+            headers = [
+                "" if value is None else str(value)
+                for value in rows[0]
+            ]
+            if len(headers) < cols_count:
+                headers.extend("" for _ in range(cols_count - len(headers)))
+            table.setHorizontalHeaderLabels(headers[:cols_count])
+
+        for row_index, row_values in enumerate(rows):
+            for col_index, cell_value in enumerate(row_values):
+                text = "" if cell_value is None else str(cell_value)
+                item = QTableWidgetItem(text)
+                if self._is_numeric_table_value(cell_value):
+                    item.setTextAlignment(
+                        int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    )
+                else:
+                    item.setTextAlignment(
+                        int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                    )
+                table.setItem(row_index, col_index, item)
+
+        table.resizeRowsToContents()
+        table.resizeColumnsToContents()
+
+    def load_retrade_excel(self) -> None:
+        default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
+        default_dir = (
+            str(Path(default_dir_raw).expanduser())
+            if default_dir_raw
+            else str(Path.home())
+        )
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите Excel файл",
+            default_dir,
+            "Excel Files (*.xlsx *.xls)",
+        )
+        if not file_path:
+            return
+
+        try:
+            data = self._load_retrade_excel_rows(file_path)
+            self._fill_retrade_table_from_excel_rows(data)
+        except Exception as exc:
+            error_text = f"Не удалось загрузить Excel файл: {exc}"
+            Tool.write_log(error_text)
+            QMessageBox.warning(self, "Ошибка", error_text)
+            return
+
+        self._activate_retrade_tab()
+        self._log_ui(f"Excel спецификации загружен: {file_path}")
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None:
+            status_bar.showMessage("Excel спецификации загружен в Переторжку", 5_000)
 
     def _open_retrade_calculations_tab(self) -> None:
         inner_tabs = getattr(self, "retrade_inner_tabs", None)
