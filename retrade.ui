@@ -361,6 +361,13 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="btnGenerate">
+       <property name="text">
+        <string>Сформировать</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QLabel" name="label_auto_trade_status">
        <property name="text">
         <string>Выключено</string>

@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 from PySide6.QtCore import QSettings, QThread, Signal, QTimer, Qt
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtUiTools import loadUiType
@@ -81,6 +82,7 @@ class ExportTradeWorker(QThread):
 class ExportMixin:
     AUTO_TRADE_TIMER_MIN_MINUTES = 1
     AUTO_TRADE_TIMER_MAX_MINUTES = 1440
+    BEST_PRICE_COLUMN_INDEX = 11
     RETRADE_INNER_TAB_MAIN = 0
     RETRADE_INNER_TAB_CALCULATIONS = 1
     RETRADE_INNER_TAB_HISTORY = 2
@@ -102,6 +104,7 @@ class ExportMixin:
         self._export_trade_worker: ExportTradeWorker | None = None
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
+        self.calculations_file_path = ""
         self.retrade_calculations_loaded = False
         self.retrade_calculations_data: dict[str, Any] = {
             "headers": [],
@@ -416,6 +419,7 @@ QTableWidget::item:hover {{
                 "retrade_calculations_totals",
                 "btn_auto_trade",
                 "btn_open_retrade_calculations",
+                "btnGenerate",
                 "btn_load_retrade_excel",
                 "label_auto_trade_status",
                 "label_retrade_calculations_status",
@@ -430,6 +434,7 @@ QTableWidget::item:hover {{
 
         self.retrade_tab = retrade_tab
         self.retrade_table = self.table_retrade
+        self.retradingTable = self.retrade_table
         self.retrade_calculations_container_layout = (
             retrade_form.retradeCalculationsContainerLayout
         )
@@ -438,6 +443,7 @@ QTableWidget::item:hover {{
         self.ui.retradeTab = retrade_tab
         self.ui.retrade_tab = retrade_tab
         self.ui.retrade_table = self.retrade_table
+        self.ui.retradingTable = self.retradingTable
         self.ui.retrade_calculations_container_layout = (
             self.retrade_calculations_container_layout
         )
@@ -454,6 +460,7 @@ QTableWidget::item:hover {{
         self.btn_open_retrade_calculations.clicked.connect(
             self._open_retrade_calculations
         )
+        self.btnGenerate.clicked.connect(self.generate_retrade_calculation)
         self.btn_load_retrade_excel.clicked.connect(self.load_retrade_excel)
 
         tab_index = tabs.addTab(retrade_tab, "Переторжка")
@@ -574,6 +581,7 @@ QTableWidget::item:hover {{
             QMessageBox.warning(self, "Ошибка", error_text)
             return
 
+        self.calculations_file_path = file_path
         parsed = self._parse_retrade_calculations(cells_data)
         headers = parsed["headers"]
         rows = parsed["rows"]
@@ -597,6 +605,150 @@ QTableWidget::item:hover {{
         self._log_calc(f"сумма товаров: {totals.get('price', 0)}")
         self._log_calc(f"логистика: {totals.get('logistic', 0)}")
         self._log_calc(f"таможня: {totals.get('customs', 0)}")
+
+    def _get_retrade_source_table(self) -> Any:
+        table = getattr(self, "retradingTable", None)
+        if table is not None:
+            return table
+
+        table = getattr(self, "retrade_table", None)
+        if table is not None:
+            return table
+
+        ui = getattr(self, "ui", None)
+        if ui is not None:
+            table = getattr(ui, "retradingTable", None)
+            if table is not None:
+                return table
+            return getattr(ui, "retrade_table", None)
+        return None
+
+    @staticmethod
+    def _text_from_table_item(item: Any) -> str:
+        if item is None:
+            return ""
+        text_getter = getattr(item, "text", None)
+        if callable(text_getter):
+            return str(text_getter() or "")
+        return str(item)
+
+    @classmethod
+    def _find_best_price_column_index(cls, table: Any) -> int:
+        try:
+            column_count = int(table.columnCount())
+        except Exception:
+            return cls.BEST_PRICE_COLUMN_INDEX
+
+        header_getter = getattr(table, "horizontalHeaderItem", None)
+        if callable(header_getter):
+            for column_index in range(column_count):
+                header_text = cls._text_from_table_item(
+                    header_getter(column_index)
+                ).casefold()
+                if "лучш" in header_text and "цен" in header_text:
+                    return column_index
+
+        return cls.BEST_PRICE_COLUMN_INDEX
+
+    @classmethod
+    def _parse_best_price_value(cls, value: Any) -> float | None:
+        text = "" if value is None else str(value).replace("\xa0", " ").strip()
+        if not text:
+            return None
+
+        _, raw_text = Tool.parsePrice(text)
+        normalized = (
+            str(raw_text or "")
+            .replace("\xa0", " ")
+            .replace(" ", "")
+            .replace(",", ".")
+        )
+        match = re.search(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", normalized)
+        if match is None:
+            return None
+
+        try:
+            return float(match.group(0))
+        except Exception:
+            return None
+
+    @classmethod
+    def _extract_retrade_best_prices(cls, table: Any) -> list[float | None]:
+        best_price_column_index = cls._find_best_price_column_index(table)
+        best_prices: list[float | None] = []
+
+        try:
+            row_count = int(table.rowCount())
+        except Exception:
+            return best_prices
+
+        for row in range(row_count):
+            item = table.item(row, best_price_column_index)
+            best_prices.append(
+                cls._parse_best_price_value(cls._text_from_table_item(item))
+            )
+
+        return best_prices
+
+    @classmethod
+    def _write_best_prices_to_calculations_file(
+        cls,
+        file_path: str,
+        best_prices: list[float | None],
+    ) -> str:
+        workbook = load_workbook(file_path)
+        try:
+            sheet_original = workbook.worksheets[0]
+            sheet_copy = workbook.copy_worksheet(sheet_original)
+            sheet_copy.title = "Обновленный расчет"
+
+            new_col_index = sheet_copy.max_column + 1
+            sheet_copy.cell(row=1, column=new_col_index).value = "Лучшая цена"
+            sheet_copy.column_dimensions[get_column_letter(new_col_index)].width = 18
+
+            start_row = 2
+            for index, price in enumerate(best_prices):
+                excel_row = start_row + index
+                if price is not None:
+                    sheet_copy.cell(row=excel_row, column=new_col_index).value = price
+
+            workbook.save(file_path)
+            return sheet_copy.title
+        finally:
+            workbook.close()
+
+    def generate_retrade_calculation(self) -> None:
+        calculations_file_path = str(
+            getattr(self, "calculations_file_path", "") or ""
+        ).strip()
+        if not calculations_file_path:
+            QMessageBox.warning(self, "Ошибка", "Файл расчетов не выбран")
+            return
+
+        table = self._get_retrade_source_table()
+        if table is None:
+            QMessageBox.warning(self, "Ошибка", "Таблица Переторжка не найдена")
+            return
+
+        try:
+            best_prices = self._extract_retrade_best_prices(table)
+            sheet_title = self._write_best_prices_to_calculations_file(
+                calculations_file_path,
+                best_prices,
+            )
+        except Exception as exc:
+            error_text = f"Не удалось обновить расчет: {exc}"
+            Tool.write_log(error_text)
+            QMessageBox.warning(self, "Ошибка", error_text)
+            return
+
+        self._log_calc(f"расчет обновлен: {calculations_file_path}")
+        self._log_calc(f"лист: {sheet_title}")
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None:
+            status_bar.showMessage("Расчет успешно обновлен", 5_000)
+        QMessageBox.information(self, "Готово", "Расчет успешно обновлен")
 
     @staticmethod
     def _load_retrade_calculations_cells_data(file_path: str) -> list[list[dict[str, Any]]]:

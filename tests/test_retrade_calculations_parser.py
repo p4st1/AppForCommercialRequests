@@ -1,6 +1,47 @@
+import tempfile
 import unittest
+from pathlib import Path
+
+from openpyxl import Workbook, load_workbook
+from openpyxl.utils import get_column_letter
 
 from ui_mixins.export_mixin import ExportMixin
+
+
+class _FakeItem:
+    def __init__(self, text):
+        self._text = text
+
+    def text(self):
+        return str(self._text)
+
+
+class _FakeRetradeTable:
+    def __init__(self, headers, rows):
+        self._headers = [_FakeItem(header) for header in headers]
+        self._rows = [
+            [None if value is None else _FakeItem(value) for value in row]
+            for row in rows
+        ]
+
+    def columnCount(self):
+        return len(self._headers)
+
+    def rowCount(self):
+        return len(self._rows)
+
+    def horizontalHeaderItem(self, column):
+        if column < 0 or column >= len(self._headers):
+            return None
+        return self._headers[column]
+
+    def item(self, row, column):
+        if row < 0 or row >= len(self._rows):
+            return None
+        row_values = self._rows[row]
+        if column < 0 or column >= len(row_values):
+            return None
+        return row_values[column]
 
 
 class RetradeCalculationsParserTests(unittest.TestCase):
@@ -263,6 +304,69 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             ),
             "N/A",
         )
+
+    def test_extract_best_prices_uses_header_and_parses_currency(self):
+        table = _FakeRetradeTable(
+            ["Наименование", "Лучшая цена за ед."],
+            [
+                ["Двигатель", "102 188,50 ¥"],
+                ["Насос", ""],
+                ["Клапан", "нет цены"],
+            ],
+        )
+
+        self.assertEqual(
+            ExportMixin._extract_retrade_best_prices(table),
+            [102188.5, None, None],
+        )
+
+    def test_write_best_prices_to_calculations_file_creates_updated_sheet(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Расчет"
+        worksheet.append(["Позиция", "Цена"])
+        worksheet.append(["Двигатель", 1])
+        worksheet.append(["Насос", 2])
+
+        temp_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        temp_file.close()
+        file_path = temp_file.name
+
+        try:
+            workbook.save(file_path)
+            workbook.close()
+
+            sheet_title = ExportMixin._write_best_prices_to_calculations_file(
+                file_path,
+                [102188.5, None, 3000.0],
+            )
+
+            result_workbook = load_workbook(file_path, data_only=True)
+            try:
+                self.assertEqual(sheet_title, "Обновленный расчет")
+                self.assertIn(sheet_title, result_workbook.sheetnames)
+                result_sheet = result_workbook[sheet_title]
+                new_col_index = result_sheet.max_column
+
+                self.assertEqual(
+                    result_sheet.cell(row=1, column=new_col_index).value,
+                    "Лучшая цена",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=new_col_index).value,
+                    102188.5,
+                )
+                self.assertIsNone(result_sheet.cell(row=3, column=new_col_index).value)
+                self.assertEqual(result_sheet.cell(row=4, column=new_col_index).value, 3000)
+                self.assertEqual(
+                    result_sheet.column_dimensions[get_column_letter(new_col_index)].width,
+                    18,
+                )
+            finally:
+                result_workbook.close()
+        finally:
+            workbook.close()
+            Path(file_path).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
