@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -13,15 +14,20 @@ from PySide6.QtGui import QAction, QColor
 from PySide6.QtUiTools import loadUiType
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
+    QDoubleSpinBox,
     QFileDialog,
     QHeaderView,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QWidget,
 )
 
 from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
@@ -29,6 +35,56 @@ from config import Config
 from services.excel_processor import ExcelProcessor
 from services.trade_exporter import TradeExporter
 from tools import DatabaseTools as Tool
+
+
+def force_excel_recalc(file_path: str) -> None:
+    import platform
+
+    normalized_path = str(Path(file_path).expanduser().resolve())
+    system = platform.system()
+
+    if system == "Windows":
+        import win32com.client
+
+        excel = None
+        workbook = None
+        try:
+            excel = win32com.client.Dispatch("Excel.Application")
+            excel.Visible = False
+            workbook = excel.Workbooks.Open(normalized_path)
+            excel.CalculateFull()
+            workbook.Save()
+        finally:
+            if workbook is not None:
+                workbook.Close(SaveChanges=True)
+            if excel is not None:
+                excel.Quit()
+        return
+
+    if system == "Darwin":
+        import subprocess
+
+        script = f'''
+        tell application "Microsoft Excel"
+            open POSIX file {json.dumps(normalized_path)}
+            calculate full
+            save active workbook
+            close active workbook
+        end tell
+        '''
+        try:
+            subprocess.run(
+                ["osascript", "-e", script],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            message = (exc.stderr or exc.stdout or str(exc)).strip()
+            raise RuntimeError(message) from exc
+        return
+
+    raise RuntimeError("Автопересчет Excel поддерживается только на Windows и macOS")
 
 
 class ExportTradeWorker(QThread):
@@ -91,6 +147,9 @@ class ExportMixin:
     TABLE_SETTINGS_APP = "TableSettings"
     TABLE_SETTINGS_FONT_MIN = 8
     TABLE_SETTINGS_FONT_MAX = 24
+    RETRADE_MIN_MARGIN_DEFAULT = 1.1
+    RETRADE_DELTA_PERCENT_DEFAULT = 2.0
+    RETRADE_ROW_CHECKBOX_COLUMN_MARKER = "retrade_row_checkbox_column"
     TABLE_SETTINGS_DEFAULTS = {
         "font_size": 13,
         "bg_color": "#ffffff",
@@ -106,6 +165,9 @@ class ExportMixin:
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
         self.calculations_file_path = ""
+        self.workbook = None
+        self.main_sheet_name = ""
+        self.current_calculations_sheet_name = ""
         self.retrade_calculations_loaded = False
         self.retrade_calculations_data: dict[str, Any] = {
             "headers": [],
@@ -302,6 +364,11 @@ QTableWidget::item:selected {{
 QTableWidget::item:hover {{
     background-color: #f5f5f5;
 }}
+
+QTableWidget::indicator {{
+    width: 18px;
+    height: 18px;
+}}
 """
         )
         table.setAlternatingRowColors(bool(table_settings["alternating"]))
@@ -436,6 +503,7 @@ QTableWidget::item:hover {{
         self.retrade_tab = retrade_tab
         self.retrade_table = self.table_retrade
         self.retradingTable = self.retrade_table
+        self.calculationsTable = self.retrade_calculations_table
         self.retrade_calculations_container_layout = (
             retrade_form.retradeCalculationsContainerLayout
         )
@@ -445,6 +513,7 @@ QTableWidget::item:hover {{
         self.ui.retrade_tab = retrade_tab
         self.ui.retrade_table = self.retrade_table
         self.ui.retradingTable = self.retradingTable
+        self.ui.calculationsTable = self.calculationsTable
         self.ui.retrade_calculations_container_layout = (
             self.retrade_calculations_container_layout
         )
@@ -454,6 +523,8 @@ QTableWidget::item:hover {{
 
         self._configure_excel_like_table(self.retrade_table)
         self._configure_excel_like_table(self.retrade_calculations_table)
+        self._ensure_retrade_calculations_controls()
+        self._ensure_retrade_calculations_sheet_selector()
         self._set_auto_trade_status(False)
         self._set_retrade_calculations_loaded_status(False)
 
@@ -558,6 +629,507 @@ QTableWidget::item:hover {{
         if isinstance(inner_tabs, QTabWidget):
             inner_tabs.setCurrentIndex(self.RETRADE_INNER_TAB_CALCULATIONS)
 
+    @classmethod
+    def _load_retrade_calculation_setting(
+        cls,
+        key: str,
+        default: float,
+    ) -> float:
+        settings = QSettings(cls.TABLE_SETTINGS_ORG, cls.TABLE_SETTINGS_APP)
+        raw_value = settings.value(f"retrade/{key}", default)
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            value = default
+        return max(0.0, min(100.0, value))
+
+    def _save_retrade_calculation_settings(self, *_args: Any) -> None:
+        settings = QSettings(self.TABLE_SETTINGS_ORG, self.TABLE_SETTINGS_APP)
+        settings.setValue("retrade/min_margin", self.get_min_margin())
+        settings.setValue("retrade/delta_percent", self.get_delta_percent())
+
+    def _ensure_retrade_calculations_controls(self) -> None:
+        if isinstance(getattr(self, "minMarginInput", None), QDoubleSpinBox):
+            return
+
+        container = getattr(self, "retrade_calculations_container", None)
+        container_layout = getattr(self, "retrade_calculations_container_layout", None)
+        if container is None or container_layout is None:
+            return
+
+        controls_widget = QWidget(container)
+        controls_widget.setObjectName("retradeCalculationsControls")
+        controlsLayout = QHBoxLayout(controls_widget)
+        controlsLayout.setContentsMargins(0, 0, 0, 8)
+        controlsLayout.setSpacing(8)
+
+        self.minMarginLabel = QLabel("Минимальная наценка:", controls_widget)
+        self.minMarginInput = QDoubleSpinBox(controls_widget)
+        self.minMarginInput.setObjectName("minMarginInput")
+        self.minMarginInput.setRange(0, 100)
+        self.minMarginInput.setSingleStep(0.1)
+        self.minMarginInput.setDecimals(2)
+        self.minMarginInput.setValue(
+            self._load_retrade_calculation_setting(
+                "min_margin",
+                self.RETRADE_MIN_MARGIN_DEFAULT,
+            )
+        )
+
+        self.deltaLabel = QLabel("Дельта, %:", controls_widget)
+        self.deltaInput = QDoubleSpinBox(controls_widget)
+        self.deltaInput.setObjectName("deltaInput")
+        self.deltaInput.setRange(0, 100)
+        self.deltaInput.setSingleStep(0.5)
+        self.deltaInput.setDecimals(2)
+        self.deltaInput.setValue(
+            self._load_retrade_calculation_setting(
+                "delta_percent",
+                self.RETRADE_DELTA_PERCENT_DEFAULT,
+            )
+        )
+
+        self.allPositionsCheckbox = QCheckBox(
+            "Формировать по всем позициям",
+            controls_widget,
+        )
+        self.allPositionsCheckbox.setObjectName("allPositionsCheckbox")
+        self.allPositionsCheckbox.setChecked(True)
+
+        controlsLayout.addWidget(self.minMarginLabel)
+        controlsLayout.addWidget(self.minMarginInput)
+        controlsLayout.addSpacing(20)
+        controlsLayout.addWidget(self.deltaLabel)
+        controlsLayout.addWidget(self.deltaInput)
+        controlsLayout.addSpacing(20)
+        controlsLayout.addWidget(self.allPositionsCheckbox)
+        controlsLayout.addStretch()
+
+        container_layout.insertWidget(0, controls_widget)
+
+        self.retrade_calculations_controls = controls_widget
+        self.retrade_calculations_controls_layout = controlsLayout
+        self.ui.minMarginLabel = self.minMarginLabel
+        self.ui.minMarginInput = self.minMarginInput
+        self.ui.deltaLabel = self.deltaLabel
+        self.ui.deltaInput = self.deltaInput
+        self.ui.allPositionsCheckbox = self.allPositionsCheckbox
+
+        self.minMarginInput.valueChanged.connect(
+            self._save_retrade_calculation_settings
+        )
+        self.deltaInput.valueChanged.connect(
+            self._save_retrade_calculation_settings
+        )
+        self.allPositionsCheckbox.stateChanged.connect(
+            self.on_positions_mode_changed
+        )
+
+    def get_min_margin(self) -> float:
+        input_widget = getattr(self, "minMarginInput", None)
+        if isinstance(input_widget, QDoubleSpinBox):
+            return float(input_widget.value())
+        return self.RETRADE_MIN_MARGIN_DEFAULT
+
+    def get_delta_percent(self) -> float:
+        input_widget = getattr(self, "deltaInput", None)
+        if isinstance(input_widget, QDoubleSpinBox):
+            return float(input_widget.value())
+        return self.RETRADE_DELTA_PERCENT_DEFAULT
+
+    def _get_calculations_table(self) -> QTableWidget | None:
+        table = getattr(self, "calculationsTable", None)
+        if isinstance(table, QTableWidget):
+            return table
+
+        table = getattr(self, "retrade_calculations_table", None)
+        return table if isinstance(table, QTableWidget) else None
+
+    def _has_row_checkbox_column(self, table: QTableWidget) -> bool:
+        if table.columnCount() == 0:
+            return False
+
+        header_item = table.horizontalHeaderItem(0)
+        if header_item is None:
+            return False
+
+        return (
+            header_item.data(Qt.ItemDataRole.UserRole)
+            == self.RETRADE_ROW_CHECKBOX_COLUMN_MARKER
+        )
+
+    def _is_main_calculations_sheet_selected(self) -> bool:
+        main_sheet_name = str(getattr(self, "main_sheet_name", "") or "")
+        current_sheet_name = str(
+            getattr(self, "current_calculations_sheet_name", "") or ""
+        )
+        return bool(main_sheet_name) and current_sheet_name == main_sheet_name
+
+    def find_number_column(self) -> int | None:
+        table = self._get_calculations_table()
+        if table is None:
+            return None
+
+        def is_number_header(text: str) -> bool:
+            normalized = text.strip()
+            return normalized == "№" or normalized.casefold() in {"no", "n"}
+
+        start_col = self.get_calculations_column_offset()
+        for col in range(start_col, table.columnCount()):
+            header = table.horizontalHeaderItem(col)
+            if header is not None and is_number_header(header.text()):
+                return col
+
+        for row in range(table.rowCount()):
+            for col in range(start_col, table.columnCount()):
+                item = table.item(row, col)
+                if item is not None and is_number_header(item.text()):
+                    return col
+
+        return None
+
+    def has_position_number(self, row: int) -> bool:
+        table = self._get_calculations_table()
+        if table is None:
+            return False
+
+        col = self.find_number_column()
+        if col is None:
+            return False
+
+        item = table.item(row, col)
+        if item is None:
+            return False
+
+        return item.text().strip().isdigit()
+
+    def _apply_row_checkbox_mode(self) -> None:
+        checkbox = getattr(self, "allPositionsCheckbox", None)
+        if (
+            self._is_main_calculations_sheet_selected()
+            and isinstance(checkbox, QCheckBox)
+            and not checkbox.isChecked()
+        ):
+            self.add_row_checkboxes()
+        else:
+            self.remove_row_checkboxes()
+
+    def _set_calculations_headers_from_sheet(self, sheet: Any) -> None:
+        table = self._get_calculations_table()
+        if table is None:
+            return
+
+        column_count = table.columnCount()
+        if column_count == 0:
+            return
+
+        for row in range(1, int(getattr(sheet, "max_row", 0) or 0) + 1):
+            header_labels: list[str] = []
+            has_number_header = False
+            for col in range(1, column_count + 1):
+                value = sheet.cell(row=row, column=col).value
+                text = "" if value is None else str(value)
+                header_labels.append(text)
+                normalized = text.strip()
+                if normalized == "№" or normalized.casefold() in {"no", "n"}:
+                    has_number_header = True
+            if has_number_header:
+                table.setHorizontalHeaderLabels(header_labels)
+                return
+
+    def get_calculations_column_offset(self) -> int:
+        table = self._get_calculations_table()
+        if table is None:
+            return 0
+        return 1 if self._has_row_checkbox_column(table) else 0
+
+    def on_positions_mode_changed(self, *_args: Any) -> None:
+        self._apply_row_checkbox_mode()
+
+    def add_row_checkboxes(self) -> None:
+        table = self._get_calculations_table()
+        if table is None or table.columnCount() == 0:
+            return
+
+        if not self._is_main_calculations_sheet_selected():
+            self.remove_row_checkboxes()
+            return
+
+        if self._has_row_checkbox_column(table):
+            table.setColumnWidth(0, 40)
+            return
+
+        if self.find_number_column() is None:
+            return
+
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setAlternatingRowColors(True)
+        table.insertColumn(0)
+        header_item = QTableWidgetItem("")
+        header_item.setData(
+            Qt.ItemDataRole.UserRole,
+            self.RETRADE_ROW_CHECKBOX_COLUMN_MARKER,
+        )
+        table.setHorizontalHeaderItem(0, header_item)
+
+        for row in range(table.rowCount()):
+            if not self.has_position_number(row):
+                continue
+
+            item = QTableWidgetItem()
+            item.setFlags(
+                Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
+            )
+            item.setCheckState(Qt.CheckState.Checked)
+            item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
+            table.setItem(row, 0, item)
+
+        table.setColumnWidth(0, 40)
+
+    def remove_row_checkboxes(self) -> None:
+        table = self._get_calculations_table()
+        if table is None or table.columnCount() == 0:
+            return
+
+        if self._has_row_checkbox_column(table):
+            table.removeColumn(0)
+
+    def get_selected_rows(self) -> list[int]:
+        table = self._get_calculations_table()
+        if table is None:
+            return []
+
+        if not self._is_main_calculations_sheet_selected():
+            return []
+
+        checkbox = getattr(self, "allPositionsCheckbox", None)
+        if not isinstance(checkbox, QCheckBox) or checkbox.isChecked():
+            return [
+                row
+                for row in range(table.rowCount())
+                if self.has_position_number(row)
+            ]
+
+        selected_rows: list[int] = []
+        if not self._has_row_checkbox_column(table):
+            return selected_rows
+
+        for row in range(table.rowCount()):
+            if not self.has_position_number(row):
+                continue
+
+            item = table.item(row, 0)
+            if item is not None and item.checkState() == Qt.CheckState.Checked:
+                selected_rows.append(row)
+
+        return selected_rows
+
+    def _ensure_retrade_calculations_sheet_selector(self) -> None:
+        if isinstance(getattr(self, "sheetsList", None), QListWidget):
+            return
+
+        table = getattr(self, "retrade_calculations_table", None)
+        container = getattr(self, "retrade_calculations_container", None)
+        container_layout = getattr(self, "retrade_calculations_container_layout", None)
+        if (
+            not isinstance(table, QTableWidget)
+            or container is None
+            or container_layout is None
+        ):
+            return
+
+        self.sheetsList = QListWidget(container)
+        self.sheetsList.setObjectName("sheetsList")
+        self.sheetsList.setMinimumWidth(160)
+        self.sheetsList.setMaximumWidth(260)
+        self.sheetsList.setUniformItemSizes(True)
+
+        sheets_view = QWidget(container)
+        sheets_view.setObjectName("retradeCalculationsSheetsView")
+        layout = QHBoxLayout(sheets_view)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        table_index = container_layout.indexOf(table)
+        if table_index < 0:
+            table_index = 0
+        else:
+            container_layout.takeAt(table_index)
+
+        table.setParent(sheets_view)
+        layout.addWidget(self.sheetsList, 1)
+        layout.addWidget(table, 4)
+        container_layout.insertWidget(table_index, sheets_view, 1)
+
+        self.retrade_calculations_sheets_view = sheets_view
+        self.retrade_calculations_sheets_layout = layout
+        self.ui.sheetsList = self.sheetsList
+        self.sheetsList.currentTextChanged.connect(self.on_sheet_selected)
+
+    def _close_retrade_calculations_workbook(self) -> None:
+        workbook = getattr(self, "workbook", None)
+        if workbook is not None and hasattr(workbook, "close"):
+            try:
+                workbook.close()
+            except Exception:
+                pass
+        self.workbook = None
+        self.main_sheet_name = ""
+        self.current_calculations_sheet_name = ""
+
+    def _replace_retrade_calculations_workbook(self, workbook: Any) -> None:
+        self._close_retrade_calculations_workbook()
+        self.workbook = workbook
+        sheet_names = list(getattr(workbook, "sheetnames", []) or [])
+        self.main_sheet_name = sheet_names[0] if sheet_names else ""
+
+    def _populate_retrade_sheets_list(self) -> None:
+        sheets_list = getattr(self, "sheetsList", None)
+        workbook = getattr(self, "workbook", None)
+        if not isinstance(sheets_list, QListWidget) or workbook is None:
+            return
+
+        sheet_names = list(getattr(workbook, "sheetnames", []) or [])
+        self.main_sheet_name = sheet_names[0] if sheet_names else ""
+        if sheet_names:
+            main_sheet = sheet_names[0]
+            if main_sheet != "Рассчеты":
+                print("⚠️ Первый лист должен называться 'Рассчеты'")
+
+        selected_sheet_name = ""
+        sheets_list.blockSignals(True)
+        try:
+            sheets_list.clear()
+            for sheet_name in sheet_names:
+                item = QListWidgetItem(sheet_name)
+                if sheet_name == "Рассчеты":
+                    item.setBackground(QColor(200, 255, 200))
+                sheets_list.addItem(item)
+            if sheets_list.count() > 0:
+                sheets_list.setCurrentRow(0)
+                selected_item = sheets_list.currentItem()
+                selected_sheet_name = (
+                    selected_item.text()
+                    if selected_item is not None
+                    else ""
+                )
+        finally:
+            sheets_list.blockSignals(False)
+
+        if selected_sheet_name:
+            self.on_sheet_selected(selected_sheet_name)
+
+    @staticmethod
+    def _worksheet_to_retrade_calculations_cells_data(
+        worksheet: Any,
+    ) -> list[list[dict[str, Any]]]:
+        data: list[list[dict[str, Any]]] = []
+        for row in worksheet.iter_rows(values_only=False):
+            parsed_row: list[dict[str, Any]] = []
+            for cell in row:
+                value = cell.value
+                currency = ExportMixin._detect_currency(value, cell.number_format)
+                parsed_row.append(
+                    {
+                        "value": value,
+                        "currency": currency,
+                    }
+                )
+            data.append(parsed_row)
+        return data
+
+    @staticmethod
+    def _warn_if_retrade_calculations_formulas_unresolved(
+        file_path: str,
+        worksheet_values: Any,
+    ) -> None:
+        warning_message = (
+            "WARNING: Some formula cells returned None. Excel file may need recalculation."
+        )
+        workbook_formulas = None
+        try:
+            workbook_formulas = load_workbook(file_path, data_only=False)
+            worksheet_title = getattr(worksheet_values, "title", "")
+            if worksheet_title in workbook_formulas.sheetnames:
+                worksheet_formulas = workbook_formulas[worksheet_title]
+            else:
+                worksheet_formulas = workbook_formulas.active
+
+            has_unresolved_formula = False
+            for formula_row in worksheet_formulas.iter_rows(values_only=False):
+                for formula_cell in formula_row:
+                    formula_value = formula_cell.value
+                    if not (
+                        isinstance(formula_value, str)
+                        and formula_value.startswith("=")
+                    ):
+                        continue
+
+                    calculated_value = worksheet_values.cell(
+                        row=formula_cell.row,
+                        column=formula_cell.column,
+                    ).value
+                    if calculated_value is None:
+                        has_unresolved_formula = True
+                        break
+                if has_unresolved_formula:
+                    break
+
+            if has_unresolved_formula:
+                print(warning_message)
+                Tool.write_log(warning_message)
+        finally:
+            try:
+                workbook_formulas.close()
+            except Exception:
+                pass
+
+    def on_sheet_selected(self, sheet_name: str) -> None:
+        if not sheet_name:
+            return
+
+        workbook = getattr(self, "workbook", None)
+        if workbook is None or sheet_name not in workbook.sheetnames:
+            return
+
+        sheet = workbook[sheet_name]
+        self.current_calculations_sheet_name = sheet_name
+        self.display_sheet(sheet)
+        self._apply_row_checkbox_mode()
+
+    def display_sheet(self, sheet: Any) -> None:
+        table = getattr(self, "calculationsTable", None)
+        if not isinstance(table, QTableWidget):
+            table = getattr(self, "retrade_calculations_table", None)
+        if not isinstance(table, QTableWidget):
+            return
+
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setAlternatingRowColors(True)
+        table.setUpdatesEnabled(False)
+        try:
+            table.clear()
+
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+
+            table.setRowCount(max_row)
+            table.setColumnCount(max_col)
+
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    value = cell.value
+                    if value is None:
+                        value = ""
+                    item = QTableWidgetItem(str(value))
+                    table.setItem(row - 1, col - 1, item)
+            self._set_calculations_headers_from_sheet(sheet)
+        finally:
+            table.setUpdatesEnabled(True)
+
+        resize_table_to_contents(table)
+
     def _open_retrade_calculations(self) -> None:
         default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
         default_dir = (
@@ -574,14 +1146,27 @@ QTableWidget::item:hover {{
         if not file_path:
             return
 
+        workbook = None
         try:
-            cells_data = self._load_retrade_calculations_cells_data(file_path)
+            workbook = load_workbook(file_path, data_only=True)
+            worksheet = workbook.worksheets[0]
+            cells_data = self._worksheet_to_retrade_calculations_cells_data(worksheet)
+            self._warn_if_retrade_calculations_formulas_unresolved(
+                file_path,
+                worksheet,
+            )
         except Exception as exc:
+            if workbook is not None:
+                try:
+                    workbook.close()
+                except Exception:
+                    pass
             error_text = f"Не удалось прочитать Excel файл: {exc}"
             Tool.write_log(error_text)
             QMessageBox.warning(self, "Ошибка", error_text)
             return
 
+        self._replace_retrade_calculations_workbook(workbook)
         self.calculations_file_path = file_path
         parsed = self._parse_retrade_calculations(cells_data)
         headers = parsed["headers"]
@@ -598,6 +1183,7 @@ QTableWidget::item:hover {{
             totals=totals,
             totals_currency=totals_currency,
         )
+        self._populate_retrade_sheets_list()
         self._open_retrade_calculations_tab()
 
         self._log_calc("файл загружен")
@@ -796,6 +1382,8 @@ QTableWidget::item:hover {{
             QMessageBox.warning(self, "Ошибка", "Таблица Переторжка не найдена")
             return
 
+        selected_rows = self.get_selected_rows()
+
         try:
             ratings, best_prices = self._extract_retrade_ratings_and_best_prices(table)
             sheet_title = self._write_best_prices_to_calculations_file(
@@ -809,72 +1397,57 @@ QTableWidget::item:hover {{
             QMessageBox.warning(self, "Ошибка", error_text)
             return
 
+        recalc_error = ""
+        try:
+            force_excel_recalc(calculations_file_path)
+        except Exception as exc:
+            recalc_error = (
+                "Формулы записаны, но Excel не удалось автоматически пересчитать: "
+                f"{exc}"
+            )
+            Tool.write_log(recalc_error)
+
         self._log_calc(f"расчет обновлен: {calculations_file_path}")
         self._log_calc(f"лист: {sheet_title}")
+        self._log_calc(f"выбрано строк расчетов: {len(selected_rows)}")
         status_bar_getter = getattr(self, "statusBar", None)
         status_bar = status_bar_getter() if callable(status_bar_getter) else None
         if status_bar is not None:
-            status_bar.showMessage("Расчет успешно обновлен", 5_000)
-        QMessageBox.information(self, "Готово", "Расчет успешно обновлен")
+            status_message = (
+                "Расчет обновлен, но Excel не пересчитан"
+                if recalc_error
+                else "Расчет успешно обновлен и пересчитан"
+            )
+            status_bar.showMessage(status_message, 5_000)
+
+        if recalc_error:
+            QMessageBox.warning(self, "Готово с предупреждением", recalc_error)
+        else:
+            QMessageBox.information(
+                self,
+                "Готово",
+                "Расчет успешно обновлен и пересчитан",
+            )
 
     @staticmethod
     def _load_retrade_calculations_cells_data(file_path: str) -> list[list[dict[str, Any]]]:
         workbook_values = load_workbook(file_path, data_only=True)
         worksheet_values = workbook_values.active
 
-        data: list[list[dict[str, Any]]] = []
-        for row in worksheet_values.iter_rows(values_only=False):
-            parsed_row: list[dict[str, Any]] = []
-            for cell in row:
-                value = cell.value
-                currency = ExportMixin._detect_currency(value, cell.number_format)
-                parsed_row.append(
-                    {
-                        "value": value,
-                        "currency": currency,
-                    }
-                )
-            data.append(parsed_row)
-
-        warning_message = (
-            "WARNING: Some formula cells returned None. Excel file may need recalculation."
-        )
-        workbook_formulas = None
         try:
-            workbook_formulas = load_workbook(file_path, data_only=False)
-            worksheet_formulas = workbook_formulas.active
-
-            has_unresolved_formula = False
-            for formula_row in worksheet_formulas.iter_rows(values_only=False):
-                for formula_cell in formula_row:
-                    formula_value = formula_cell.value
-                    if not (isinstance(formula_value, str) and formula_value.startswith("=")):
-                        continue
-
-                    calculated_value = worksheet_values.cell(
-                        row=formula_cell.row,
-                        column=formula_cell.column,
-                    ).value
-                    if calculated_value is None:
-                        has_unresolved_formula = True
-                        break
-                if has_unresolved_formula:
-                    break
-
-            if has_unresolved_formula:
-                print(warning_message)
-                Tool.write_log(warning_message)
+            data = ExportMixin._worksheet_to_retrade_calculations_cells_data(
+                worksheet_values
+            )
+            ExportMixin._warn_if_retrade_calculations_formulas_unresolved(
+                file_path,
+                worksheet_values,
+            )
+            return data
         finally:
-            try:
-                workbook_formulas.close()
-            except Exception:
-                pass
             try:
                 workbook_values.close()
             except Exception:
                 pass
-
-        return data
 
     @staticmethod
     def _detect_currency(value: Any, number_format: Any) -> str | None:
@@ -897,6 +1470,10 @@ QTableWidget::item:hover {{
         return None
 
     def _clear_retrade_calculations_view(self) -> None:
+        sheets_list = getattr(self, "sheetsList", None)
+        if isinstance(sheets_list, QListWidget):
+            sheets_list.clear()
+
         table = getattr(self, "retrade_calculations_table", None)
         if isinstance(table, QTableWidget):
             table.clear()
@@ -1267,6 +1844,8 @@ QTableWidget::item:hover {{
         table = getattr(self, "retrade_calculations_table", None)
         if isinstance(table, QTableWidget):
             self._configure_excel_like_table(table)
+            table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            table.setAlternatingRowColors(True)
             column_count = max(len(headers), max((len(row) for row in rows), default=0))
             table.setRowCount(len(rows))
             table.setColumnCount(column_count)
