@@ -320,13 +320,36 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             [102188.5, None, None],
         )
 
+    def test_extract_ratings_and_best_prices_uses_headers(self):
+        table = _FakeRetradeTable(
+            ["Наименование", "Рейтинг", "Лучшая цена за ед."],
+            [
+                ["Двигатель", "1,25", "102 188,50 ₽"],
+                ["Насос", "", ""],
+                ["Клапан", "нет рейтинга", "нет цены"],
+            ],
+        )
+
+        self.assertEqual(
+            ExportMixin._extract_retrade_ratings_and_best_prices(table),
+            ([1.25, None, None], [102188.5, None, None]),
+        )
+
     def test_write_best_prices_to_calculations_file_creates_updated_sheet(self):
         workbook = Workbook()
         worksheet = workbook.active
         worksheet.title = "Расчет"
-        worksheet.append(["Позиция", "Цена"])
-        worksheet.append(["Двигатель", 1])
-        worksheet.append(["Насос", 2])
+        headers = [f"Колонка {index}" for index in range(1, 16)]
+        headers[9] = "Цена за ед."
+        first_row = [None for _ in headers]
+        first_row[0] = "Двигатель"
+        first_row[9] = 100
+        second_row = [None for _ in headers]
+        second_row[0] = "Насос"
+        second_row[9] = 200
+        worksheet.append(headers)
+        worksheet.append(first_row)
+        worksheet.append(second_row)
 
         temp_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
         temp_file.close()
@@ -339,27 +362,74 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             sheet_title = ExportMixin._write_best_prices_to_calculations_file(
                 file_path,
                 [102188.5, None, 3000.0],
+                ratings=[1.25, None, 2.0],
             )
 
-            result_workbook = load_workbook(file_path, data_only=True)
+            result_workbook = load_workbook(file_path, data_only=False)
             try:
                 self.assertEqual(sheet_title, "Обновленный расчет")
                 self.assertIn(sheet_title, result_workbook.sheetnames)
                 result_sheet = result_workbook[sheet_title]
-                new_col_index = result_sheet.max_column
+                real_rating_col_index = 16
+                best_price_col_index = 17
+                formula_col_index = 18
 
                 self.assertEqual(
-                    result_sheet.cell(row=1, column=new_col_index).value,
-                    "Лучшая цена",
+                    result_sheet.cell(row=1, column=real_rating_col_index).value,
+                    "Рейтинг (таблица)",
                 )
                 self.assertEqual(
-                    result_sheet.cell(row=2, column=new_col_index).value,
+                    result_sheet.cell(row=1, column=best_price_col_index).value,
+                    "Лучшая цена за ед.",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=1, column=formula_col_index).value,
+                    "Рейтинг",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=best_price_col_index).value,
                     102188.5,
                 )
-                self.assertIsNone(result_sheet.cell(row=3, column=new_col_index).value)
-                self.assertEqual(result_sheet.cell(row=4, column=new_col_index).value, 3000)
+                self.assertIsNone(
+                    result_sheet.cell(row=3, column=best_price_col_index).value
+                )
                 self.assertEqual(
-                    result_sheet.column_dimensions[get_column_letter(new_col_index)].width,
+                    result_sheet.cell(row=4, column=best_price_col_index).value,
+                    3000,
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=real_rating_col_index).value,
+                    1.25,
+                )
+                self.assertIsNone(
+                    result_sheet.cell(row=3, column=real_rating_col_index).value
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=4, column=real_rating_col_index).value,
+                    2,
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=formula_col_index).value,
+                    "=Q2/J2",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=3, column=formula_col_index).value,
+                    "=Q3/J3",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=4, column=formula_col_index).value,
+                    "=Q4/J4",
+                )
+                self.assertEqual(
+                    result_sheet.column_dimensions[get_column_letter(formula_col_index)].width,
+                    18,
+                )
+                self.assertEqual(
+                    result_sheet.column_dimensions[get_column_letter(best_price_col_index)].width,
+                    18,
+                )
+                self.assertEqual(
+                    result_sheet.column_dimensions[get_column_letter(real_rating_col_index)].width,
                     18,
                 )
             finally:

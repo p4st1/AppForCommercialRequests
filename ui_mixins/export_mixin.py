@@ -82,6 +82,7 @@ class ExportTradeWorker(QThread):
 class ExportMixin:
     AUTO_TRADE_TIMER_MIN_MINUTES = 1
     AUTO_TRADE_TIMER_MAX_MINUTES = 1440
+    RATING_COLUMN_INDEX = 10
     BEST_PRICE_COLUMN_INDEX = 11
     RETRADE_INNER_TAB_MAIN = 0
     RETRADE_INNER_TAB_CALCULATIONS = 1
@@ -633,11 +634,17 @@ QTableWidget::item:hover {{
         return str(item)
 
     @classmethod
-    def _find_best_price_column_index(cls, table: Any) -> int:
+    def _find_retrade_column_index(
+        cls,
+        table: Any,
+        *,
+        fallback: int,
+        required_parts: tuple[str, ...],
+    ) -> int:
         try:
             column_count = int(table.columnCount())
         except Exception:
-            return cls.BEST_PRICE_COLUMN_INDEX
+            return fallback
 
         header_getter = getattr(table, "horizontalHeaderItem", None)
         if callable(header_getter):
@@ -645,10 +652,30 @@ QTableWidget::item:hover {{
                 header_text = cls._text_from_table_item(
                     header_getter(column_index)
                 ).casefold()
-                if "лучш" in header_text and "цен" in header_text:
+                if all(part in header_text for part in required_parts):
                     return column_index
 
-        return cls.BEST_PRICE_COLUMN_INDEX
+        return fallback
+
+    @classmethod
+    def _find_rating_column_index(cls, table: Any) -> int:
+        return cls._find_retrade_column_index(
+            table,
+            fallback=cls.RATING_COLUMN_INDEX,
+            required_parts=("рейтинг",),
+        )
+
+    @classmethod
+    def _find_best_price_column_index(cls, table: Any) -> int:
+        return cls._find_retrade_column_index(
+            table,
+            fallback=cls.BEST_PRICE_COLUMN_INDEX,
+            required_parts=("лучш", "цен"),
+        )
+
+    @classmethod
+    def _parse_rating_value(cls, value: Any) -> float | None:
+        return cls._parse_retrade_numeric_value(value)
 
     @classmethod
     def _parse_best_price_value(cls, value: Any) -> float | None:
@@ -673,21 +700,36 @@ QTableWidget::item:hover {{
             return None
 
     @classmethod
-    def _extract_retrade_best_prices(cls, table: Any) -> list[float | None]:
+    def _extract_retrade_ratings_and_best_prices(
+        cls,
+        table: Any,
+    ) -> tuple[list[float | None], list[float | None]]:
+        rating_column_index = cls._find_rating_column_index(table)
         best_price_column_index = cls._find_best_price_column_index(table)
+        ratings: list[float | None] = []
         best_prices: list[float | None] = []
 
         try:
             row_count = int(table.rowCount())
         except Exception:
-            return best_prices
+            return ratings, best_prices
 
         for row in range(row_count):
-            item = table.item(row, best_price_column_index)
+            rating_item = table.item(row, rating_column_index)
+            best_item = table.item(row, best_price_column_index)
+
+            ratings.append(
+                cls._parse_rating_value(cls._text_from_table_item(rating_item))
+            )
             best_prices.append(
-                cls._parse_best_price_value(cls._text_from_table_item(item))
+                cls._parse_best_price_value(cls._text_from_table_item(best_item))
             )
 
+        return ratings, best_prices
+
+    @classmethod
+    def _extract_retrade_best_prices(cls, table: Any) -> list[float | None]:
+        _, best_prices = cls._extract_retrade_ratings_and_best_prices(table)
         return best_prices
 
     @classmethod
@@ -695,6 +737,7 @@ QTableWidget::item:hover {{
         cls,
         file_path: str,
         best_prices: list[float | None],
+        ratings: list[float | None] | None = None,
     ) -> str:
         workbook = load_workbook(file_path)
         try:
@@ -702,16 +745,39 @@ QTableWidget::item:hover {{
             sheet_copy = workbook.copy_worksheet(sheet_original)
             sheet_copy.title = "Обновленный расчет"
 
-            new_col_index = sheet_copy.max_column + 1
-            sheet_copy.cell(row=1, column=new_col_index).value = "Лучшая цена"
-            sheet_copy.column_dimensions[get_column_letter(new_col_index)].width = 18
+            real_rating_col = sheet_copy.max_column + 1
+            best_price_col = sheet_copy.max_column + 2
+            formula_col = sheet_copy.max_column + 3
+            best_price_letter = get_column_letter(best_price_col)
+
+            sheet_copy.cell(row=1, column=real_rating_col).value = "Рейтинг (таблица)"
+            sheet_copy.cell(row=1, column=best_price_col).value = "Лучшая цена за ед."
+            sheet_copy.cell(row=1, column=formula_col).value = "Рейтинг"
+            for column_letter in (
+                get_column_letter(formula_col),
+                best_price_letter,
+                get_column_letter(real_rating_col),
+            ):
+                sheet_copy.column_dimensions[column_letter].width = 18
 
             start_row = 2
-            for index, price in enumerate(best_prices):
+            rating_values = ratings or []
+            for index, best_price in enumerate(best_prices):
                 excel_row = start_row + index
-                if price is not None:
-                    sheet_copy.cell(row=excel_row, column=new_col_index).value = price
 
+                rating = rating_values[index] if index < len(rating_values) else None
+                if rating is not None:
+                    sheet_copy.cell(row=excel_row, column=real_rating_col).value = rating
+
+                if best_price is not None:
+                    sheet_copy.cell(row=excel_row, column=best_price_col).value = best_price
+
+                formula = f"={best_price_letter}{excel_row}/J{excel_row}"
+                sheet_copy.cell(row=excel_row, column=formula_col).value = formula
+
+            workbook.calculation.calcMode = "auto"
+            workbook.calculation.fullCalcOnLoad = True
+            workbook.calculation.forceFullCalc = True
             workbook.save(file_path)
             return sheet_copy.title
         finally:
@@ -731,10 +797,11 @@ QTableWidget::item:hover {{
             return
 
         try:
-            best_prices = self._extract_retrade_best_prices(table)
+            ratings, best_prices = self._extract_retrade_ratings_and_best_prices(table)
             sheet_title = self._write_best_prices_to_calculations_file(
                 calculations_file_path,
                 best_prices,
+                ratings=ratings,
             )
         except Exception as exc:
             error_text = f"Не удалось обновить расчет: {exc}"
