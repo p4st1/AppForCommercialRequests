@@ -2,6 +2,7 @@ from PySide6.QtCore import Qt, QSignalBlocker
 from PySide6.QtWidgets import QMessageBox
 
 from app.models.calculation_models import CalculationRowInput, CalculationSettings
+from app.ui.table_autosize import resize_table_to_contents
 from config import Config
 from tools import DatabaseTools as Tool
 
@@ -89,6 +90,7 @@ class CalculationFlowMixin:
             )
         del blocker
         self._apply_table_filters()
+        resize_table_to_contents(self.ui.KpTable)
         self._update_total_tab_table()
 
     def logisticVarChanged(self, _):

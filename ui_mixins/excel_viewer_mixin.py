@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from tools import DatabaseTools as Tool
 
 try:
@@ -95,6 +96,7 @@ class ExcelViewerMixin:
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         table.setAlternatingRowColors(True)
         table.setSortingEnabled(False)
+        configure_table_autosize(table)
         table.setRowCount(1)
         table.setColumnCount(1)
         table.setHorizontalHeaderLabels(["Статус"])
@@ -162,8 +164,7 @@ class ExcelViewerMixin:
         finally:
             table.setUpdatesEnabled(True)
 
-        table.resizeColumnsToContents()
-        table.resizeRowsToContents()
+        resize_table_to_contents(table)
 
         status_bar = self.statusBar()
         if status_bar is not None:

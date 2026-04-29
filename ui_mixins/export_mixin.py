@@ -13,6 +13,7 @@ from PySide6.QtUiTools import loadUiType
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 
+from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from config import Config
 from services.excel_processor import ExcelProcessor
 from services.trade_exporter import TradeExporter
@@ -143,12 +145,21 @@ class ExportMixin:
 
     @staticmethod
     def _auto_resize_columns(table: QTableWidget) -> None:
+        configure_table_autosize(table)
         table.resizeColumnsToContents()
         max_width = 400
         for column_index in range(table.columnCount()):
             width = table.columnWidth(column_index)
             if width > max_width:
                 table.setColumnWidth(column_index, max_width)
+        if table.columnCount() > 1:
+            table.horizontalHeader().setSectionResizeMode(
+                1,
+                QHeaderView.ResizeMode.Interactive,
+            )
+            table.setColumnWidth(1, 300)
+        table.resizeRowsToContents()
+        table.viewport().update()
 
     @classmethod
     def _normalize_table_bool_setting(cls, raw_value: Any, default: bool) -> bool:
@@ -229,7 +240,7 @@ class ExportMixin:
         table_font.setPixelSize(font_size)
         table.setFont(table_font)
 
-        row_height = max(24, table.fontMetrics().height() + 10)
+        row_height = 24
         vertical_header = table.verticalHeader()
         vertical_header.setMinimumSectionSize(row_height)
         vertical_header.setDefaultSectionSize(row_height)
@@ -243,11 +254,7 @@ class ExportMixin:
         header_height = max(28, horizontal_header.fontMetrics().height() + 12)
         horizontal_header.setFixedHeight(header_height)
 
-        if table.rowCount() > 0:
-            table.resizeRowsToContents()
-            for row_index in range(table.rowCount()):
-                if table.rowHeight(row_index) < row_height:
-                    table.setRowHeight(row_index, row_height)
+        configure_table_autosize(table, min_row_height=row_height)
 
     @classmethod
     def apply_table_settings(cls, table: QTableWidget) -> None:
@@ -301,10 +308,16 @@ QTableWidget::item:hover {{
         vertical_header.setVisible(False)
 
         horizontal_header = table.horizontalHeader()
-        horizontal_header.setStretchLastSection(True)
+        horizontal_header.setStretchLastSection(False)
         horizontal_header.setDefaultAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
+        horizontal_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        if table.columnCount() > 1:
+            horizontal_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+            table.setColumnWidth(1, 300)
+        if table.rowCount() > 0:
+            resize_table_to_contents(table)
 
     def _apply_main_table_font_settings(self) -> None:
         table = getattr(getattr(self, "ui", None), "KpTable", None)
@@ -463,25 +476,29 @@ QTableWidget::item:hover {{
             raise RuntimeError("Таблица Переторжка не найдена")
 
         rows = [list(row or []) for row in data]
-        rows_count = len(rows)
-        cols_count = max((len(row) for row in rows), default=0)
+        headers = rows[0] if rows else []
+        data_rows = rows[1:] if rows else []
+        cols_count = max(
+            [len(headers), *(len(row) for row in data_rows)],
+            default=0,
+        )
 
         self._configure_excel_like_table(table)
         table.clear()
-        table.setRowCount(rows_count)
         table.setColumnCount(cols_count)
+        table.setRowCount(len(data_rows))
 
-        if rows_count > 0 and cols_count > 0:
-            headers = [
+        if cols_count > 0:
+            header_labels = [
                 "" if value is None else str(value)
-                for value in rows[0]
+                for value in headers
             ]
-            if len(headers) < cols_count:
-                headers.extend("" for _ in range(cols_count - len(headers)))
-            table.setHorizontalHeaderLabels(headers[:cols_count])
+            if len(header_labels) < cols_count:
+                header_labels.extend("" for _ in range(cols_count - len(header_labels)))
+            table.setHorizontalHeaderLabels(header_labels[:cols_count])
 
-        for row_index, row_values in enumerate(rows):
-            for col_index, cell_value in enumerate(row_values):
+        for row_index, row_values in enumerate(data_rows):
+            for col_index, cell_value in enumerate(row_values[:cols_count]):
                 text = "" if cell_value is None else str(cell_value)
                 item = QTableWidgetItem(text)
                 if self._is_numeric_table_value(cell_value):
@@ -494,8 +511,7 @@ QTableWidget::item:hover {{
                     )
                 table.setItem(row_index, col_index, item)
 
-        table.resizeRowsToContents()
-        table.resizeColumnsToContents()
+        resize_table_to_contents(table)
 
     def load_retrade_excel(self) -> None:
         default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
@@ -1070,8 +1086,7 @@ QTableWidget::item:hover {{
                     if currency:
                         item.setToolTip(f"Валюта: {currency}")
                     table.setItem(row_index, col_index, item)
-            table.resizeRowsToContents()
-            self._auto_resize_columns(table)
+            resize_table_to_contents(table)
 
         totals_data = totals or {}
         totals_currency_data = totals_currency or {}
@@ -1580,8 +1595,7 @@ QTableWidget::item:hover {{
                     )
                 table.setItem(row_index, col_index, item)
 
-        table.resizeRowsToContents()
-        self._auto_resize_columns(table)
+        resize_table_to_contents(table)
         self._log_ui(f"Строк: {len(df)}")
 
     def _activate_retrade_tab(self) -> None:

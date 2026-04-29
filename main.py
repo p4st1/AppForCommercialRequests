@@ -91,6 +91,7 @@ from app.ui.table_item_mixin import TableItemMixin
 from app.ui.vat_mixin import VatMixin
 from app.ui.history_flow_mixin import HistoryFlowMixin
 from app.ui.maintenance_actions_mixin import MaintenanceActionsMixin
+from app.ui.table_autosize import resize_table_to_contents
 from app.ui.ui_feedback_mixin import UiFeedbackMixin
 from app.ui.window_navigation_mixin import WindowNavigationMixin
 from ui_mixins.excel_viewer_mixin import ExcelViewerMixin
@@ -289,7 +290,7 @@ class mainWindow(
                 self._capture_state_before_cell_edit,
             )
         )
-        self.ui.KpTable.resizeColumnsToContents()
+        resize_table_to_contents(self.ui.KpTable)
         self._setup_table_quick_search()
         self._setup_shortcuts()
         self._init_table_filters()

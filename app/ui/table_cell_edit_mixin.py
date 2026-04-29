@@ -1,5 +1,6 @@
 from PySide6.QtCore import QSignalBlocker
 
+from app.ui.table_autosize import resize_table_to_contents
 from config import Config
 from tools import DatabaseTools as Tool
 
@@ -98,5 +99,6 @@ class TableCellEditMixin:
             self._restore_edited_cell(row, col)
             del blocker
         self._apply_table_filters()
+        resize_table_to_contents(self.ui.KpTable)
         if needs_manual_summary_refresh:
             self._update_total_tab_table()

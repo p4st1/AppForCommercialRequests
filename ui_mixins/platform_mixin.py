@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from config import Config
 from services.auth_service import AuthService
 from services.platform_client import MetalITClient
@@ -470,6 +471,7 @@ class PlatformMixin:
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        configure_table_autosize(table)
 
     @staticmethod
     def _normalize_cookies(raw: Any) -> dict[str, str]:
@@ -850,6 +852,7 @@ class PlatformMixin:
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        configure_table_autosize(table)
 
     def _setup_retrade_offers_table(self) -> None:
         table = self.table_retrade_offers
@@ -869,6 +872,7 @@ class PlatformMixin:
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        configure_table_autosize(table)
 
     def populate_retrades_table(self, retrades: list[dict[str, Any]]) -> None:
         table = self.table_retrades
@@ -901,8 +905,7 @@ class PlatformMixin:
                 table.setItem(row_idx, col_idx, item)
 
         del blocker
-        table.resizeRowsToContents()
-        table.resizeColumnsToContents()
+        resize_table_to_contents(table)
 
     def populate_retrade_offers_table(self, offers: list[dict[str, Any]]) -> None:
         table = self.table_retrade_offers
@@ -932,8 +935,7 @@ class PlatformMixin:
                 table.setItem(row_idx, col_idx, item)
 
         del blocker
-        table.resizeRowsToContents()
-        table.resizeColumnsToContents()
+        resize_table_to_contents(table)
 
     def on_retrade_selection_changed(self) -> None:
         table = self.table_retrades
@@ -1048,8 +1050,7 @@ class PlatformMixin:
 
         del blocker
         table.setSortingEnabled(sorting_enabled)
-        table.resizeRowsToContents()
-        table.resizeColumnsToContents()
+        resize_table_to_contents(table)
 
     def on_trade_double_click(self, item: QTableWidgetItem) -> None:
         row = item.row()

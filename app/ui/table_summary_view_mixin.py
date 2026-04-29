@@ -1,6 +1,8 @@
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableWidgetItem
 
+from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
+
 
 class TableSummaryViewMixin:
     def _setup_total_tab_table(self):
@@ -15,10 +17,12 @@ class TableSummaryViewMixin:
         table.setSortingEnabled(False)
         table.verticalHeader().setVisible(False)
         table.horizontalHeader().setStretchLastSection(False)
+        configure_table_autosize(table)
 
         header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        table.setColumnWidth(1, 300)
         for col in range(2, len(self.SUMMARY_HEADERS)):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
@@ -33,4 +37,4 @@ class TableSummaryViewMixin:
             for col_idx, value in enumerate(row_data):
                 table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
         del blocker
-        table.resizeRowsToContents()
+        resize_table_to_contents(table)

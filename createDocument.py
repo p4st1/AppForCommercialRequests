@@ -17,6 +17,7 @@ from app.repositories.offer_repository import OfferRepository
 from app.repositories.customer_repository import CustomerRepository
 from app.services.customer_service import CustomerService
 from app.services.history_service import HistoryService
+from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from database import Database
 from config import Config
 from create import createTextFile as exportTextFile
@@ -86,11 +87,13 @@ class mainWindow(QMainWindow):
         summary.setAlternatingRowColors(True)
         summary.setSortingEnabled(False)
         summary.verticalHeader().setVisible(False)
+        configure_table_autosize(summary)
 
         header = summary.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        summary.setColumnWidth(1, 300)
         for col in range(2, self.SUMMARY_COLUMNS):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
@@ -127,8 +130,7 @@ class mainWindow(QMainWindow):
                 value = row_data[col] if col < len(row_data) else ""
                 table.setItem(row, col, QTableWidgetItem(str(value)))
         del blocker
-        table.resizeColumnsToContents()
-        table.resizeRowsToContents()
+        resize_table_to_contents(table)
 
     def _setup_field_placeholders(self):
         self.ui.numLine.setPlaceholderText("Например: 24-2026")

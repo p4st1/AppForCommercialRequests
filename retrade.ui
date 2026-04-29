@@ -10,7 +10,7 @@
     <height>700</height>
    </rect>
   </property>
-  <layout class="QVBoxLayout" name="retradeLayout" stretch="1,0">
+  <layout class="QVBoxLayout" name="retradeLayout" stretch="0,1,0">
    <property name="spacing">
     <number>0</number>
    </property>
@@ -26,6 +26,45 @@
    <property name="bottomMargin">
     <number>0</number>
    </property>
+   <item>
+    <layout class="QHBoxLayout" name="retrade_top_controls_layout">
+     <property name="spacing">
+      <number>6</number>
+     </property>
+     <property name="leftMargin">
+      <number>0</number>
+     </property>
+     <property name="topMargin">
+      <number>0</number>
+     </property>
+     <property name="rightMargin">
+      <number>0</number>
+     </property>
+     <property name="bottomMargin">
+      <number>0</number>
+     </property>
+     <item>
+      <widget class="QPushButton" name="btn_load_retrade_excel">
+       <property name="text">
+        <string>Загрузить Excel</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="retradeTopControlsSpacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
    <item>
     <widget class="QTabWidget" name="retrade_inner_tabs">
      <property name="sizePolicy">
@@ -318,13 +357,6 @@
       <widget class="QPushButton" name="btn_open_retrade_calculations">
        <property name="text">
         <string>Открыть расчеты</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="btn_load_retrade_excel">
-       <property name="text">
-        <string>Загрузить Excel</string>
        </property>
       </widget>
      </item>

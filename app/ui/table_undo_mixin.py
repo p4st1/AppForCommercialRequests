@@ -1,5 +1,6 @@
 from PySide6.QtCore import QSignalBlocker
 
+from app.ui.table_autosize import resize_table_to_contents
 from config import Config
 
 
@@ -65,6 +66,7 @@ class TableUndoMixin:
         self.mixedCurrencyWarningShown = bool(state.get("mixed_currency_warning", False))
         Config.isTableOpened = self.rows > 0
         self._apply_table_filters()
+        resize_table_to_contents(table)
         self._update_total_tab_table()
 
     def _undo_last_table_change(self):

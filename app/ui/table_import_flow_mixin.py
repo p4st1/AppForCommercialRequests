@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
+from app.ui.table_autosize import resize_table_to_contents
 from config import Config
 from tools import DatabaseTools as Tool
 
@@ -80,7 +81,7 @@ class TableImportFlowMixin:
         self.mixedCurrencyWarningShown = False
         self.logisticCalculate()
         self.calculating()
-        self.ui.KpTable.resizeColumnsToContents()
+        resize_table_to_contents(self.ui.KpTable)
         self._apply_table_filters()
 
         Config.config["lastTable"] = filename

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from tools import DatabaseTools as Tool
 
 
@@ -67,16 +68,20 @@ class HistoryFlowMixin:
         table.setSortingEnabled(False)
         table.verticalHeader().setVisible(False)
         table.horizontalHeader().setStretchLastSection(False)
+        configure_table_autosize(table, text_columns={3: 180, 4: 180, 7: 300})
 
         header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)
+        table.setColumnWidth(3, 180)
+        table.setColumnWidth(4, 180)
+        table.setColumnWidth(7, 300)
 
     def _history_event_name(self, event_type: str) -> str:
         return self.history_service.event_name(event_type)
@@ -312,7 +317,7 @@ class HistoryFlowMixin:
                 table.setItem(row_idx, col_idx, item)
 
         del blocker
-        table.resizeRowsToContents()
+        resize_table_to_contents(table, text_columns={3: 180, 4: 180, 7: 300})
 
     def _openHistoryFile(self, item):
         if item is None or not hasattr(self.ui, "historyTable"):
@@ -322,4 +327,3 @@ class HistoryFlowMixin:
         meta = self._history_row_meta(row)
         file_path = str(meta.get("file_path", "") or "").strip()
         self._open_history_file_path(file_path)
-

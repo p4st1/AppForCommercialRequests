@@ -2,6 +2,8 @@ import platform
 
 from PySide6.QtWidgets import QFrame, QPushButton, QTableWidget, QWidget
 
+from app.ui.table_autosize import configure_table_autosize
+
 
 PRIMARY_BUTTONS = {
     "acceptButton",
@@ -559,6 +561,7 @@ def _clear_inline_styles(window: QWidget):
 def _mark_widget_roles(window: QWidget):
     for table in window.findChildren(QTableWidget):
         table.setAlternatingRowColors(True)
+        configure_table_autosize(table)
 
     for frame in window.findChildren(QFrame):
         shape = frame.frameShape()
