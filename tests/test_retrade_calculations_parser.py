@@ -305,6 +305,151 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             "N/A",
         )
 
+    def test_parse_number_accepts_currency_and_decimal_comma(self):
+        self.assertEqual(ExportMixin.parse_number("30 033,85 ₽"), 30033.85)
+        self.assertEqual(ExportMixin.parse_number("1,25"), 1.25)
+        self.assertEqual(ExportMixin.parse_number(None), 0.0)
+
+    def test_calculate_updated_position_prices_uses_corrected_rating(self):
+        updates, sale_price_col = ExportMixin._calculate_updated_position_prices(
+            [
+                "№",
+                "Цена за ед. без НДС",
+                "Скорректированный рейтинг",
+                "Цена реализации за ед. без НДС",
+            ],
+            [
+                [
+                    {"value": 1, "currency": None},
+                    {"value": "30 033,85 ₽", "currency": "RUB"},
+                    {"value": "1,25", "currency": None},
+                    {"value": None, "currency": "RUB"},
+                ],
+                [
+                    {"value": 2, "currency": None},
+                    {"value": "", "currency": None},
+                    {"value": "1,10", "currency": None},
+                    {"value": None, "currency": None},
+                ],
+            ],
+        )
+
+        self.assertEqual(sale_price_col, 3)
+        self.assertEqual(
+            updates,
+            [{"row": 0, "value": 37542.31, "currency": "RUB"}],
+        )
+
+    def test_calculate_updated_position_prices_requires_columns(self):
+        with self.assertRaises(ValueError) as context:
+            ExportMixin._calculate_updated_position_prices(["№"], [])
+
+        message = str(context.exception)
+        self.assertIn("Цена за ед. без НДС", message)
+        self.assertIn("Скорректированный рейтинг", message)
+
+    def test_formula_update_row_indices_do_not_require_rating_value(self):
+        row_indices = ExportMixin._formula_update_row_indices(
+            [
+                "№",
+                "Цена за ед. без НДС",
+                "Скорректированный рейтинг",
+                "Цена реализации за ед. без НДС",
+            ],
+            [
+                [
+                    {"value": 1, "currency": None},
+                    {"value": 81, "currency": "RUB"},
+                    {"value": None, "currency": None},
+                    {"value": None, "currency": "RUB"},
+                ],
+                [
+                    {"value": 2, "currency": None},
+                    {"value": "", "currency": None},
+                    {"value": None, "currency": None},
+                    {"value": None, "currency": "RUB"},
+                ],
+            ],
+        )
+
+        self.assertEqual(row_indices, [0])
+
+    def test_write_realization_price_formulas_to_sheet(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        headers = [f"Колонка {index}" for index in range(1, 20)]
+        headers[9] = "Цена за ед. без НДС"
+        headers[10] = "Цена реализации за ед. без НДС"
+        headers[18] = "Скорректированный рейтинг"
+        worksheet.append(headers)
+        worksheet.append([None for _ in headers])
+        worksheet.append([None for _ in headers])
+        worksheet.append([None for _ in headers])
+
+        formulas = ExportMixin._write_realization_price_formulas_to_sheet(
+            worksheet,
+            [0, 2],
+        )
+
+        self.assertEqual(
+            formulas,
+            {
+                0: "=ROUND(J2*S2, 2)",
+                2: "=ROUND(J4*S4, 2)",
+            },
+        )
+        self.assertEqual(worksheet.cell(row=2, column=11).value, "=ROUND(J2*S2, 2)")
+        self.assertIsNone(worksheet.cell(row=3, column=11).value)
+        self.assertEqual(worksheet.cell(row=4, column=11).value, "=ROUND(J4*S4, 2)")
+
+    def test_write_update_position_formulas_to_current_file_saves_workbook(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "calc.xlsx"
+            workbook = Workbook()
+            worksheet = workbook.active
+            worksheet.title = "Рассчеты"
+            headers = [f"Колонка {index}" for index in range(1, 20)]
+            headers[9] = "Цена за ед. без НДС"
+            headers[10] = "Цена реализации за ед. без НДС"
+            headers[18] = "Скорректированный рейтинг"
+            worksheet.append(headers)
+            worksheet.append([None for _ in headers])
+            worksheet.append([None for _ in headers])
+            workbook.save(file_path)
+
+            mixin = ExportMixin()
+            mixin.calculations_file_path = str(file_path)
+            mixin.current_calculations_sheet_name = "Рассчеты"
+
+            formulas = mixin._write_update_position_formulas_to_current_calculations_file(
+                [0, 1]
+            )
+
+            self.assertEqual(
+                formulas,
+                {
+                    0: "=ROUND(J2*S2, 2)",
+                    1: "=ROUND(J3*S3, 2)",
+                },
+            )
+
+            result_workbook = load_workbook(file_path, data_only=False)
+            try:
+                result_sheet = result_workbook["Рассчеты"]
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=11).value,
+                    "=ROUND(J2*S2, 2)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=3, column=11).value,
+                    "=ROUND(J3*S3, 2)",
+                )
+                self.assertEqual(result_workbook.calculation.calcMode, "auto")
+                self.assertTrue(result_workbook.calculation.fullCalcOnLoad)
+                self.assertTrue(result_workbook.calculation.forceFullCalc)
+            finally:
+                result_workbook.close()
+
     def test_extract_best_prices_uses_header_and_parses_currency(self):
         table = _FakeRetradeTable(
             ["Наименование", "Лучшая цена за ед."],
@@ -341,6 +486,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         worksheet.title = "Расчет"
         headers = [f"Колонка {index}" for index in range(1, 16)]
         headers[9] = "Цена за ед."
+        headers[10] = "Цена реализации за ед. без НДС"
         first_row = [None for _ in headers]
         first_row[0] = "Двигатель"
         first_row[9] = 100
@@ -376,6 +522,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 best_price_col_index = 17
                 formula_col_index = 18
                 corrected_rating_col_index = 19
+                realization_price_col_index = 11
 
                 self.assertEqual(
                     result_sheet.cell(row=1, column=real_rating_col_index).value,
@@ -441,6 +588,18 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 self.assertEqual(
                     result_sheet.cell(row=4, column=corrected_rating_col_index).value,
                     "=IF(R4-0.02<1.15,1.15,R4-0.02)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=realization_price_col_index).value,
+                    "=ROUND(J2*S2, 2)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=3, column=realization_price_col_index).value,
+                    "=ROUND(J3*S3, 2)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=4, column=realization_price_col_index).value,
+                    "=ROUND(J4*S4, 2)",
                 )
                 self.assertEqual(
                     result_sheet.column_dimensions[get_column_letter(formula_col_index)].width,

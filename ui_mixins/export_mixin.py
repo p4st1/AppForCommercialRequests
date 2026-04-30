@@ -662,6 +662,12 @@ QTableWidget::indicator {{
         self.roundingInput.setRange(0, 6)
         self.roundingInput.setValue(2)
 
+        self.btn_update_retrade_positions = QPushButton(
+            "Обновить позиции",
+            controls_widget,
+        )
+        self.btn_update_retrade_positions.setObjectName("btn_update_retrade_positions")
+
         controlsLayout.addWidget(self.minMarginLabel)
         controlsLayout.addWidget(self.minMarginInput)
         controlsLayout.addSpacing(20)
@@ -672,6 +678,7 @@ QTableWidget::indicator {{
         controlsLayout.addSpacing(20)
         controlsLayout.addWidget(self.roundingLabel)
         controlsLayout.addWidget(self.roundingInput)
+        controlsLayout.addWidget(self.btn_update_retrade_positions)
         controlsLayout.addStretch()
 
         container_layout.insertWidget(0, controls_widget)
@@ -685,6 +692,7 @@ QTableWidget::indicator {{
         self.ui.allPositionsCheckbox = self.allPositionsCheckbox
         self.ui.roundingLabel = self.roundingLabel
         self.ui.roundingInput = self.roundingInput
+        self.ui.btn_update_retrade_positions = self.btn_update_retrade_positions
 
         self.minMarginInput.valueChanged.connect(
             self._save_retrade_calculation_settings
@@ -699,6 +707,9 @@ QTableWidget::indicator {{
             self.on_positions_mode_changed
         )
         self.roundingInput.valueChanged.connect(self.refresh_table)
+        self.btn_update_retrade_positions.clicked.connect(
+            self.update_retrade_positions
+        )
 
     def get_min_margin(self) -> float:
         input_widget = getattr(self, "minMarginInput", None)
@@ -1489,6 +1500,85 @@ QTableWidget::indicator {{
         return f"{float(value):.12g}"
 
     @classmethod
+    def _find_worksheet_column_by_header(
+        cls,
+        worksheet: Any,
+        predicate: Any,
+    ) -> int | None:
+        if worksheet.max_row < 1:
+            return None
+
+        for header_cell in worksheet[1]:
+            header_text = cls._normalize_table_header(header_cell.value)
+            if predicate(header_text):
+                return int(header_cell.column)
+        return None
+
+    @staticmethod
+    def _enable_workbook_formula_recalculation(workbook: Any) -> None:
+        workbook.calculation.calcMode = "auto"
+        workbook.calculation.fullCalcOnLoad = True
+        workbook.calculation.forceFullCalc = True
+
+    @classmethod
+    def _write_realization_price_formulas_to_sheet(
+        cls,
+        worksheet: Any,
+        row_indices: list[int],
+    ) -> dict[int, str]:
+        realization_price_col = cls._find_worksheet_column_by_header(
+            worksheet,
+            lambda header: (
+                "реализац" in header
+                and "цена" in header
+                and "заед" in header
+                and "безндс" in header
+            ),
+        )
+        if realization_price_col is None:
+            raise ValueError('Не найдена колонка "Цена реализации за ед. без НДС"')
+
+        source_price_col = cls._find_worksheet_column_by_header(
+            worksheet,
+            lambda header: (
+                "ценазаедбезндс" in header
+                or (
+                    "цена" in header
+                    and "заед" in header
+                    and "безндс" in header
+                    and "реализац" not in header
+                    and "предлага" not in header
+                )
+            ),
+        )
+        corrected_rating_col = cls._find_worksheet_column_by_header(
+            worksheet,
+            lambda header: "скоррект" in header and "рейтинг" in header,
+        )
+
+        source_price_letter = get_column_letter(source_price_col or 10)
+        corrected_rating_letter = get_column_letter(corrected_rating_col or 19)
+        formulas: dict[int, str] = {}
+
+        for row_index_raw in row_indices:
+            try:
+                row_index = int(row_index_raw)
+            except Exception:
+                continue
+            if row_index < 0:
+                continue
+
+            excel_row = row_index + 2
+            formula = (
+                f"=ROUND({source_price_letter}{excel_row}*"
+                f"{corrected_rating_letter}{excel_row}, 2)"
+            )
+            worksheet.cell(row=excel_row, column=realization_price_col).value = formula
+            formulas[row_index] = formula
+
+        return formulas
+
+    @classmethod
     def _extract_retrade_ratings_and_best_prices(
         cls,
         table: Any,
@@ -1543,6 +1633,20 @@ QTableWidget::indicator {{
             formula_col = original_max_col + 3
             corrected_rating_col = original_max_col + 4
             best_price_letter = get_column_letter(best_price_col)
+            corrected_rating_letter = get_column_letter(corrected_rating_col)
+            realization_price_col = cls._find_worksheet_column_by_header(
+                sheet_copy,
+                lambda header: (
+                    "реализац" in header
+                    and "цена" in header
+                    and "заед" in header
+                    and "безндс" in header
+                ),
+            )
+            if realization_price_col is None:
+                raise ValueError(
+                    'Не найдена колонка "Цена реализации за ед. без НДС"'
+                )
             min_margin_value = (
                 cls.RETRADE_MIN_MARGIN_DEFAULT if min_margin is None else min_margin
             )
@@ -1593,10 +1697,14 @@ QTableWidget::indicator {{
                     row=excel_row,
                     column=corrected_rating_col,
                 ).value = corrected_formula
+                sheet_copy.cell(
+                    row=excel_row,
+                    column=realization_price_col,
+                ).value = (
+                    f"=ROUND(J{excel_row}*{corrected_rating_letter}{excel_row}, 2)"
+                )
 
-            workbook.calculation.calcMode = "auto"
-            workbook.calculation.fullCalcOnLoad = True
-            workbook.calculation.forceFullCalc = True
+            cls._enable_workbook_formula_recalculation(workbook)
             workbook.save(file_path)
             return sheet_copy.title
         finally:
@@ -1787,6 +1895,53 @@ QTableWidget::indicator {{
             return None
 
     @staticmethod
+    def parse_number(value: Any) -> float:
+        if value is None:
+            return 0.0
+        if isinstance(value, str):
+            value = (
+                value.replace("\xa0", " ")
+                .replace(" ", "")
+                .replace("₽", "")
+                .replace("руб", "")
+                .replace("RUB", "")
+                .replace("rub", "")
+                .replace("$", "")
+                .replace("€", "")
+                .replace("¥", "")
+                .replace(",", ".")
+            )
+        try:
+            return float(value)
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _is_empty_number_value(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            text = (
+                value.replace("\xa0", " ")
+                .replace(" ", "")
+                .replace("₽", "")
+                .replace("руб", "")
+                .replace("RUB", "")
+                .replace("rub", "")
+                .replace("$", "")
+                .replace("€", "")
+                .replace("¥", "")
+                .strip()
+            )
+            return not text
+        return False
+
+    @staticmethod
+    def _normalize_table_header(value: Any) -> str:
+        text = str(value or "").strip().casefold().replace("ё", "е")
+        return re.sub(r"[^a-zа-я0-9]+", "", text)
+
+    @staticmethod
     def _is_numeric_table_value(value: Any) -> bool:
         if value is None or isinstance(value, bool):
             return False
@@ -1878,6 +2033,147 @@ QTableWidget::indicator {{
             if any(keyword in lowered_header for keyword in keywords):
                 return index
         return None
+
+    @classmethod
+    def _find_update_positions_column(
+        cls,
+        headers: list[Any],
+        kind: str,
+    ) -> int | None:
+        for index, header in enumerate(headers):
+            normalized = cls._normalize_table_header(header)
+            if not normalized:
+                continue
+
+            if kind == "source_price":
+                if (
+                    "ценазаедбезндс" in normalized
+                    or (
+                        "цена" in normalized
+                        and "заед" in normalized
+                        and "безндс" in normalized
+                        and "реализац" not in normalized
+                        and "предлага" not in normalized
+                    )
+                ):
+                    return index
+            elif kind == "corrected_rating":
+                if "скоррект" in normalized and "рейтинг" in normalized:
+                    return index
+            elif kind == "sale_price":
+                if "реализац" in normalized and "цена" in normalized and "заед" in normalized:
+                    return index
+            elif kind == "proposal_price":
+                if "предлага" in normalized and "цена" in normalized and "заед" in normalized:
+                    return index
+        return None
+
+    @classmethod
+    def _get_update_positions_columns(
+        cls,
+        headers: list[Any],
+    ) -> dict[str, int | None]:
+        return {
+            "source_price": cls._find_update_positions_column(headers, "source_price"),
+            "corrected_rating": cls._find_update_positions_column(headers, "corrected_rating"),
+            "sale_price": cls._find_update_positions_column(headers, "sale_price"),
+        }
+
+    @staticmethod
+    def _cell_payload_value(cell: Any) -> Any:
+        if isinstance(cell, dict):
+            return cell.get("value")
+        return cell
+
+    @staticmethod
+    def _cell_payload_currency(cell: Any) -> str | None:
+        if isinstance(cell, dict):
+            return cell.get("currency")
+        return None
+
+    @classmethod
+    def _calculate_updated_position_prices(
+        cls,
+        headers: list[Any],
+        rows: list[list[Any]],
+    ) -> tuple[list[dict[str, Any]], int]:
+        columns = cls._get_update_positions_columns(headers)
+        missing = []
+        if columns["source_price"] is None:
+            missing.append("Цена за ед. без НДС")
+        if columns["corrected_rating"] is None:
+            missing.append("Скорректированный рейтинг")
+        if columns["sale_price"] is None:
+            missing.append("Цена реализации за ед. без НДС")
+        if missing:
+            raise ValueError("Не найдены колонки: " + ", ".join(missing))
+
+        source_price_col = int(columns["source_price"])
+        corrected_rating_col = int(columns["corrected_rating"])
+        sale_price_col = int(columns["sale_price"])
+        updates: list[dict[str, Any]] = []
+
+        for row_index, row in enumerate(rows):
+            row_values = list(row or [])
+            price_cell = (
+                row_values[source_price_col]
+                if source_price_col < len(row_values)
+                else None
+            )
+            coef_cell = (
+                row_values[corrected_rating_col]
+                if corrected_rating_col < len(row_values)
+                else None
+            )
+            target_cell = (
+                row_values[sale_price_col]
+                if sale_price_col < len(row_values)
+                else None
+            )
+            price_raw = cls._cell_payload_value(price_cell)
+            coef_raw = cls._cell_payload_value(coef_cell)
+
+            if cls._is_empty_number_value(price_raw) or cls._is_empty_number_value(coef_raw):
+                continue
+
+            new_price = round(cls.parse_number(price_raw) * cls.parse_number(coef_raw), 2)
+            updates.append(
+                {
+                    "row": row_index,
+                    "value": new_price,
+                    "currency": (
+                        cls._cell_payload_currency(price_cell)
+                        or cls._cell_payload_currency(target_cell)
+                        or cls._cell_payload_currency(coef_cell)
+                    ),
+                }
+            )
+
+        return updates, sale_price_col
+
+    @classmethod
+    def _formula_update_row_indices(
+        cls,
+        headers: list[Any],
+        rows: list[list[Any]],
+    ) -> list[int]:
+        columns = cls._get_update_positions_columns(headers)
+        if columns["source_price"] is None:
+            return []
+
+        source_price_col = int(columns["source_price"])
+        row_indices: list[int] = []
+        for row_index, row in enumerate(rows):
+            row_values = list(row or [])
+            price_cell = (
+                row_values[source_price_col]
+                if source_price_col < len(row_values)
+                else None
+            )
+            price_raw = cls._cell_payload_value(price_cell)
+            if not cls._is_empty_number_value(price_raw):
+                row_indices.append(row_index)
+        return row_indices
 
     @classmethod
     def _sum_retrade_column(
@@ -2210,6 +2506,288 @@ QTableWidget::indicator {{
             },
         }
         self._set_retrade_calculations_loaded_status(bool(headers or rows))
+
+    @classmethod
+    def _table_headers(cls, table: Any) -> list[str]:
+        try:
+            column_count = int(table.columnCount())
+        except Exception:
+            return []
+
+        headers: list[str] = []
+        header_getter = getattr(table, "horizontalHeaderItem", None)
+        for column_index in range(column_count):
+            header_item = header_getter(column_index) if callable(header_getter) else None
+            headers.append(cls._text_from_table_item(header_item))
+        return headers
+
+    @staticmethod
+    def _table_item_payload_value(item: Any) -> Any:
+        if item is None:
+            return None
+
+        data_getter = getattr(item, "data", None)
+        if callable(data_getter):
+            try:
+                payload = data_getter(Qt.ItemDataRole.UserRole)
+            except Exception:
+                payload = None
+            if isinstance(payload, dict):
+                return payload.get("value")
+            if payload is not None:
+                return payload
+
+        text_getter = getattr(item, "text", None)
+        if callable(text_getter):
+            return text_getter()
+        return None
+
+    @staticmethod
+    def _table_item_payload_currency(item: Any) -> str | None:
+        if item is None:
+            return None
+        data_getter = getattr(item, "data", None)
+        if not callable(data_getter):
+            return None
+        try:
+            payload = data_getter(Qt.ItemDataRole.UserRole)
+        except Exception:
+            return None
+        if isinstance(payload, dict):
+            return payload.get("currency")
+        return None
+
+    @classmethod
+    def _table_payload_rows(cls, table: Any) -> list[list[dict[str, Any]]]:
+        try:
+            row_count = int(table.rowCount())
+            column_count = int(table.columnCount())
+        except Exception:
+            return []
+
+        rows: list[list[dict[str, Any]]] = []
+        for row_index in range(row_count):
+            row: list[dict[str, Any]] = []
+            for column_index in range(column_count):
+                item = table.item(row_index, column_index)
+                row.append(
+                    {
+                        "value": cls._table_item_payload_value(item),
+                        "currency": cls._table_item_payload_currency(item),
+                    }
+                )
+            rows.append(row)
+        return rows
+
+    def _set_table_numeric_item(
+        self,
+        table: Any,
+        row: int,
+        column: int,
+        value: float,
+        *,
+        currency: str | None = None,
+        show_currency: bool = False,
+        formula: str | None = None,
+    ) -> None:
+        payload = {"value": value, "currency": currency}
+        if formula:
+            payload["formula"] = formula
+        if show_currency:
+            text = self._format_retrade_calculations_cell_for_display(payload)
+        else:
+            text = self._format_number_ru(value)
+
+        item = table.item(row, column)
+        if item is None:
+            item = QTableWidgetItem(text)
+            table.setItem(row, column, item)
+        else:
+            item.setText(text)
+
+        item.setData(Qt.ItemDataRole.UserRole, payload)
+        item.setTextAlignment(
+            int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        )
+        tooltip_parts = []
+        if currency:
+            tooltip_parts.append(f"Валюта: {currency}")
+        if formula:
+            tooltip_parts.append(f"Формула: {formula}")
+        item.setToolTip("\n".join(tooltip_parts))
+
+    def _update_retrade_calculations_data_price(
+        self,
+        row: int,
+        column: int,
+        value: float,
+        currency: str | None,
+        formula: str | None = None,
+    ) -> None:
+        data = getattr(self, "retrade_calculations_data", None)
+        if not isinstance(data, dict):
+            return
+        rows = data.get("rows")
+        if not isinstance(rows, list) or row >= len(rows):
+            return
+        row_values = rows[row]
+        if not isinstance(row_values, list):
+            return
+        while len(row_values) <= column:
+            row_values.append({"value": None, "currency": None})
+        cell = row_values[column]
+        if not isinstance(cell, dict):
+            row_values[column] = {"value": value, "currency": currency}
+            return
+        cell["value"] = value
+        if currency:
+            cell["currency"] = currency
+        if formula:
+            cell["formula"] = formula
+
+    def _write_update_position_formulas_to_current_calculations_file(
+        self,
+        row_indices: list[int],
+    ) -> dict[int, str]:
+        file_path = str(getattr(self, "calculations_file_path", "") or "").strip()
+        if not file_path:
+            raise ValueError("Файл расчетов не выбран")
+
+        workbook = load_workbook(file_path, data_only=False)
+        try:
+            sheet_name = str(
+                getattr(self, "current_calculations_sheet_name", "") or ""
+            )
+            if sheet_name and sheet_name in workbook.sheetnames:
+                worksheet = workbook[sheet_name]
+            else:
+                worksheet = workbook.worksheets[0]
+
+            formulas = self._write_realization_price_formulas_to_sheet(
+                worksheet,
+                row_indices,
+            )
+            self._enable_workbook_formula_recalculation(workbook)
+            workbook.save(file_path)
+            return formulas
+        finally:
+            workbook.close()
+
+    def update_retrade_positions(self) -> None:
+        calculations_table = getattr(self, "retrade_calculations_table", None)
+        if not isinstance(calculations_table, QTableWidget):
+            QMessageBox.warning(self, "Ошибка", "Таблица расчетов не найдена")
+            return
+
+        main_table = self._get_retrade_source_table()
+        if not isinstance(main_table, QTableWidget):
+            QMessageBox.warning(self, "Ошибка", "Основная таблица не найдена")
+            return
+
+        calculations_headers = self._table_headers(calculations_table)
+        calculations_rows = self._table_payload_rows(calculations_table)
+        main_headers = self._table_headers(main_table)
+        main_price_col = self._find_update_positions_column(
+            main_headers,
+            "proposal_price",
+        )
+        if main_price_col is None:
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                'Не найдена колонка "Предлагаемая цена за ед." в основной таблице',
+            )
+            return
+
+        try:
+            updates, sale_price_col = self._calculate_updated_position_prices(
+                calculations_headers,
+                calculations_rows,
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Ошибка", str(exc))
+            return
+
+        formula_row_indices = self._formula_update_row_indices(
+            calculations_headers,
+            calculations_rows,
+        )
+        if not formula_row_indices:
+            QMessageBox.information(
+                self,
+                "Обновить позиции",
+                "Нет строк с заполненной исходной ценой",
+            )
+            return
+
+        try:
+            formulas_by_row = (
+                self._write_update_position_formulas_to_current_calculations_file(
+                    formula_row_indices
+                )
+            )
+        except Exception as exc:
+            error_text = f"Не удалось обновить формулы в файле расчетов: {exc}"
+            Tool.write_log(error_text)
+            QMessageBox.warning(self, "Ошибка", error_text)
+            return
+
+        updated_count = 0
+        main_row_count = main_table.rowCount()
+        for update in updates:
+            row_index = int(update["row"])
+            if row_index >= main_row_count:
+                continue
+
+            new_price = float(update["value"])
+            currency = update.get("currency")
+            formula = formulas_by_row.get(row_index)
+            self._set_table_numeric_item(
+                calculations_table,
+                row_index,
+                sale_price_col,
+                new_price,
+                currency=currency,
+                show_currency=True,
+                formula=formula,
+            )
+            self._set_table_numeric_item(
+                main_table,
+                row_index,
+                int(main_price_col),
+                new_price,
+            )
+            self._update_retrade_calculations_data_price(
+                row_index,
+                sale_price_col,
+                new_price,
+                currency,
+                formula=formula,
+            )
+            updated_count += 1
+
+        resize_table_to_contents(calculations_table)
+        resize_table_to_contents(main_table)
+
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None:
+            status_bar.showMessage(
+                (
+                    f"Обновлено позиций: {updated_count}; "
+                    f"формулы сохранены: {len(formulas_by_row)}"
+                ),
+                5_000,
+            )
+        if updated_count == 0:
+            QMessageBox.information(
+                self,
+                "Обновить позиции",
+                (
+                    "Формулы сохранены в Excel. Для отображения чисел в таблицах "
+                    "нужны заполненные цена и скорректированный рейтинг."
+                ),
+            )
 
     def _set_retrade_calculations_loaded_status(self, is_loaded: bool) -> None:
         self.retrade_calculations_loaded = bool(is_loaded)
