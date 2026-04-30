@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +23,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -33,58 +33,9 @@ from PySide6.QtWidgets import (
 from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from config import Config
 from services.excel_processor import ExcelProcessor
+from services.excel_recalc import force_excel_recalc
 from services.trade_exporter import TradeExporter
 from tools import DatabaseTools as Tool
-
-
-def force_excel_recalc(file_path: str) -> None:
-    import platform
-
-    normalized_path = str(Path(file_path).expanduser().resolve())
-    system = platform.system()
-
-    if system == "Windows":
-        import win32com.client
-
-        excel = None
-        workbook = None
-        try:
-            excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
-            workbook = excel.Workbooks.Open(normalized_path)
-            excel.CalculateFull()
-            workbook.Save()
-        finally:
-            if workbook is not None:
-                workbook.Close(SaveChanges=True)
-            if excel is not None:
-                excel.Quit()
-        return
-
-    if system == "Darwin":
-        import subprocess
-
-        script = f'''
-        tell application "Microsoft Excel"
-            open POSIX file {json.dumps(normalized_path)}
-            calculate full
-            save active workbook
-            close active workbook
-        end tell
-        '''
-        try:
-            subprocess.run(
-                ["osascript", "-e", script],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            message = (exc.stderr or exc.stdout or str(exc)).strip()
-            raise RuntimeError(message) from exc
-        return
-
-    raise RuntimeError("Автопересчет Excel поддерживается только на Windows и macOS")
 
 
 class ExportTradeWorker(QThread):
@@ -150,6 +101,15 @@ class ExportMixin:
     RETRADE_MIN_MARGIN_DEFAULT = 1.1
     RETRADE_DELTA_PERCENT_DEFAULT = 2.0
     RETRADE_ROW_CHECKBOX_COLUMN_MARKER = "retrade_row_checkbox_column"
+    RETRADE_MIN_MARGIN_HIGHLIGHT_ROLE_OFFSET = 101
+    RETRADE_MIN_MARGIN_PREVIOUS_BACKGROUND_ROLE_OFFSET = 102
+    RETRADE_MIN_MARGIN_HIGHLIGHT_COLOR = QColor(198, 239, 206)
+    NO_FORMAT_COLUMNS = {
+        "каталожный номер",
+        "№",
+        "артикул",
+        "код",
+    }
     TABLE_SETTINGS_DEFAULTS = {
         "font_size": 13,
         "bg_color": "#ffffff",
@@ -696,6 +656,12 @@ QTableWidget::indicator {{
         self.allPositionsCheckbox.setObjectName("allPositionsCheckbox")
         self.allPositionsCheckbox.setChecked(True)
 
+        self.roundingLabel = QLabel("Знаков после запятой:", controls_widget)
+        self.roundingInput = QSpinBox(controls_widget)
+        self.roundingInput.setObjectName("roundingInput")
+        self.roundingInput.setRange(0, 6)
+        self.roundingInput.setValue(2)
+
         controlsLayout.addWidget(self.minMarginLabel)
         controlsLayout.addWidget(self.minMarginInput)
         controlsLayout.addSpacing(20)
@@ -703,6 +669,9 @@ QTableWidget::indicator {{
         controlsLayout.addWidget(self.deltaInput)
         controlsLayout.addSpacing(20)
         controlsLayout.addWidget(self.allPositionsCheckbox)
+        controlsLayout.addSpacing(20)
+        controlsLayout.addWidget(self.roundingLabel)
+        controlsLayout.addWidget(self.roundingInput)
         controlsLayout.addStretch()
 
         container_layout.insertWidget(0, controls_widget)
@@ -714,9 +683,14 @@ QTableWidget::indicator {{
         self.ui.deltaLabel = self.deltaLabel
         self.ui.deltaInput = self.deltaInput
         self.ui.allPositionsCheckbox = self.allPositionsCheckbox
+        self.ui.roundingLabel = self.roundingLabel
+        self.ui.roundingInput = self.roundingInput
 
         self.minMarginInput.valueChanged.connect(
             self._save_retrade_calculation_settings
+        )
+        self.minMarginInput.valueChanged.connect(
+            self._apply_min_margin_highlighting
         )
         self.deltaInput.valueChanged.connect(
             self._save_retrade_calculation_settings
@@ -724,6 +698,7 @@ QTableWidget::indicator {{
         self.allPositionsCheckbox.stateChanged.connect(
             self.on_positions_mode_changed
         )
+        self.roundingInput.valueChanged.connect(self.refresh_table)
 
     def get_min_margin(self) -> float:
         input_widget = getattr(self, "minMarginInput", None)
@@ -736,6 +711,136 @@ QTableWidget::indicator {{
         if isinstance(input_widget, QDoubleSpinBox):
             return float(input_widget.value())
         return self.RETRADE_DELTA_PERCENT_DEFAULT
+
+    def get_rounding(self) -> int:
+        input_widget = getattr(self, "roundingInput", None)
+        if isinstance(input_widget, QSpinBox):
+            return int(input_widget.value())
+        return 2
+
+    @staticmethod
+    def _qt_user_role_offset(offset: int) -> int:
+        user_role = Qt.ItemDataRole.UserRole
+        return int(getattr(user_role, "value", user_role)) + offset
+
+    @classmethod
+    def _min_margin_highlight_role(cls) -> int:
+        return cls._qt_user_role_offset(cls.RETRADE_MIN_MARGIN_HIGHLIGHT_ROLE_OFFSET)
+
+    @classmethod
+    def _min_margin_previous_background_role(cls) -> int:
+        return cls._qt_user_role_offset(
+            cls.RETRADE_MIN_MARGIN_PREVIOUS_BACKGROUND_ROLE_OFFSET
+        )
+
+    @staticmethod
+    def _background_role() -> Any:
+        return getattr(Qt.ItemDataRole, "BackgroundRole", None)
+
+    def _find_calculations_rating_column_index(self, table: Any) -> int | None:
+        try:
+            column_count = int(table.columnCount())
+        except Exception:
+            return None
+
+        offset = 0
+        try:
+            offset = 1 if self._has_row_checkbox_column(table) else 0
+        except Exception:
+            offset = 0
+
+        headers: list[str] = []
+        for column in range(offset, column_count):
+            header = table.horizontalHeaderItem(column)
+            headers.append(self._text_from_table_item(header).strip())
+
+        try:
+            return offset + headers.index("Рейтинг")
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _parse_min_margin_rating_value(text: Any) -> float | None:
+        normalized = str(text or "").strip().replace("\xa0", "").replace(" ", "")
+        if not normalized:
+            return None
+        normalized = normalized.replace(",", ".")
+        try:
+            return float(normalized)
+        except Exception:
+            return None
+
+    @classmethod
+    def _clear_min_margin_highlighting(cls, table: Any) -> None:
+        highlight_role = cls._min_margin_highlight_role()
+        previous_background_role = cls._min_margin_previous_background_role()
+        background_role = cls._background_role()
+
+        for row in range(table.rowCount()):
+            for column in range(table.columnCount()):
+                item = table.item(row, column)
+                if item is None:
+                    continue
+                data_getter = getattr(item, "data", None)
+                if not callable(data_getter) or not item.data(highlight_role):
+                    continue
+
+                previous_background = item.data(previous_background_role)
+                if background_role is not None:
+                    item.setData(background_role, previous_background)
+                else:
+                    item.setBackground(QColor())
+                item.setData(highlight_role, None)
+                item.setData(previous_background_role, None)
+
+    @classmethod
+    def _set_min_margin_row_highlighted(cls, table: Any, row: int) -> None:
+        highlight_role = cls._min_margin_highlight_role()
+        previous_background_role = cls._min_margin_previous_background_role()
+        background_role = cls._background_role()
+
+        for column in range(table.columnCount()):
+            item = table.item(row, column)
+            if item is None:
+                continue
+
+            if not item.data(highlight_role):
+                previous_background = (
+                    item.data(background_role) if background_role is not None else None
+                )
+                item.setData(previous_background_role, previous_background)
+            item.setBackground(cls.RETRADE_MIN_MARGIN_HIGHLIGHT_COLOR)
+            item.setData(highlight_role, True)
+
+    def _apply_min_margin_highlighting(self, *_args: Any) -> None:
+        table = self._get_calculations_table()
+        if table is None:
+            return
+
+        set_updates_enabled = getattr(table, "setUpdatesEnabled", None)
+        if callable(set_updates_enabled):
+            table.setUpdatesEnabled(False)
+        try:
+            self._clear_min_margin_highlighting(table)
+            rating_col_index = self._find_calculations_rating_column_index(table)
+            if rating_col_index is None:
+                return
+
+            threshold = self.get_min_margin() - 1
+            for row in range(table.rowCount()):
+                item = table.item(row, rating_col_index)
+                if item is None:
+                    continue
+
+                value = self._parse_min_margin_rating_value(item.text())
+                if value is None:
+                    continue
+
+                if value + 1e-12 >= threshold:
+                    self._set_min_margin_row_highlighted(table, row)
+        finally:
+            if callable(set_updates_enabled):
+                table.setUpdatesEnabled(True)
 
     def _get_calculations_table(self) -> QTableWidget | None:
         table = getattr(self, "calculationsTable", None)
@@ -757,6 +862,68 @@ QTableWidget::indicator {{
             header_item.data(Qt.ItemDataRole.UserRole)
             == self.RETRADE_ROW_CHECKBOX_COLUMN_MARKER
         )
+
+    def format_rubles(self, value: Any) -> str:
+        numeric_value = self._parse_retrade_numeric_value(value)
+        if numeric_value is None:
+            return "" if value is None else str(value)
+        precision = self.get_rounding()
+        formatted = f"{numeric_value:,.{precision}f}"
+        return formatted.replace(",", " ").replace(".", ",") + " ₽"
+
+    def format_number(self, value: Any) -> str:
+        numeric_value = self._parse_retrade_numeric_value(value)
+        if numeric_value is None:
+            return "" if value is None else str(value)
+        precision = self.get_rounding()
+        formatted = f"{numeric_value:,.{precision}f}"
+        return formatted.replace(",", " ").replace(".", ",")
+
+    def format_rating(self, value: Any) -> str:
+        numeric_value = self._parse_retrade_numeric_value(value)
+        if numeric_value is None:
+            return "" if value is None else str(value)
+        precision = self.get_rounding()
+        return f"{numeric_value:.{precision}f}"
+
+    @staticmethod
+    def _is_excel_date_like_value(value: Any) -> bool:
+        return (
+            hasattr(value, "year")
+            and hasattr(value, "month")
+            and hasattr(value, "day")
+        )
+
+    def _format_calculations_display_value(
+        self,
+        value: Any,
+        *,
+        col_index: int,
+        header: str,
+        price_columns: set[int],
+        rating_column: int | None,
+    ) -> str:
+        if value is None:
+            return ""
+        header_text = str(header or "").strip()
+        header_lower = header_text.lower()
+        if header_lower in self.NO_FORMAT_COLUMNS:
+            return str(value)
+        if isinstance(value, str):
+            stripped_value = value.strip()
+            if stripped_value and not stripped_value.replace(".", "").isdigit():
+                return value
+        if self._is_excel_date_like_value(value):
+            return str(value)
+        if "₽" in str(value) or "руб" in header_lower:
+            return self.format_rubles(value)
+        if col_index in price_columns:
+            return self.format_rubles(value)
+        if col_index == rating_column:
+            return self.format_rating(value)
+        if self._parse_retrade_numeric_value(value) is not None:
+            return self.format_number(value)
+        return str(value)
 
     def _is_main_calculations_sheet_selected(self) -> bool:
         main_sheet_name = str(getattr(self, "main_sheet_name", "") or "")
@@ -814,29 +981,6 @@ QTableWidget::indicator {{
         else:
             self.remove_row_checkboxes()
 
-    def _set_calculations_headers_from_sheet(self, sheet: Any) -> None:
-        table = self._get_calculations_table()
-        if table is None:
-            return
-
-        column_count = table.columnCount()
-        if column_count == 0:
-            return
-
-        for row in range(1, int(getattr(sheet, "max_row", 0) or 0) + 1):
-            header_labels: list[str] = []
-            has_number_header = False
-            for col in range(1, column_count + 1):
-                value = sheet.cell(row=row, column=col).value
-                text = "" if value is None else str(value)
-                header_labels.append(text)
-                normalized = text.strip()
-                if normalized == "№" or normalized.casefold() in {"no", "n"}:
-                    has_number_header = True
-            if has_number_header:
-                table.setHorizontalHeaderLabels(header_labels)
-                return
-
     def get_calculations_column_offset(self) -> int:
         table = self._get_calculations_table()
         if table is None:
@@ -845,6 +989,7 @@ QTableWidget::indicator {{
 
     def on_positions_mode_changed(self, *_args: Any) -> None:
         self._apply_row_checkbox_mode()
+        self._apply_min_margin_highlighting()
 
     def add_row_checkboxes(self) -> None:
         table = self._get_calculations_table()
@@ -923,6 +1068,25 @@ QTableWidget::indicator {{
                 selected_rows.append(row)
 
         return selected_rows
+
+    def refresh_table(self, *_args: Any) -> None:
+        sheets_list = getattr(self, "sheetsList", None)
+        workbook = getattr(self, "workbook", None)
+        if not isinstance(sheets_list, QListWidget) or workbook is None:
+            return
+
+        current_item = sheets_list.currentItem()
+        if current_item is None:
+            return
+
+        sheet_name = current_item.text()
+        if not sheet_name or sheet_name not in workbook.sheetnames:
+            return
+
+        self.current_calculations_sheet_name = sheet_name
+        self.display_sheet(workbook[sheet_name])
+        self._apply_row_checkbox_mode()
+        self._apply_min_margin_highlighting()
 
     def _ensure_retrade_calculations_sheet_selector(self) -> None:
         if isinstance(getattr(self, "sheetsList", None), QListWidget):
@@ -1096,6 +1260,7 @@ QTableWidget::indicator {{
         self.current_calculations_sheet_name = sheet_name
         self.display_sheet(sheet)
         self._apply_row_checkbox_mode()
+        self._apply_min_margin_highlighting()
 
     def display_sheet(self, sheet: Any) -> None:
         table = getattr(self, "calculationsTable", None)
@@ -1113,22 +1278,56 @@ QTableWidget::indicator {{
             max_row = sheet.max_row
             max_col = sheet.max_column
 
-            table.setRowCount(max_row)
             table.setColumnCount(max_col)
 
-            for row in range(1, max_row + 1):
+            headers: list[str] = []
+            for col in range(1, max_col + 1):
+                value = sheet.cell(row=1, column=col).value
+                headers.append("" if value is None else str(value))
+            table.setHorizontalHeaderLabels(headers)
+
+            lowered_headers = [header.lower() for header in headers]
+            price_columns: set[int] = set()
+            rating_column: int | None = None
+            for index, header_text in enumerate(lowered_headers):
+                if (
+                    "руб" in header_text
+                    or "итого" in header_text
+                    or "цена" in header_text
+                ):
+                    price_columns.add(index)
+                if "рейтинг" in header_text:
+                    rating_column = index
+
+            data_row_count = max(max_row - 1, 0)
+            table.setRowCount(data_row_count)
+
+            for row in range(2, max_row + 1):
                 for col in range(1, max_col + 1):
                     cell = sheet.cell(row=row, column=col)
                     value = cell.value
-                    if value is None:
-                        value = ""
-                    item = QTableWidgetItem(str(value))
-                    table.setItem(row - 1, col - 1, item)
-            self._set_calculations_headers_from_sheet(sheet)
+                    col_index = col - 1
+                    text = self._format_calculations_display_value(
+                        value,
+                        col_index=col_index,
+                        header=headers[col_index] if col_index < len(headers) else "",
+                        price_columns=price_columns,
+                        rating_column=rating_column,
+                    )
+                    item = QTableWidgetItem(text)
+                    if self._parse_retrade_numeric_value(value) is not None:
+                        item.setTextAlignment(
+                            int(
+                                Qt.AlignmentFlag.AlignRight
+                                | Qt.AlignmentFlag.AlignVCenter
+                            )
+                        )
+                    table.setItem(row - 2, col - 1, item)
         finally:
             table.setUpdatesEnabled(True)
 
         resize_table_to_contents(table)
+        self._apply_min_margin_highlighting()
 
     def _open_retrade_calculations(self) -> None:
         default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
@@ -1285,6 +1484,10 @@ QTableWidget::indicator {{
         except Exception:
             return None
 
+    @staticmethod
+    def _format_excel_formula_number(value: float) -> str:
+        return f"{float(value):.12g}"
+
     @classmethod
     def _extract_retrade_ratings_and_best_prices(
         cls,
@@ -1324,6 +1527,9 @@ QTableWidget::indicator {{
         file_path: str,
         best_prices: list[float | None],
         ratings: list[float | None] | None = None,
+        *,
+        min_margin: float | None = None,
+        delta_percent: float | None = None,
     ) -> str:
         workbook = load_workbook(file_path)
         try:
@@ -1331,20 +1537,38 @@ QTableWidget::indicator {{
             sheet_copy = workbook.copy_worksheet(sheet_original)
             sheet_copy.title = "Обновленный расчет"
 
-            real_rating_col = sheet_copy.max_column + 1
-            best_price_col = sheet_copy.max_column + 2
-            formula_col = sheet_copy.max_column + 3
+            original_max_col = sheet_copy.max_column
+            real_rating_col = original_max_col + 1
+            best_price_col = original_max_col + 2
+            formula_col = original_max_col + 3
+            corrected_rating_col = original_max_col + 4
             best_price_letter = get_column_letter(best_price_col)
+            min_margin_value = (
+                cls.RETRADE_MIN_MARGIN_DEFAULT if min_margin is None else min_margin
+            )
+            delta_percent_value = (
+                cls.RETRADE_DELTA_PERCENT_DEFAULT
+                if delta_percent is None
+                else delta_percent
+            )
+            min_margin_text = cls._format_excel_formula_number(min_margin_value)
+            delta_text = cls._format_excel_formula_number(delta_percent_value / 100)
 
             sheet_copy.cell(row=1, column=real_rating_col).value = "Рейтинг (таблица)"
             sheet_copy.cell(row=1, column=best_price_col).value = "Лучшая цена за ед."
             sheet_copy.cell(row=1, column=formula_col).value = "Рейтинг"
+            sheet_copy.cell(row=1, column=corrected_rating_col).value = (
+                "Скорректированный рейтинг"
+            )
             for column_letter in (
                 get_column_letter(formula_col),
                 best_price_letter,
                 get_column_letter(real_rating_col),
             ):
                 sheet_copy.column_dimensions[column_letter].width = 18
+            sheet_copy.column_dimensions[
+                get_column_letter(corrected_rating_col)
+            ].width = 26
 
             start_row = 2
             rating_values = ratings or []
@@ -1360,6 +1584,15 @@ QTableWidget::indicator {{
 
                 formula = f"={best_price_letter}{excel_row}/J{excel_row}"
                 sheet_copy.cell(row=excel_row, column=formula_col).value = formula
+                corrected_formula = (
+                    f"=ЕСЛИ({best_price_letter}{excel_row}-{delta_text}"
+                    f"<{min_margin_text};{min_margin_text};"
+                    f"{best_price_letter}{excel_row}-{delta_text})"
+                )
+                sheet_copy.cell(
+                    row=excel_row,
+                    column=corrected_rating_col,
+                ).value = corrected_formula
 
             workbook.calculation.calcMode = "auto"
             workbook.calculation.fullCalcOnLoad = True
@@ -1390,6 +1623,8 @@ QTableWidget::indicator {{
                 calculations_file_path,
                 best_prices,
                 ratings=ratings,
+                min_margin=self.get_min_margin(),
+                delta_percent=self.get_delta_percent(),
             )
         except Exception as exc:
             error_text = f"Не удалось обновить расчет: {exc}"
@@ -1398,8 +1633,9 @@ QTableWidget::indicator {{
             return
 
         recalc_error = ""
+        recalc_skipped = False
         try:
-            force_excel_recalc(calculations_file_path)
+            recalc_skipped = not force_excel_recalc(calculations_file_path)
         except Exception as exc:
             recalc_error = (
                 "Формулы записаны, но Excel не удалось автоматически пересчитать: "
@@ -1416,12 +1652,22 @@ QTableWidget::indicator {{
             status_message = (
                 "Расчет обновлен, но Excel не пересчитан"
                 if recalc_error
-                else "Расчет успешно обновлен и пересчитан"
+                else (
+                    "Расчет обновлен, Excel пересчитает формулы при открытии"
+                    if recalc_skipped
+                    else "Расчет успешно обновлен и пересчитан"
+                )
             )
             status_bar.showMessage(status_message, 5_000)
 
         if recalc_error:
             QMessageBox.warning(self, "Готово с предупреждением", recalc_error)
+        elif recalc_skipped:
+            QMessageBox.information(
+                self,
+                "Готово",
+                "Расчет обновлен. Формулы пересчитаются при открытии файла в Excel.",
+            )
         else:
             QMessageBox.information(
                 self,
@@ -1885,6 +2131,7 @@ QTableWidget::indicator {{
                         item.setToolTip(f"Валюта: {currency}")
                     table.setItem(row_index, col_index, item)
             resize_table_to_contents(table)
+            self._apply_min_margin_highlighting()
 
         totals_data = totals or {}
         totals_currency_data = totals_currency or {}

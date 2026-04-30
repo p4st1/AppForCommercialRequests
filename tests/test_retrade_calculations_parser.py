@@ -363,6 +363,8 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 file_path,
                 [102188.5, None, 3000.0],
                 ratings=[1.25, None, 2.0],
+                min_margin=1.15,
+                delta_percent=2,
             )
 
             result_workbook = load_workbook(file_path, data_only=False)
@@ -373,6 +375,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 real_rating_col_index = 16
                 best_price_col_index = 17
                 formula_col_index = 18
+                corrected_rating_col_index = 19
 
                 self.assertEqual(
                     result_sheet.cell(row=1, column=real_rating_col_index).value,
@@ -385,6 +388,13 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 self.assertEqual(
                     result_sheet.cell(row=1, column=formula_col_index).value,
                     "Рейтинг",
+                )
+                self.assertEqual(
+                    result_sheet.cell(
+                        row=1,
+                        column=corrected_rating_col_index,
+                    ).value,
+                    "Скорректированный рейтинг",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=best_price_col_index).value,
@@ -421,8 +431,26 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                     "=Q4/J4",
                 )
                 self.assertEqual(
+                    result_sheet.cell(row=2, column=corrected_rating_col_index).value,
+                    "=ЕСЛИ(Q2-0.02<1.15;1.15;Q2-0.02)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=3, column=corrected_rating_col_index).value,
+                    "=ЕСЛИ(Q3-0.02<1.15;1.15;Q3-0.02)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=4, column=corrected_rating_col_index).value,
+                    "=ЕСЛИ(Q4-0.02<1.15;1.15;Q4-0.02)",
+                )
+                self.assertEqual(
                     result_sheet.column_dimensions[get_column_letter(formula_col_index)].width,
                     18,
+                )
+                self.assertEqual(
+                    result_sheet.column_dimensions[
+                        get_column_letter(corrected_rating_col_index)
+                    ].width,
+                    26,
                 )
                 self.assertEqual(
                     result_sheet.column_dimensions[get_column_letter(best_price_col_index)].width,

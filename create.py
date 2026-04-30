@@ -9,6 +9,7 @@ import math
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Alignment
 from config import Config
+from services.excel_recalc import force_excel_recalc
 import shutil
 import os
 import re
@@ -935,7 +936,17 @@ class createExcelFile:
         Tools.write_log("creating Excel File...")
         Tools.write_log(f"Excel path to save: {new_file_path}")
         Tools.write_log(f"Final path to save: {new_file_path}")
+        wb.calculation.calcMode = "auto"
+        wb.calculation.fullCalcOnLoad = True
+        wb.calculation.forceFullCalc = True
         wb.save(new_file_path)
+        try:
+            if not force_excel_recalc(new_file_path):
+                Tools.write_log(
+                    "Excel formulas saved; automatic recalculation skipped."
+                )
+        except Exception as exc:
+            Tools.write_log(f"Excel formulas saved but recalculation failed: {exc}")
 
     def cell_has_data(self, cell):
         if cell.value is not None and cell.value != "":
