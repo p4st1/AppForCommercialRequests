@@ -1585,9 +1585,9 @@ QTableWidget::indicator {{
                 formula = f"={best_price_letter}{excel_row}/J{excel_row}"
                 sheet_copy.cell(row=excel_row, column=formula_col).value = formula
                 corrected_formula = (
-                    f"=ЕСЛИ({best_price_letter}{excel_row}-{delta_text}"
-                    f"<{min_margin_text};{min_margin_text};"
-                    f"{best_price_letter}{excel_row}-{delta_text})"
+                    f"=IF(R{excel_row}-{delta_text}<{min_margin_text},"
+                    f"{min_margin_text},"
+                    f"R{excel_row}-{delta_text})"
                 )
                 sheet_copy.cell(
                     row=excel_row,

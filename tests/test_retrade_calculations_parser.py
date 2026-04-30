@@ -432,15 +432,15 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=corrected_rating_col_index).value,
-                    "=ЕСЛИ(Q2-0.02<1.15;1.15;Q2-0.02)",
+                    "=IF(R2-0.02<1.15,1.15,R2-0.02)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=3, column=corrected_rating_col_index).value,
-                    "=ЕСЛИ(Q3-0.02<1.15;1.15;Q3-0.02)",
+                    "=IF(R3-0.02<1.15,1.15,R3-0.02)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=4, column=corrected_rating_col_index).value,
-                    "=ЕСЛИ(Q4-0.02<1.15;1.15;Q4-0.02)",
+                    "=IF(R4-0.02<1.15,1.15,R4-0.02)",
                 )
                 self.assertEqual(
                     result_sheet.column_dimensions[get_column_letter(formula_col_index)].width,
