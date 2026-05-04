@@ -25,6 +25,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
+
+      - name: Install test deps
+        shell: bash
+        run: |
+          set -eux
+          python -m pip install -U pip
+          python -m pip install pandas openpyxl python-docx requests packaging playwright
 
       - name: Run tests
         shell: bash

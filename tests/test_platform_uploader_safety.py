@@ -10,16 +10,26 @@ if playwright is None:
 
 sync_api = sys.modules.get("playwright.sync_api")
 if sync_api is None:
-    sync_api = ModuleType("playwright.sync_api")
-    sync_api.Locator = object
-    sync_api.Page = object
+    try:
+        import playwright.sync_api as sync_api
+    except ModuleNotFoundError:
+        sync_api = ModuleType("playwright.sync_api")
+        sync_api.Locator = object
+        sync_api.Page = object
+        sync_api.BrowserContext = object
+        sync_api.TimeoutError = TimeoutError
+
+        def _missing_sync_playwright():
+            raise RuntimeError("playwright is not available in test environment")
+
+        sync_api.sync_playwright = _missing_sync_playwright
+        sys.modules["playwright.sync_api"] = sync_api
+
+for _name in ("Locator", "Page", "BrowserContext"):
+    if not hasattr(sync_api, _name):
+        setattr(sync_api, _name, object)
+if not hasattr(sync_api, "TimeoutError"):
     sync_api.TimeoutError = TimeoutError
-
-    def _missing_sync_playwright():
-        raise RuntimeError("playwright is not available in test environment")
-
-    sync_api.sync_playwright = _missing_sync_playwright
-    sys.modules["playwright.sync_api"] = sync_api
 
 from services.platform_uploader import TradeUploader
 

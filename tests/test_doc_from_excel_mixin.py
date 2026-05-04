@@ -19,10 +19,14 @@ if "PySide6" not in sys.modules:
     sys.modules["PySide6.QtWidgets"] = qtwidgets
 
 if "pandas" not in sys.modules:
-    sys.modules["pandas"] = SimpleNamespace(
-        notna=lambda value: value is not None,
-        read_csv=None,
-    )
+    try:
+        import pandas  # noqa: F401
+    except ModuleNotFoundError:
+        sys.modules["pandas"] = SimpleNamespace(
+            notna=lambda value: value is not None,
+            read_csv=None,
+        )
+
 from app.ui.doc_from_excel_mixin import DocFromExcelMixin
 
 

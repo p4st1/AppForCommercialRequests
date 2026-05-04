@@ -14,7 +14,7 @@ from tools import DatabaseTools as Tool
 try:
     from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     from playwright.sync_api import sync_playwright
-except ModuleNotFoundError:  # pragma: no cover - dependency may be absent in test env
+except (ImportError, ModuleNotFoundError):  # pragma: no cover - dependency may be absent in test env
     PlaywrightTimeoutError = TimeoutError  # type: ignore[assignment]
     sync_playwright = None  # type: ignore[assignment]
 
@@ -153,7 +153,7 @@ class AuthService:
                 self.LOGIN_SUCCESS_SELECTOR,
                 timeout=self.CAPTCHA_WAIT_TIMEOUT_MS,
             )
-        except PlaywrightTimeoutError as exc:
+        except (PlaywrightTimeoutError, TimeoutError) as exc:
             raise Exception(
                 "Не удалось определить успешный вход (возможно капча не решена)"
             ) from exc

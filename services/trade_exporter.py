@@ -11,7 +11,7 @@ from tools import DatabaseTools as Tool
 
 try:
     from playwright.sync_api import BrowserContext, Page, sync_playwright
-except ModuleNotFoundError:  # pragma: no cover - dependency may be absent in test env
+except (ImportError, ModuleNotFoundError):  # pragma: no cover - dependency may be absent in test env
     BrowserContext = Any  # type: ignore[assignment]
     Page = Any  # type: ignore[assignment]
     sync_playwright = None  # type: ignore[assignment]

@@ -48,6 +48,14 @@ if not hasattr(qtwidgets, "QMessageBox"):
         def warning(*_args, **_kwargs):
             return 0
 
+        @staticmethod
+        def critical(*_args, **_kwargs):
+            return 0
+
+        @staticmethod
+        def information(*_args, **_kwargs):
+            return 0
+
     qtwidgets.QMessageBox = _QMessageBox
 pyside6.QtWidgets = qtwidgets
 

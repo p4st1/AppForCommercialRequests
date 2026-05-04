@@ -1,10 +1,228 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
 
 from docx import Document
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
+
+
+def _ensure_pyside_stubs() -> None:
+    pyside6 = sys.modules.get("PySide6")
+    if pyside6 is None:
+        pyside6 = ModuleType("PySide6")
+        sys.modules["PySide6"] = pyside6
+
+    qtcore = sys.modules.get("PySide6.QtCore")
+    if qtcore is None:
+        qtcore = ModuleType("PySide6.QtCore")
+        sys.modules["PySide6.QtCore"] = qtcore
+
+    class _Signal:
+        def __init__(self, *_args, **_kwargs):
+            self._callbacks = []
+
+        def connect(self, callback):
+            self._callbacks.append(callback)
+
+        def emit(self, *args, **kwargs):
+            for callback in list(self._callbacks):
+                callback(*args, **kwargs)
+
+    class _QThread:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def start(self):
+            run = getattr(self, "run", None)
+            if callable(run):
+                run()
+
+    class _QSettings:
+        _values = {}
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def value(self, key, default=None, type=None):
+            value = self._values.get(key, default)
+            if type is not None and value is not None:
+                try:
+                    return type(value)
+                except Exception:
+                    return default
+            return value
+
+        def setValue(self, key, value):
+            self._values[key] = value
+
+    class _QTimer:
+        def __init__(self, *_args, **_kwargs):
+            self.timeout = _Signal()
+
+        def setInterval(self, *_args, **_kwargs):
+            pass
+
+        def start(self, *_args, **_kwargs):
+            pass
+
+        def stop(self):
+            pass
+
+    qtcore.QSettings = getattr(qtcore, "QSettings", _QSettings)
+    qtcore.QThread = getattr(qtcore, "QThread", _QThread)
+    qtcore.Signal = getattr(qtcore, "Signal", _Signal)
+    qtcore.QTimer = getattr(qtcore, "QTimer", _QTimer)
+
+    qt = getattr(qtcore, "Qt", type("Qt", (), {})())
+    for nested_name, values in {
+        "ItemDataRole": {"EditRole": 2, "UserRole": 32, "BackgroundRole": 8},
+        "AlignmentFlag": {
+            "AlignLeft": 1,
+            "AlignRight": 2,
+            "AlignVCenter": 4,
+            "AlignCenter": 8,
+        },
+        "PenStyle": {"SolidLine": 1},
+        "ItemFlag": {
+            "ItemIsEditable": 1,
+            "ItemIsUserCheckable": 2,
+            "ItemIsEnabled": 4,
+        },
+        "CheckState": {"Unchecked": 0, "Checked": 2},
+    }.items():
+        nested = getattr(qt, nested_name, type(nested_name, (), {})())
+        for attr, value in values.items():
+            setattr(nested, attr, getattr(nested, attr, value))
+        setattr(qt, nested_name, nested)
+    qtcore.Qt = qt
+    pyside6.QtCore = qtcore
+
+    qtgui = sys.modules.get("PySide6.QtGui")
+    if qtgui is None:
+        qtgui = ModuleType("PySide6.QtGui")
+        sys.modules["PySide6.QtGui"] = qtgui
+
+    class _QAction:
+        def __init__(self, *_args, **_kwargs):
+            self.triggered = _Signal()
+
+    class _QColor:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def isValid(self):
+            return True
+
+    qtgui.QAction = getattr(qtgui, "QAction", _QAction)
+    qtgui.QColor = getattr(qtgui, "QColor", _QColor)
+    pyside6.QtGui = qtgui
+
+    qtuitools = sys.modules.get("PySide6.QtUiTools")
+    if qtuitools is None:
+        qtuitools = ModuleType("PySide6.QtUiTools")
+        sys.modules["PySide6.QtUiTools"] = qtuitools
+    if not hasattr(qtuitools, "loadUiType"):
+        qtuitools.loadUiType = lambda *_args, **_kwargs: (object, object)
+    pyside6.QtUiTools = qtuitools
+
+    qtwidgets = sys.modules.get("PySide6.QtWidgets")
+    if qtwidgets is None:
+        qtwidgets = ModuleType("PySide6.QtWidgets")
+        sys.modules["PySide6.QtWidgets"] = qtwidgets
+
+    class _Widget:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class _QFileDialog:
+        @staticmethod
+        def getOpenFileName(*_args, **_kwargs):
+            return ("", "")
+
+    class _QMessageBox:
+        @staticmethod
+        def warning(*_args, **_kwargs):
+            return 0
+
+        @staticmethod
+        def critical(*_args, **_kwargs):
+            return 0
+
+        @staticmethod
+        def information(*_args, **_kwargs):
+            return 0
+
+    class _QAbstractItemView:
+        SelectionBehavior = type("SelectionBehavior", (), {"SelectRows": 1})
+        EditTrigger = type("EditTrigger", (), {"NoEditTriggers": 0})
+
+    class _QHeaderView:
+        ResizeMode = type(
+            "ResizeMode",
+            (),
+            {"Interactive": 1, "ResizeToContents": 2, "Stretch": 3},
+        )
+
+    class _QTableWidgetItem:
+        def __init__(self, text=""):
+            self._text = str(text)
+            self._data = {}
+            self._flags = 0
+
+        def text(self):
+            return self._text
+
+        def setText(self, text):
+            self._text = str(text)
+
+        def data(self, role):
+            return self._data.get(role)
+
+        def setData(self, role, value):
+            self._data[role] = value
+
+        def flags(self):
+            return self._flags
+
+        def setFlags(self, flags):
+            self._flags = flags
+
+        def setTextAlignment(self, *_args, **_kwargs):
+            pass
+
+        def setCheckState(self, *_args, **_kwargs):
+            pass
+
+        def setBackground(self, *_args, **_kwargs):
+            pass
+
+    for name, value in {
+        "QAbstractItemView": _QAbstractItemView,
+        "QCheckBox": _Widget,
+        "QDoubleSpinBox": _Widget,
+        "QFileDialog": _QFileDialog,
+        "QHeaderView": _QHeaderView,
+        "QHBoxLayout": _Widget,
+        "QLabel": _Widget,
+        "QListWidget": _Widget,
+        "QListWidgetItem": _Widget,
+        "QMessageBox": _QMessageBox,
+        "QPushButton": _Widget,
+        "QSpinBox": _Widget,
+        "QTableWidget": _Widget,
+        "QTableWidgetItem": _QTableWidgetItem,
+        "QTabWidget": _Widget,
+        "QWidget": _Widget,
+    }.items():
+        if not hasattr(qtwidgets, name):
+            setattr(qtwidgets, name, value)
+    pyside6.QtWidgets = qtwidgets
+
+
+_ensure_pyside_stubs()
 
 from ui_mixins.export_mixin import ExportMixin
 
