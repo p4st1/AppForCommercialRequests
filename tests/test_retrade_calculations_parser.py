@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from docx import Document
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 
@@ -29,6 +30,45 @@ class _FakeRetradeTable:
 
     def rowCount(self):
         return len(self._rows)
+
+    def horizontalHeaderItem(self, column):
+        if column < 0 or column >= len(self._headers):
+            return None
+        return self._headers[column]
+
+    def item(self, row, column):
+        if row < 0 or row >= len(self._rows):
+            return None
+        row_values = self._rows[row]
+        if column < 0 or column >= len(row_values):
+            return None
+        return row_values[column]
+
+
+class _FakeEditableItem:
+    def __init__(self, value):
+        self._value = value
+
+    def data(self, _role):
+        return self._value
+
+    def text(self):
+        return "" if self._value is None else str(self._value)
+
+
+class _FakeEditableTable:
+    def __init__(self, rows, headers=None):
+        self._headers = [_FakeItem(header) for header in (headers or [])]
+        self._rows = [
+            [None if value is None else _FakeEditableItem(value) for value in row]
+            for row in rows
+        ]
+
+    def rowCount(self):
+        return len(self._rows)
+
+    def columnCount(self):
+        return max([len(self._headers), *(len(row) for row in self._rows)], default=0)
 
     def horizontalHeaderItem(self, column):
         if column < 0 or column >= len(self._headers):
@@ -269,6 +309,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
 
     def test_detect_currency_from_string_fallback(self):
         self.assertEqual(ExportMixin._detect_currency("1000 руб", "General"), "RUB")
+        self.assertEqual(ExportMixin._detect_currency("1 000,00 ₽", "General"), "RUB")
         self.assertEqual(ExportMixin._detect_currency("Total $100", "General"), "USD")
         self.assertEqual(ExportMixin._detect_currency("Amount 50 eur", "General"), "EUR")
 
@@ -310,6 +351,235 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertEqual(ExportMixin.parse_number("1,25"), 1.25)
         self.assertEqual(ExportMixin.parse_number(None), 0.0)
 
+    def test_extract_delivery_time_text(self):
+        self.assertEqual(
+            ExportMixin._extract_delivery_time_text("Срок поставки: 40 дней"),
+            "40 дней",
+        )
+        self.assertEqual(
+            ExportMixin._extract_delivery_time_text("до 45 календарных дней"),
+            "45 календарных дней",
+        )
+
+    def test_extract_kp_data_from_document(self):
+        document = Document()
+        table = document.add_table(rows=3, cols=3)
+        table.rows[0].cells[0].text = "Наименование"
+        table.rows[0].cells[1].text = "Срок поставки"
+        table.rows[0].cells[2].text = "Цена"
+        table.rows[1].cells[0].text = "Позиция 1"
+        table.rows[1].cells[1].text = "40 дней"
+        table.rows[2].cells[0].text = "Позиция 2"
+        table.rows[2].cells[1].text = "45 дней"
+        document.add_paragraph("Производитель - CAT;")
+
+        data = ExportMixin._extract_kp_data_from_document(document)
+
+        self.assertEqual(data["delivery_times"], ["40 дней", "45 дней"])
+        self.assertEqual(data["manufacturer"], "CAT")
+
+    def test_load_kp_docx_data_reads_saved_file(self):
+        document = Document()
+        table = document.add_table(rows=2, cols=2)
+        table.rows[0].cells[0].text = "Позиция"
+        table.rows[0].cells[1].text = "Срок поставки"
+        table.rows[1].cells[0].text = "Позиция 1"
+        table.rows[1].cells[1].text = "30 дней"
+        document.add_paragraph("Производитель: Atlas Copco;")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "kp.docx"
+            document.save(file_path)
+
+            data = ExportMixin._load_kp_docx_data(str(file_path))
+
+        self.assertEqual(data["delivery_times"], ["30 дней"])
+        self.assertEqual(data["manufacturer"], "Atlas Copco")
+
+    def test_write_retrade_table_to_worksheet_preserves_formulas_and_blanks(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["A", "B", "C"])
+        worksheet.cell(row=2, column=1).value = "old"
+        worksheet.cell(row=2, column=2).value = "=SUM(A2:A3)"
+        worksheet.cell(row=2, column=3).value = "keep"
+        worksheet.cell(row=3, column=1).value = "old text"
+        worksheet.cell(row=3, column=2).value = "keep blank"
+
+        table = _FakeEditableTable(
+            [
+                [10, 20, ""],
+                ["new text", None, "=A1"],
+            ]
+        )
+
+        mixin = ExportMixin()
+        written_count = mixin._write_retrade_table_to_worksheet(
+            worksheet,
+            table,
+        )
+
+        self.assertEqual(written_count, 2)
+        self.assertEqual(worksheet.cell(row=2, column=1).value, 10.0)
+        self.assertEqual(worksheet.cell(row=2, column=2).value, "=SUM(A2:A3)")
+        self.assertEqual(worksheet.cell(row=2, column=3).value, "keep")
+        self.assertEqual(worksheet.cell(row=3, column=1).value, "new text")
+        self.assertEqual(worksheet.cell(row=3, column=2).value, "keep blank")
+        self.assertIsNone(worksheet.cell(row=3, column=3).value)
+
+    def test_write_retrade_table_to_worksheet_saves_money_text_as_number(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        headers = ["Предлагаемая цена за ед.", "Кол-во", "Сумма, CNY"]
+        worksheet.append(headers)
+        table = _FakeEditableTable(
+            [["100 000,00", "2", "200 000,00"]],
+            headers=headers,
+        )
+
+        mixin = ExportMixin()
+        written_count = mixin._write_retrade_table_to_worksheet(
+            worksheet,
+            table,
+        )
+
+        self.assertEqual(written_count, 3)
+        self.assertEqual(worksheet.cell(row=2, column=1).value, 100000.0)
+        self.assertEqual(worksheet.cell(row=2, column=2).value, 2.0)
+        self.assertEqual(worksheet.cell(row=2, column=3).value, 200000.0)
+        self.assertEqual(
+            worksheet.cell(row=2, column=1).number_format,
+            mixin._currency_format("¥"),
+        )
+        self.assertEqual(worksheet.cell(row=2, column=2).number_format, "General")
+        self.assertEqual(
+            worksheet.cell(row=2, column=3).number_format,
+            mixin._currency_format("¥"),
+        )
+
+    def test_write_retrade_table_to_worksheet_formats_money_formulas(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        headers = ["Предлагаемая цена за ед.", "Кол-во", "Сумма, USD"]
+        worksheet.append(headers)
+        worksheet.cell(row=2, column=1).value = "=A3"
+        worksheet.cell(row=2, column=3).value = "=A2*B2"
+        table = _FakeEditableTable(
+            [["100 000,00", "2", "200 000,00"]],
+            headers=headers,
+        )
+
+        mixin = ExportMixin()
+        written_count = mixin._write_retrade_table_to_worksheet(
+            worksheet,
+            table,
+        )
+
+        self.assertEqual(written_count, 1)
+        self.assertEqual(worksheet.cell(row=2, column=1).value, "=A3")
+        self.assertEqual(worksheet.cell(row=2, column=3).value, "=A2*B2")
+        self.assertEqual(
+            worksheet.cell(row=2, column=1).number_format,
+            mixin._currency_format("$"),
+        )
+        self.assertEqual(
+            worksheet.cell(row=2, column=3).number_format,
+            mixin._currency_format("$"),
+        )
+
+    def test_collect_missing_retrade_required_cells(self):
+        headers = [
+            "Наименование",
+            "Срок поставки",
+            "Производитель",
+            "Технические характеристики",
+            "Условия гарантий качества",
+        ]
+        table = _FakeEditableTable(
+            [
+                ["Позиция 1", "30 дней", "Atlas Copco", "Описание", "6 мес"],
+                ["Позиция 2", "", "Atlas Copco", "", "6 мес"],
+                ["", "", "", "", ""],
+            ],
+            headers=headers,
+        )
+
+        missing = ExportMixin._collect_missing_retrade_required_cells(table)
+
+        self.assertEqual(
+            missing,
+            [
+                {"row": 1, "column": 1, "label": "Срок поставки"},
+                {"row": 1, "column": 3, "label": "Технические характеристики"},
+            ],
+        )
+
+    def test_retrade_main_row_has_position_ignores_default_manual_fields(self):
+        headers = [
+            "Наименование",
+            "Срок поставки",
+            "Производитель",
+            "Условия гарантий качества",
+        ]
+        table = _FakeEditableTable(
+            [
+                ["Позиция 1", "", "", "6 мес"],
+                ["", "", "", "6 мес"],
+            ],
+            headers=headers,
+        )
+        columns = ExportMixin._get_retrade_main_columns(headers)
+        position_columns = ExportMixin._retrade_main_position_columns(
+            headers,
+            columns,
+        )
+
+        self.assertTrue(
+            ExportMixin._retrade_main_row_has_position(table, 0, position_columns)
+        )
+        self.assertFalse(
+            ExportMixin._retrade_main_row_has_position(table, 1, position_columns)
+        )
+
+    def test_format_missing_retrade_required_cells_message(self):
+        message = ExportMixin._format_missing_retrade_required_cells_message(
+            [
+                {"row": 1, "column": 1, "label": "Срок поставки"},
+                {"row": 1, "column": 2, "label": "Производитель"},
+            ]
+        )
+
+        self.assertIn("строка 2: Срок поставки", message)
+        self.assertIn("строка 2: Производитель", message)
+        self.assertIn("Файл не сохранён.", message)
+
+    def test_recalculate_retrade_main_row_values_updates_total(self):
+        headers = ["Предлагаемая цена за ед.", "Кол-во", "Сумма"]
+        columns = ExportMixin._get_retrade_main_columns(headers)
+
+        row = ExportMixin._recalculate_retrade_main_row_values(
+            ["100 000,00", "2", None],
+            columns,
+        )
+
+        self.assertEqual(row, ["100 000,00", "2", 200000.0])
+        self.assertEqual(ExportMixin.format_money(row[2]), "200 000,00")
+
+    def test_format_rating_always_uses_two_decimals(self):
+        mixin = ExportMixin()
+
+        self.assertEqual(mixin.format_rating("1,234"), "1.23")
+        self.assertEqual(
+            mixin._format_calculations_display_value(
+                "1,2",
+                col_index=3,
+                header="Рейтинг",
+                price_columns=set(),
+                rating_columns={3},
+            ),
+            "1.20",
+        )
+
     def test_calculate_updated_position_prices_uses_corrected_rating(self):
         updates, sale_price_col = ExportMixin._calculate_updated_position_prices(
             [
@@ -339,6 +609,61 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             updates,
             [{"row": 0, "value": 37542.31, "currency": "RUB"}],
         )
+
+    def test_calculate_updated_position_prices_prefers_excel_j_and_s(self):
+        headers = [f"Колонка {index}" for index in range(1, 20)]
+        headers[5] = "Цена за ед. без НДС"
+        headers[9] = "Колонка J"
+        headers[10] = "Цена реализации за ед. без НДС"
+        headers[18] = "Скорректированный рейтинг"
+        row = [{"value": None, "currency": None} for _ in headers]
+        row[5] = {"value": 999, "currency": "RUB"}
+        row[9] = {"value": 100, "currency": "RUB"}
+        row[18] = {"value": "1,25", "currency": None}
+
+        updates, sale_price_col = ExportMixin._calculate_updated_position_prices(
+            headers,
+            [row],
+        )
+
+        self.assertEqual(sale_price_col, 10)
+        self.assertEqual(updates, [{"row": 0, "value": 125.0, "currency": "RUB"}])
+
+    def test_calculate_updated_position_prices_uses_excel_columns_with_offset(self):
+        headers = [""] + [f"Колонка {index}" for index in range(1, 20)]
+        headers[6] = "Цена за ед. без НДС"
+        headers[11] = "Цена реализации за ед. без НДС"
+        headers[19] = "Скорректированный рейтинг"
+        row = [{"value": None, "currency": None} for _ in headers]
+        row[6] = {"value": 999, "currency": "RUB"}
+        row[10] = {"value": 100, "currency": "RUB"}
+        row[19] = {"value": "1,25", "currency": None}
+
+        updates, sale_price_col = ExportMixin._calculate_updated_position_prices(
+            headers,
+            [row],
+            column_offset=1,
+        )
+
+        self.assertEqual(sale_price_col, 11)
+        self.assertEqual(updates, [{"row": 0, "value": 125.0, "currency": "RUB"}])
+
+    def test_calculate_updated_position_prices_detects_currency_from_display_text(self):
+        headers = [f"Колонка {index}" for index in range(1, 20)]
+        headers[9] = "Цена за ед. без НДС"
+        headers[10] = "Цена реализации за ед. без НДС"
+        headers[18] = "Скорректированный рейтинг"
+        row = [{"value": None, "currency": None} for _ in headers]
+        row[9] = {"value": "100,00 ₽", "currency": None}
+        row[18] = {"value": "1,25", "currency": None}
+
+        updates, sale_price_col = ExportMixin._calculate_updated_position_prices(
+            headers,
+            [row],
+        )
+
+        self.assertEqual(sale_price_col, 10)
+        self.assertEqual(updates, [{"row": 0, "value": 125.0, "currency": "RUB"}])
 
     def test_calculate_updated_position_prices_requires_columns(self):
         with self.assertRaises(ValueError) as context:
@@ -378,13 +703,15 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         workbook = Workbook()
         worksheet = workbook.active
         headers = [f"Колонка {index}" for index in range(1, 20)]
-        headers[9] = "Цена за ед. без НДС"
+        headers[5] = "Цена за ед. без НДС"
+        headers[9] = "Колонка J"
         headers[10] = "Цена реализации за ед. без НДС"
         headers[18] = "Скорректированный рейтинг"
         worksheet.append(headers)
         worksheet.append([None for _ in headers])
         worksheet.append([None for _ in headers])
         worksheet.append([None for _ in headers])
+        worksheet.cell(row=2, column=10).number_format = '#,##0.00 "₽"'
 
         formulas = ExportMixin._write_realization_price_formulas_to_sheet(
             worksheet,
@@ -399,8 +726,16 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             },
         )
         self.assertEqual(worksheet.cell(row=2, column=11).value, "=ROUND(J2*S2, 2)")
+        self.assertEqual(
+            worksheet.cell(row=2, column=11).number_format,
+            ExportMixin._currency_format("₽"),
+        )
         self.assertIsNone(worksheet.cell(row=3, column=11).value)
         self.assertEqual(worksheet.cell(row=4, column=11).value, "=ROUND(J4*S4, 2)")
+        self.assertEqual(
+            worksheet.cell(row=4, column=11).number_format,
+            ExportMixin._currency_format(None),
+        )
 
     def test_write_update_position_formulas_to_current_file_saves_workbook(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -480,6 +815,17 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             ([1.25, None, None], [102188.5, None, None]),
         )
 
+    def test_next_retrade_sheet_title_uses_next_number(self):
+        workbook = Workbook()
+        workbook.active.title = "Sheet"
+        workbook.create_sheet("Переторжка 1")
+        workbook.create_sheet("Переторжка 2")
+
+        self.assertEqual(
+            ExportMixin._next_retrade_sheet_title(workbook),
+            "Переторжка 3",
+        )
+
     def test_write_best_prices_to_calculations_file_creates_updated_sheet(self):
         workbook = Workbook()
         worksheet = workbook.active
@@ -515,7 +861,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
 
             result_workbook = load_workbook(file_path, data_only=False)
             try:
-                self.assertEqual(sheet_title, "Обновленный расчет")
+                self.assertEqual(sheet_title, "Переторжка 1")
                 self.assertIn(sheet_title, result_workbook.sheetnames)
                 result_sheet = result_workbook[sheet_title]
                 real_rating_col_index = 16

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from docx import Document
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PySide6.QtCore import QSettings, QThread, Signal, QTimer, Qt
@@ -124,6 +125,8 @@ class ExportMixin:
         self._export_trade_worker: ExportTradeWorker | None = None
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
+        self.current_retrade_excel_path = ""
+        self._updating_retrade_main_table = False
         self.calculations_file_path = ""
         self.workbook = None
         self.main_sheet_name = ""
@@ -449,6 +452,7 @@ QTableWidget::indicator {{
                 "btn_open_retrade_calculations",
                 "btnGenerate",
                 "btn_load_retrade_excel",
+                "retrade_controls_layout",
                 "label_auto_trade_status",
                 "label_retrade_calculations_status",
                 "retrade_calculations_table",
@@ -483,6 +487,7 @@ QTableWidget::indicator {{
 
         self._configure_excel_like_table(self.retrade_table)
         self._configure_excel_like_table(self.retrade_calculations_table)
+        self._ensure_retrade_main_table_controls()
         self._ensure_retrade_calculations_controls()
         self._ensure_retrade_calculations_sheet_selector()
         self._set_auto_trade_status(False)
@@ -494,11 +499,44 @@ QTableWidget::indicator {{
         )
         self.btnGenerate.clicked.connect(self.generate_retrade_calculation)
         self.btn_load_retrade_excel.clicked.connect(self.load_retrade_excel)
+        self.retrade_table.itemChanged.connect(
+            self._on_retrade_main_table_item_changed
+        )
 
         tab_index = tabs.addTab(retrade_tab, "Переторжка")
         self.retrade_tab_index = tab_index
         self.retrade_inner_tabs.setCurrentIndex(self.RETRADE_INNER_TAB_MAIN)
         self._clear_retrade_calculations_view()
+
+    def _ensure_retrade_main_table_controls(self) -> None:
+        if isinstance(getattr(self, "save_button", None), QPushButton):
+            return
+
+        controls_layout = getattr(self, "retrade_controls_layout", None)
+        if not isinstance(controls_layout, QHBoxLayout):
+            return
+
+        parent = getattr(self, "retrade_tab", None)
+        self.save_button = QPushButton("Сохранить", parent)
+        self.save_button.setObjectName("save_button")
+        self.import_button = QPushButton("Импорт", parent)
+        self.import_button.setObjectName("import_button")
+        self.load_kp_button = QPushButton("Подгрузить КП", parent)
+        self.load_kp_button.setObjectName("load_kp_button")
+
+        insert_index = controls_layout.indexOf(self.label_auto_trade_status)
+        if insert_index < 0:
+            insert_index = controls_layout.count()
+        controls_layout.insertWidget(insert_index, self.save_button)
+        controls_layout.insertWidget(insert_index + 1, self.import_button)
+        controls_layout.insertWidget(insert_index + 2, self.load_kp_button)
+
+        self.ui.save_button = self.save_button
+        self.ui.import_button = self.import_button
+        self.ui.load_kp_button = self.load_kp_button
+        self.save_button.clicked.connect(self.on_save_clicked)
+        self.import_button.clicked.connect(self.on_import_clicked)
+        self.load_kp_button.clicked.connect(self.on_load_kp_clicked)
 
     @staticmethod
     def _load_retrade_excel_rows(file_path: str) -> list[list[Any]]:
@@ -508,6 +546,207 @@ QTableWidget::indicator {{
             return [list(row) for row in worksheet.iter_rows(values_only=True)]
         finally:
             workbook.close()
+
+    @classmethod
+    def format_money(cls, value: Any) -> str:
+        numeric_value = cls._parse_retrade_number_or_none(value)
+        if numeric_value is None:
+            return "" if value is None else str(value)
+        return f"{numeric_value:,.2f}".replace(",", " ").replace(".", ",")
+
+    @staticmethod
+    def _currency_format(currency: Any) -> str:
+        if currency:
+            return f'"{currency}"#,##0.00'
+        return "#,##0.00"
+
+    @staticmethod
+    def _currency_symbol(value: Any) -> str:
+        text = str(value or "").strip()
+        upper_text = text.upper()
+        if "₽" in text or "RUB" in upper_text or "РУБ" in upper_text:
+            return "₽"
+        if "$" in text or "USD" in upper_text:
+            return "$"
+        if "€" in text or "EUR" in upper_text:
+            return "€"
+        if "¥" in text or "CNY" in upper_text or "JPY" in upper_text:
+            return "¥"
+        return ""
+
+    @classmethod
+    def _parse_retrade_number_or_none(cls, value: Any) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            try:
+                if pd.isna(value):
+                    return None
+            except Exception:
+                pass
+            return float(value)
+        if not isinstance(value, str):
+            return None
+
+        text = (
+            value.strip()
+            .replace("\xa0", " ")
+            .replace(" ", "")
+            .replace("₽", "")
+            .replace("руб", "")
+            .replace("RUB", "")
+            .replace("rub", "")
+            .replace("$", "")
+            .replace("€", "")
+            .replace("¥", "")
+            .replace(",", ".")
+        )
+        if not text:
+            return None
+        if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", text) is None:
+            return None
+        try:
+            return float(text)
+        except Exception:
+            return None
+
+    @classmethod
+    def _find_retrade_main_column(cls, headers: list[Any], kind: str) -> int | None:
+        if kind == "proposal_price":
+            return cls._find_update_positions_column(headers, "proposal_price")
+
+        fallback_qty_col: int | None = None
+        for index, header in enumerate(headers):
+            normalized = cls._normalize_table_header(header)
+            if not normalized:
+                continue
+
+            if kind == "qty":
+                if "колво" in normalized or "количество" in normalized:
+                    if "предлага" not in normalized:
+                        return index
+                    if fallback_qty_col is None:
+                        fallback_qty_col = index
+            elif kind == "total":
+                if "сумма" in normalized:
+                    return index
+            elif kind == "delivery_time":
+                if "срок" in normalized and "постав" in normalized:
+                    return index
+            elif kind == "manufacturer":
+                if "производ" in normalized:
+                    return index
+            elif kind == "technical":
+                if "характерист" in normalized:
+                    return index
+
+        if kind == "qty":
+            return fallback_qty_col
+        return None
+
+    @classmethod
+    def _get_retrade_main_columns(cls, headers: list[Any]) -> dict[str, int | None]:
+        return {
+            "proposal_price": cls._find_retrade_main_column(headers, "proposal_price"),
+            "qty": cls._find_retrade_main_column(headers, "qty"),
+            "total": cls._find_retrade_main_column(headers, "total"),
+            "delivery_time": cls._find_retrade_main_column(headers, "delivery_time"),
+            "manufacturer": cls._find_retrade_main_column(headers, "manufacturer"),
+            "technical": cls._find_retrade_main_column(headers, "technical"),
+        }
+
+    @staticmethod
+    def _retrade_main_editable_tooltips() -> dict[str, str]:
+        return {
+            "delivery_time": "Например: 30 дней",
+            "manufacturer": "Например: Atlas Copco",
+            "technical": "Свободный текст",
+        }
+
+    @staticmethod
+    def _retrade_main_required_field_labels() -> dict[str, str]:
+        return {
+            "delivery_time": "Срок поставки",
+            "manufacturer": "Производитель",
+            "technical": "Технические характеристики",
+        }
+
+    @classmethod
+    def _retrade_main_editable_columns(
+        cls,
+        columns: dict[str, int | None],
+    ) -> dict[int, str]:
+        tooltips = cls._retrade_main_editable_tooltips()
+        editable: dict[int, str] = {}
+        for kind, tooltip in tooltips.items():
+            column = columns.get(kind)
+            if column is not None:
+                editable[int(column)] = tooltip
+        return editable
+
+    @classmethod
+    def _recalculate_retrade_main_row_values(
+        cls,
+        row_values: list[Any],
+        columns: dict[str, int | None],
+    ) -> list[Any]:
+        updated_row = list(row_values)
+        price_col = columns.get("proposal_price")
+        qty_col = columns.get("qty")
+        total_col = columns.get("total")
+        if price_col is None or qty_col is None or total_col is None:
+            return updated_row
+
+        max_col = max(int(price_col), int(qty_col), int(total_col))
+        if len(updated_row) <= max_col:
+            updated_row.extend(None for _ in range(max_col + 1 - len(updated_row)))
+
+        price = cls._parse_retrade_number_or_none(updated_row[int(price_col)])
+        qty = cls._parse_retrade_number_or_none(updated_row[int(qty_col)])
+        if price is None or qty is None:
+            return updated_row
+
+        updated_row[int(total_col)] = round(price * qty, 2)
+        return updated_row
+
+    @classmethod
+    def _retrade_main_display_text(
+        cls,
+        value: Any,
+        col_index: int,
+        columns: dict[str, int | None],
+    ) -> str:
+        if col_index in {columns.get("proposal_price"), columns.get("total")}:
+            return cls.format_money(value)
+        return "" if value is None else str(value)
+
+    @classmethod
+    def _configure_retrade_main_item(
+        cls,
+        item: QTableWidgetItem,
+        value: Any,
+        col_index: int,
+        columns: dict[str, int | None],
+        editable_columns: dict[int, str],
+    ) -> None:
+        item.setText(cls._retrade_main_display_text(value, col_index, columns))
+        item.setData(Qt.ItemDataRole.UserRole, value)
+        if col_index in {columns.get("proposal_price"), columns.get("total")}:
+            item.setTextAlignment(
+                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            )
+        elif cls._is_numeric_table_value(value):
+            item.setTextAlignment(
+                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            )
+        else:
+            item.setTextAlignment(
+                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            )
+
+        if col_index in editable_columns:
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+            item.setToolTip(editable_columns[col_index])
 
     def _fill_retrade_table_from_excel_rows(self, data: list[list[Any]]) -> None:
         table = getattr(self, "retrade_table", None)
@@ -535,22 +774,589 @@ QTableWidget::indicator {{
             if len(header_labels) < cols_count:
                 header_labels.extend("" for _ in range(cols_count - len(header_labels)))
             table.setHorizontalHeaderLabels(header_labels[:cols_count])
+        else:
+            header_labels = []
 
-        for row_index, row_values in enumerate(data_rows):
-            for col_index, cell_value in enumerate(row_values[:cols_count]):
-                text = "" if cell_value is None else str(cell_value)
-                item = QTableWidgetItem(text)
-                if self._is_numeric_table_value(cell_value):
-                    item.setTextAlignment(
-                        int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        columns = self._get_retrade_main_columns(header_labels)
+        editable_columns = self._retrade_main_editable_columns(columns)
+        previous_block_state = table.blockSignals(True)
+        self._updating_retrade_main_table = True
+        try:
+            for row_index, row_values in enumerate(data_rows):
+                normalized_row = list(row_values[:cols_count])
+                if len(normalized_row) < cols_count:
+                    normalized_row.extend(None for _ in range(cols_count - len(normalized_row)))
+                normalized_row = self._recalculate_retrade_main_row_values(
+                    normalized_row,
+                    columns,
+                )
+                for col_index, cell_value in enumerate(normalized_row[:cols_count]):
+                    item = QTableWidgetItem()
+                    self._configure_retrade_main_item(
+                        item,
+                        cell_value,
+                        col_index,
+                        columns,
+                        editable_columns,
                     )
-                else:
-                    item.setTextAlignment(
-                        int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-                    )
-                table.setItem(row_index, col_index, item)
+                    table.setItem(row_index, col_index, item)
+        finally:
+            self._updating_retrade_main_table = False
+            table.blockSignals(previous_block_state)
 
         resize_table_to_contents(table)
+
+    def _recalculate_retrade_main_table_row(
+        self,
+        table: QTableWidget,
+        row: int,
+        columns: dict[str, int | None] | None = None,
+    ) -> None:
+        columns = columns or self._get_retrade_main_columns(self._table_headers(table))
+        total_col = columns.get("total")
+        price_col = columns.get("proposal_price")
+        qty_col = columns.get("qty")
+        if total_col is None or price_col is None or qty_col is None:
+            return
+
+        price_item = table.item(row, int(price_col))
+        qty_item = table.item(row, int(qty_col))
+        price = self._parse_retrade_number_or_none(self._table_item_edit_value(price_item))
+        qty = self._parse_retrade_number_or_none(self._table_item_edit_value(qty_item))
+        if price is None or qty is None:
+            return
+
+        total_value = round(price * qty, 2)
+        total_item = table.item(row, int(total_col))
+        if total_item is None:
+            total_item = QTableWidgetItem()
+            table.setItem(row, int(total_col), total_item)
+        self._configure_retrade_main_item(
+            total_item,
+            total_value,
+            int(total_col),
+            columns,
+            self._retrade_main_editable_columns(columns),
+        )
+
+    def _on_retrade_main_table_item_changed(self, item: QTableWidgetItem) -> None:
+        if self._updating_retrade_main_table or item is None:
+            return
+
+        table_getter = getattr(item, "tableWidget", None)
+        table = table_getter() if callable(table_getter) else None
+        if not isinstance(table, QTableWidget):
+            table = getattr(self, "retrade_table", None)
+        if not isinstance(table, QTableWidget):
+            return
+
+        columns = self._get_retrade_main_columns(self._table_headers(table))
+        changed_col = item.column()
+        price_col = columns.get("proposal_price")
+        qty_col = columns.get("qty")
+        if changed_col not in {price_col, qty_col}:
+            return
+
+        previous_block_state = table.blockSignals(True)
+        self._updating_retrade_main_table = True
+        try:
+            if changed_col == price_col:
+                price_value = self._parse_retrade_number_or_none(
+                    self._table_item_edit_value(item)
+                )
+                if price_value is not None:
+                    self._configure_retrade_main_item(
+                        item,
+                        price_value,
+                        changed_col,
+                        columns,
+                        self._retrade_main_editable_columns(columns),
+                    )
+            self._recalculate_retrade_main_table_row(table, item.row(), columns)
+        finally:
+            self._updating_retrade_main_table = False
+            table.blockSignals(previous_block_state)
+
+    @staticmethod
+    def _extract_delivery_time_text(text: Any) -> str:
+        if text is None:
+            return ""
+        normalized_text = " ".join(str(text).replace("\xa0", " ").split())
+        if not normalized_text:
+            return ""
+
+        match = re.search(
+            r"\b\d+(?:[,.]\d+)?\s*(?:рабочих\s+|календарных\s+)?дн(?:ей|я|ь|\.)?\b",
+            normalized_text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group(0).strip(" ;,.")
+        return ""
+
+    @classmethod
+    def _extract_kp_delivery_times_from_document(cls, document: Any) -> list[str]:
+        delivery_times: list[str] = []
+        for table in getattr(document, "tables", []):
+            rows = list(getattr(table, "rows", []) or [])
+            header_row_index: int | None = None
+            delivery_column: int | None = None
+
+            for row_index, row in enumerate(rows):
+                cells = [
+                    str(getattr(cell, "text", "") or "").strip()
+                    for cell in getattr(row, "cells", [])
+                ]
+                for column_index, cell_text in enumerate(cells):
+                    normalized = cls._normalize_table_header(cell_text)
+                    if "срок" in normalized and "постав" in normalized:
+                        header_row_index = row_index
+                        delivery_column = column_index
+                        break
+                if delivery_column is not None:
+                    break
+
+            if delivery_column is not None and header_row_index is not None:
+                for row in rows[header_row_index + 1 :]:
+                    cells = [
+                        str(getattr(cell, "text", "") or "").strip()
+                        for cell in getattr(row, "cells", [])
+                    ]
+                    if delivery_column >= len(cells):
+                        continue
+                    raw_value = cells[delivery_column]
+                    value = cls._extract_delivery_time_text(raw_value) or raw_value
+                    if value:
+                        delivery_times.append(value)
+                continue
+
+            for row in rows:
+                for cell in getattr(row, "cells", []):
+                    value = cls._extract_delivery_time_text(
+                        getattr(cell, "text", "")
+                    )
+                    if value:
+                        delivery_times.append(value)
+                        break
+
+        return delivery_times
+
+    @staticmethod
+    def _extract_kp_manufacturer_from_document(document: Any) -> str:
+        for paragraph in getattr(document, "paragraphs", []):
+            text = " ".join(str(getattr(paragraph, "text", "") or "").split())
+            if "производитель" not in text.lower():
+                continue
+
+            match = re.search(
+                r"производитель\s*[-–—:]\s*([^;\n\r]+)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                return match.group(1).strip(" ;,.")
+
+            parts = re.split(r"[-–—:]", text, maxsplit=1)
+            if len(parts) == 2:
+                return parts[1].strip(" ;,.")
+        return ""
+
+    @classmethod
+    def _extract_kp_data_from_document(cls, document: Any) -> dict[str, Any]:
+        return {
+            "delivery_times": cls._extract_kp_delivery_times_from_document(document),
+            "manufacturer": cls._extract_kp_manufacturer_from_document(document),
+        }
+
+    @classmethod
+    def _load_kp_docx_data(cls, file_path: str) -> dict[str, Any]:
+        document = Document(file_path)
+        return cls._extract_kp_data_from_document(document)
+
+    def _set_retrade_main_table_value(
+        self,
+        table: QTableWidget,
+        row: int,
+        column: int,
+        value: Any,
+        columns: dict[str, int | None],
+    ) -> None:
+        item = table.item(row, column)
+        if item is None:
+            item = QTableWidgetItem()
+            table.setItem(row, column, item)
+        self._configure_retrade_main_item(
+            item,
+            value,
+            column,
+            columns,
+            self._retrade_main_editable_columns(columns),
+        )
+
+    def _apply_kp_data_to_retrade_main_table(
+        self,
+        table: QTableWidget,
+        kp_data: dict[str, Any],
+    ) -> int:
+        headers = self._table_headers(table)
+        columns = self._get_retrade_main_columns(headers)
+        delivery_column = columns.get("delivery_time")
+        manufacturer_column = columns.get("manufacturer")
+        position_columns = self._retrade_main_position_columns(headers, columns)
+        delivery_times = list(kp_data.get("delivery_times") or [])
+        manufacturer = str(kp_data.get("manufacturer") or "").strip()
+        if delivery_column is None and manufacturer_column is None:
+            return 0
+
+        updated_count = 0
+        previous_block_state = table.blockSignals(True)
+        self._updating_retrade_main_table = True
+        try:
+            for row in range(table.rowCount()):
+                if not self._retrade_main_row_has_position(
+                    table,
+                    row,
+                    position_columns,
+                ):
+                    continue
+
+                if delivery_column is not None and row < len(delivery_times):
+                    delivery_time = str(delivery_times[row] or "").strip()
+                    if delivery_time:
+                        self._set_retrade_main_table_value(
+                            table,
+                            row,
+                            int(delivery_column),
+                            delivery_time,
+                            columns,
+                        )
+                        updated_count += 1
+
+                if manufacturer_column is not None and manufacturer:
+                    self._set_retrade_main_table_value(
+                        table,
+                        row,
+                        int(manufacturer_column),
+                        manufacturer,
+                        columns,
+                    )
+                    updated_count += 1
+        finally:
+            self._updating_retrade_main_table = False
+            table.blockSignals(previous_block_state)
+
+        return updated_count
+
+    @staticmethod
+    def _table_item_edit_value(item: Any) -> Any:
+        if item is None:
+            return None
+
+        data_getter = getattr(item, "data", None)
+        if callable(data_getter):
+            try:
+                value = data_getter(Qt.ItemDataRole.EditRole)
+            except Exception:
+                value = None
+            if value is not None:
+                return value
+
+        text_getter = getattr(item, "text", None)
+        if callable(text_getter):
+            return text_getter()
+        return None
+
+    @staticmethod
+    def _excel_cell_contains_formula(cell: Any) -> bool:
+        value = getattr(cell, "value", None)
+        return isinstance(value, str) and value.startswith("=")
+
+    @staticmethod
+    def _is_blank_retrade_table_value(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        try:
+            return bool(pd.isna(value))
+        except Exception:
+            return False
+
+    @classmethod
+    def _retrade_table_row_has_value(cls, table: Any, row: int) -> bool:
+        for col in range(table.columnCount()):
+            item = table.item(row, col)
+            value = cls._table_item_edit_value(item)
+            if not cls._is_blank_retrade_table_value(value):
+                return True
+        return False
+
+    @classmethod
+    def _retrade_main_position_columns(
+        cls,
+        headers: list[Any],
+        columns: dict[str, int | None],
+    ) -> list[int]:
+        ignored_columns = {
+            column
+            for column in (
+                columns.get("delivery_time"),
+                columns.get("manufacturer"),
+                columns.get("technical"),
+            )
+            if column is not None
+        }
+        position_columns: list[int] = []
+        for index, header in enumerate(headers):
+            if index in ignored_columns:
+                continue
+            normalized = cls._normalize_table_header(header)
+            if (
+                "наимен" in normalized
+                or "каталож" in normalized
+                or "артикул" in normalized
+            ):
+                position_columns.append(index)
+        return position_columns
+
+    @classmethod
+    def _retrade_main_row_has_position(
+        cls,
+        table: Any,
+        row: int,
+        position_columns: list[int],
+    ) -> bool:
+        if not position_columns:
+            return cls._retrade_table_row_has_value(table, row)
+
+        for col in position_columns:
+            item = table.item(row, col)
+            value = cls._table_item_edit_value(item)
+            if not cls._is_blank_retrade_table_value(value):
+                return True
+        return False
+
+    @classmethod
+    def _collect_missing_retrade_required_cells(cls, table: Any) -> list[dict[str, Any]]:
+        headers = cls._table_headers(table)
+        columns = cls._get_retrade_main_columns(headers)
+        required_labels = cls._retrade_main_required_field_labels()
+        required_columns = [
+            (kind, int(column))
+            for kind, column in columns.items()
+            if kind in required_labels and column is not None
+        ]
+        if not required_columns:
+            return []
+
+        missing: list[dict[str, Any]] = []
+        for row in range(table.rowCount()):
+            if not cls._retrade_table_row_has_value(table, row):
+                continue
+            for kind, col in required_columns:
+                item = table.item(row, col)
+                value = cls._table_item_edit_value(item)
+                if cls._is_blank_retrade_table_value(value):
+                    missing.append(
+                        {
+                            "row": row,
+                            "column": col,
+                            "label": required_labels[kind],
+                        }
+                    )
+        return missing
+
+    @staticmethod
+    def _format_missing_retrade_required_cells_message(
+        missing_cells: list[dict[str, Any]],
+    ) -> str:
+        preview_limit = 20
+        lines = [
+            f"- строка {int(cell['row']) + 1}: {cell['label']}"
+            for cell in missing_cells[:preview_limit]
+        ]
+        if len(missing_cells) > preview_limit:
+            lines.append(f"... и ещё {len(missing_cells) - preview_limit}")
+
+        return (
+            "Заполните обязательные ячейки перед сохранением:\n"
+            + "\n".join(lines)
+            + "\n\nФайл не сохранён."
+        )
+
+    @staticmethod
+    def _coerce_retrade_save_value(
+        value: Any,
+        *,
+        numeric_text: bool = False,
+    ) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            if not text or text.startswith("="):
+                return None
+            if numeric_text:
+                numeric_value = ExportMixin._parse_retrade_number_or_none(value)
+                if numeric_value is not None:
+                    return float(numeric_value)
+            return value
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            try:
+                if pd.isna(value):
+                    return None
+            except Exception:
+                pass
+            return float(value)
+        return value
+
+    def _write_retrade_table_to_worksheet(self, worksheet: Any, table: Any) -> int:
+        headers = self._table_headers(table)
+        columns = self._get_retrade_main_columns(headers)
+        money_columns = {
+            column
+            for column in (
+                columns.get("proposal_price"),
+                columns.get("total"),
+            )
+            if column is not None
+        }
+        numeric_columns = {
+            column
+            for column in (
+                columns.get("proposal_price"),
+                columns.get("qty"),
+                columns.get("total"),
+            )
+            if column is not None
+        }
+        default_currency = ""
+        for header in headers:
+            default_currency = self._currency_symbol(header)
+            if default_currency:
+                break
+
+        written_count = 0
+        for row in range(table.rowCount()):
+            for col in range(table.columnCount()):
+                item = table.item(row, col)
+                raw_value = self._table_item_edit_value(item)
+                value = self._coerce_retrade_save_value(
+                    raw_value,
+                    numeric_text=col in numeric_columns,
+                )
+                if value is None:
+                    continue
+
+                cell = worksheet.cell(row=row + 2, column=col + 1)
+                currency = ""
+                if col in money_columns:
+                    header = headers[col] if col < len(headers) else ""
+                    item_text = item.text() if item is not None else ""
+                    currency = (
+                        self._currency_symbol(raw_value)
+                        or self._currency_symbol(item_text)
+                        or self._currency_symbol(header)
+                        or self._currency_symbol(cell.number_format)
+                        or default_currency
+                    )
+
+                if self._excel_cell_contains_formula(cell):
+                    if col in money_columns:
+                        cell.number_format = self._currency_format(currency)
+                    continue
+
+                cell.value = value
+                if col in money_columns:
+                    cell.number_format = self._currency_format(currency)
+                written_count += 1
+        return written_count
+
+    def on_save_clicked(self) -> None:
+        file_path = str(getattr(self, "current_retrade_excel_path", "") or "").strip()
+        if not file_path:
+            QMessageBox.warning(self, "Ошибка", "Файл не загружен")
+            return
+
+        table = getattr(self, "retrade_table", None)
+        if not isinstance(table, QTableWidget):
+            QMessageBox.warning(self, "Ошибка", "Основная таблица не найдена")
+            return
+
+        missing_cells = self._collect_missing_retrade_required_cells(table)
+        if missing_cells:
+            QMessageBox.warning(
+                self,
+                "Не заполнены ячейки",
+                self._format_missing_retrade_required_cells_message(missing_cells),
+            )
+            return
+
+        workbook = None
+        try:
+            workbook = load_workbook(file_path)
+            worksheet = workbook.active
+            self._write_retrade_table_to_worksheet(worksheet, table)
+            workbook.save(file_path)
+        except Exception as exc:
+            error_text = f"Не удалось сохранить Excel файл: {exc}"
+            Tool.write_log(error_text)
+            QMessageBox.warning(self, "Ошибка", error_text)
+            return
+        finally:
+            if workbook is not None:
+                try:
+                    workbook.close()
+                except Exception:
+                    pass
+
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None:
+            status_bar.showMessage("Файл сохранён", 3_000)
+
+    def on_import_clicked(self) -> None:
+        QMessageBox.information(self, "Импорт", "Функция в разработке")
+
+    def on_load_kp_clicked(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите КП",
+            "",
+            "Word Files (*.docx)",
+        )
+        if not file_path:
+            return
+
+        table = getattr(self, "retrade_table", None)
+        if not isinstance(table, QTableWidget):
+            QMessageBox.warning(self, "Ошибка", "Основная таблица не найдена")
+            return
+
+        try:
+            kp_data = self._load_kp_docx_data(file_path)
+        except Exception as exc:
+            error_text = f"Не удалось распознать КП: {exc}"
+            Tool.write_log(error_text)
+            QMessageBox.warning(self, "Ошибка", "Не удалось распознать КП")
+            return
+
+        if not kp_data.get("delivery_times") and not kp_data.get("manufacturer"):
+            QMessageBox.warning(self, "Ошибка", "Не удалось распознать КП")
+            return
+
+        updated_count = self._apply_kp_data_to_retrade_main_table(table, kp_data)
+        if updated_count == 0:
+            QMessageBox.warning(self, "Ошибка", "Не удалось распознать КП")
+            return
+
+        resize_table_to_contents(table)
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None:
+            status_bar.showMessage("КП подгружено", 3_000)
 
     def load_retrade_excel(self) -> None:
         default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
@@ -577,6 +1383,7 @@ QTableWidget::indicator {{
             QMessageBox.warning(self, "Ошибка", error_text)
             return
 
+        self.current_retrade_excel_path = file_path
         self._activate_retrade_tab()
         self._log_ui(f"Excel спецификации загружен: {file_path}")
         status_bar_getter = getattr(self, "statusBar", None)
@@ -894,8 +1701,7 @@ QTableWidget::indicator {{
         numeric_value = self._parse_retrade_numeric_value(value)
         if numeric_value is None:
             return "" if value is None else str(value)
-        precision = self.get_rounding()
-        return f"{numeric_value:.{precision}f}"
+        return f"{numeric_value:.2f}"
 
     @staticmethod
     def _is_excel_date_like_value(value: Any) -> bool:
@@ -912,7 +1718,7 @@ QTableWidget::indicator {{
         col_index: int,
         header: str,
         price_columns: set[int],
-        rating_column: int | None,
+        rating_columns: set[int],
     ) -> str:
         if value is None:
             return ""
@@ -920,6 +1726,8 @@ QTableWidget::indicator {{
         header_lower = header_text.lower()
         if header_lower in self.NO_FORMAT_COLUMNS:
             return str(value)
+        if col_index in rating_columns:
+            return self.format_rating(value)
         if isinstance(value, str):
             stripped_value = value.strip()
             if stripped_value and not stripped_value.replace(".", "").isdigit():
@@ -930,8 +1738,6 @@ QTableWidget::indicator {{
             return self.format_rubles(value)
         if col_index in price_columns:
             return self.format_rubles(value)
-        if col_index == rating_column:
-            return self.format_rating(value)
         if self._parse_retrade_numeric_value(value) is not None:
             return self.format_number(value)
         return str(value)
@@ -1299,7 +2105,7 @@ QTableWidget::indicator {{
 
             lowered_headers = [header.lower() for header in headers]
             price_columns: set[int] = set()
-            rating_column: int | None = None
+            rating_columns: set[int] = set()
             for index, header_text in enumerate(lowered_headers):
                 if (
                     "руб" in header_text
@@ -1308,7 +2114,7 @@ QTableWidget::indicator {{
                 ):
                     price_columns.add(index)
                 if "рейтинг" in header_text:
-                    rating_column = index
+                    rating_columns.add(index)
 
             data_row_count = max(max_row - 1, 0)
             table.setRowCount(data_row_count)
@@ -1323,7 +2129,7 @@ QTableWidget::indicator {{
                         col_index=col_index,
                         header=headers[col_index] if col_index < len(headers) else "",
                         price_columns=price_columns,
-                        rating_column=rating_column,
+                        rating_columns=rating_columns,
                     )
                     item = QTableWidgetItem(text)
                     if self._parse_retrade_numeric_value(value) is not None:
@@ -1538,26 +2344,6 @@ QTableWidget::indicator {{
         if realization_price_col is None:
             raise ValueError('Не найдена колонка "Цена реализации за ед. без НДС"')
 
-        source_price_col = cls._find_worksheet_column_by_header(
-            worksheet,
-            lambda header: (
-                "ценазаедбезндс" in header
-                or (
-                    "цена" in header
-                    and "заед" in header
-                    and "безндс" in header
-                    and "реализац" not in header
-                    and "предлага" not in header
-                )
-            ),
-        )
-        corrected_rating_col = cls._find_worksheet_column_by_header(
-            worksheet,
-            lambda header: "скоррект" in header and "рейтинг" in header,
-        )
-
-        source_price_letter = get_column_letter(source_price_col or 10)
-        corrected_rating_letter = get_column_letter(corrected_rating_col or 19)
         formulas: dict[int, str] = {}
 
         for row_index_raw in row_indices:
@@ -1569,11 +2355,23 @@ QTableWidget::indicator {{
                 continue
 
             excel_row = row_index + 2
-            formula = (
-                f"=ROUND({source_price_letter}{excel_row}*"
-                f"{corrected_rating_letter}{excel_row}, 2)"
+            formula = f"=ROUND(J{excel_row}*S{excel_row}, 2)"
+            target_cell = worksheet.cell(
+                row=excel_row,
+                column=realization_price_col,
             )
-            worksheet.cell(row=excel_row, column=realization_price_col).value = formula
+            source_price_cell = worksheet.cell(row=excel_row, column=10)
+            currency = (
+                cls._detect_currency(target_cell.value, target_cell.number_format)
+                or cls._detect_currency(
+                    source_price_cell.value,
+                    source_price_cell.number_format,
+                )
+            )
+            target_cell.value = formula
+            target_cell.number_format = cls._currency_format(
+                cls._currency_symbol(currency) or currency
+            )
             formulas[row_index] = formula
 
         return formulas
@@ -1611,6 +2409,19 @@ QTableWidget::indicator {{
         _, best_prices = cls._extract_retrade_ratings_and_best_prices(table)
         return best_prices
 
+    @staticmethod
+    def _next_retrade_sheet_title(workbook: Any) -> str:
+        existing_titles = {
+            str(title or "").strip().casefold()
+            for title in getattr(workbook, "sheetnames", [])
+        }
+        index = 1
+        while True:
+            title = f"Переторжка {index}"
+            if title.casefold() not in existing_titles:
+                return title
+            index += 1
+
     @classmethod
     def _write_best_prices_to_calculations_file(
         cls,
@@ -1625,7 +2436,7 @@ QTableWidget::indicator {{
         try:
             sheet_original = workbook.worksheets[0]
             sheet_copy = workbook.copy_worksheet(sheet_original)
-            sheet_copy.title = "Обновленный расчет"
+            sheet_copy.title = cls._next_retrade_sheet_title(workbook)
 
             original_max_col = sheet_copy.max_column
             real_rating_col = original_max_col + 1
@@ -1815,7 +2626,7 @@ QTableWidget::indicator {{
 
         if isinstance(value, str):
             text_lower = value.lower()
-            if "руб" in text_lower or "rub" in text_lower:
+            if "₽" in value or "руб" in text_lower or "rub" in text_lower:
                 return "RUB"
             if "$" in value or "usd" in text_lower:
                 return "USD"
@@ -2072,10 +2883,29 @@ QTableWidget::indicator {{
     def _get_update_positions_columns(
         cls,
         headers: list[Any],
+        rows: list[list[Any]] | None = None,
+        *,
+        column_offset: int = 0,
     ) -> dict[str, int | None]:
+        row_width = max((len(row or []) for row in (rows or [])), default=0)
+        column_count = max(len(headers), row_width)
+        source_price_col = (
+            column_offset + 9 if column_offset + 9 < column_count else None
+        )
+        corrected_rating_col = (
+            column_offset + 18 if column_offset + 18 < column_count else None
+        )
         return {
-            "source_price": cls._find_update_positions_column(headers, "source_price"),
-            "corrected_rating": cls._find_update_positions_column(headers, "corrected_rating"),
+            "source_price": (
+                source_price_col
+                if source_price_col is not None
+                else cls._find_update_positions_column(headers, "source_price")
+            ),
+            "corrected_rating": (
+                corrected_rating_col
+                if corrected_rating_col is not None
+                else cls._find_update_positions_column(headers, "corrected_rating")
+            ),
             "sale_price": cls._find_update_positions_column(headers, "sale_price"),
         }
 
@@ -2085,19 +2915,28 @@ QTableWidget::indicator {{
             return cell.get("value")
         return cell
 
-    @staticmethod
-    def _cell_payload_currency(cell: Any) -> str | None:
+    @classmethod
+    def _cell_payload_currency(cls, cell: Any) -> str | None:
         if isinstance(cell, dict):
-            return cell.get("currency")
-        return None
+            currency = cell.get("currency")
+            if currency:
+                return currency
+            return cls._detect_currency(cell.get("value"), None)
+        return cls._detect_currency(cell, None)
 
     @classmethod
     def _calculate_updated_position_prices(
         cls,
         headers: list[Any],
         rows: list[list[Any]],
+        *,
+        column_offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
-        columns = cls._get_update_positions_columns(headers)
+        columns = cls._get_update_positions_columns(
+            headers,
+            rows,
+            column_offset=column_offset,
+        )
         missing = []
         if columns["source_price"] is None:
             missing.append("Цена за ед. без НДС")
@@ -2156,8 +2995,14 @@ QTableWidget::indicator {{
         cls,
         headers: list[Any],
         rows: list[list[Any]],
+        *,
+        column_offset: int = 0,
     ) -> list[int]:
-        columns = cls._get_update_positions_columns(headers)
+        columns = cls._get_update_positions_columns(
+            headers,
+            rows,
+            column_offset=column_offset,
+        )
         if columns["source_price"] is None:
             return []
 
@@ -2686,6 +3531,7 @@ QTableWidget::indicator {{
 
         calculations_headers = self._table_headers(calculations_table)
         calculations_rows = self._table_payload_rows(calculations_table)
+        column_offset = self.get_calculations_column_offset()
         main_headers = self._table_headers(main_table)
         main_price_col = self._find_update_positions_column(
             main_headers,
@@ -2703,6 +3549,7 @@ QTableWidget::indicator {{
             updates, sale_price_col = self._calculate_updated_position_prices(
                 calculations_headers,
                 calculations_rows,
+                column_offset=column_offset,
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Ошибка", str(exc))
@@ -2711,6 +3558,7 @@ QTableWidget::indicator {{
         formula_row_indices = self._formula_update_row_indices(
             calculations_headers,
             calculations_rows,
+            column_offset=column_offset,
         )
         if not formula_row_indices:
             QMessageBox.information(
@@ -2757,6 +3605,8 @@ QTableWidget::indicator {{
                 int(main_price_col),
                 new_price,
             )
+            if isinstance(main_table, QTableWidget):
+                self._recalculate_retrade_main_table_row(main_table, row_index)
             self._update_retrade_calculations_data_price(
                 row_index,
                 sale_price_col,
