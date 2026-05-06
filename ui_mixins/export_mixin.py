@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -33,7 +34,7 @@ from PySide6.QtWidgets import (
 
 from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from config import Config
-from services.excel_processor import ExcelProcessor
+from services.excel_processor import ExcelProcessor, RowCountMismatchError
 from services.excel_recalc import force_excel_recalc
 from services.trade_exporter import TradeExporter
 from tools import DatabaseTools as Tool
@@ -87,9 +88,39 @@ class ExportTradeWorker(QThread):
             self.error.emit(str(exc))
 
 
+class ImportRetradeWorker(QThread):
+    finished = Signal(str)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        bid_id: int,
+        file_path: str,
+        parent: Any = None,
+    ) -> None:
+        super().__init__(parent)
+        self._bid_id = int(bid_id)
+        self._file_path = str(file_path)
+
+    def run(self) -> None:
+        try:
+            exporter = TradeExporter()
+            imported_path = exporter.import_retrade_bid_data(
+                bid_id=self._bid_id,
+                file_path=self._file_path,
+            )
+            self.finished.emit(imported_path)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
 class ExportMixin:
     AUTO_TRADE_TIMER_MIN_MINUTES = 1
     AUTO_TRADE_TIMER_MAX_MINUTES = 1440
+    EXPORT_MISMATCH_OPEN_WITHOUT_COPY = "open_without_copy"
+    EXPORT_MISMATCH_OPEN_AND_COPY = "open_and_copy"
+    EXPORT_MISMATCH_CANCEL = "cancel"
     RATING_COLUMN_INDEX = 10
     BEST_PRICE_COLUMN_INDEX = 11
     RETRADE_INNER_TAB_MAIN = 0
@@ -123,9 +154,12 @@ class ExportMixin:
 
     def init_export_mixin(self) -> None:
         self._export_trade_worker: ExportTradeWorker | None = None
+        self._retrade_import_worker: ImportRetradeWorker | None = None
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
         self.current_retrade_excel_path = ""
+        self.current_retrade_bid_id: int | None = None
+        self._pending_retrade_bid_id: int | None = None
         self._updating_retrade_main_table = False
         self.calculations_file_path = ""
         self.workbook = None
@@ -1181,8 +1215,39 @@ QTableWidget::indicator {{
         return (
             "Заполните обязательные ячейки перед сохранением:\n"
             + "\n".join(lines)
-            + "\n\nФайл не сохранён."
+            + "\n\nМожно вернуться к заполнению или нажать «Пропустить», "
+            "чтобы сохранить файл как есть."
         )
+
+    def _confirm_skip_missing_retrade_required_cells(
+        self,
+        missing_cells: list[dict[str, Any]],
+    ) -> bool:
+        message_box = QMessageBox(self)
+        icon_enum = getattr(QMessageBox, "Icon", None)
+        warning_icon = (
+            getattr(icon_enum, "Warning", None)
+            if icon_enum is not None
+            else getattr(QMessageBox, "Warning", None)
+        )
+        if warning_icon is not None:
+            message_box.setIcon(warning_icon)
+
+        message_box.setWindowTitle("Не заполнены ячейки")
+        message_box.setText(
+            self._format_missing_retrade_required_cells_message(missing_cells)
+        )
+
+        role_enum = getattr(QMessageBox, "ButtonRole", QMessageBox)
+        action_role = getattr(role_enum, "ActionRole", 0)
+        reject_role = getattr(role_enum, "RejectRole", action_role)
+        fill_button = message_box.addButton("Заполнить", reject_role)
+        skip_button = message_box.addButton("Пропустить", action_role)
+        message_box.setDefaultButton(fill_button)
+        message_box.setEscapeButton(fill_button)
+        message_box.exec()
+
+        return message_box.clickedButton() == skip_button
 
     @staticmethod
     def _coerce_retrade_save_value(
@@ -1274,25 +1339,21 @@ QTableWidget::indicator {{
                 written_count += 1
         return written_count
 
-    def on_save_clicked(self) -> None:
+    def _save_current_retrade_excel(self, *, show_success_status: bool = True) -> bool:
         file_path = str(getattr(self, "current_retrade_excel_path", "") or "").strip()
         if not file_path:
             QMessageBox.warning(self, "Ошибка", "Файл не загружен")
-            return
+            return False
 
         table = getattr(self, "retrade_table", None)
         if not isinstance(table, QTableWidget):
             QMessageBox.warning(self, "Ошибка", "Основная таблица не найдена")
-            return
+            return False
 
         missing_cells = self._collect_missing_retrade_required_cells(table)
         if missing_cells:
-            QMessageBox.warning(
-                self,
-                "Не заполнены ячейки",
-                self._format_missing_retrade_required_cells_message(missing_cells),
-            )
-            return
+            if not self._confirm_skip_missing_retrade_required_cells(missing_cells):
+                return False
 
         workbook = None
         try:
@@ -1304,7 +1365,7 @@ QTableWidget::indicator {{
             error_text = f"Не удалось сохранить Excel файл: {exc}"
             Tool.write_log(error_text)
             QMessageBox.warning(self, "Ошибка", error_text)
-            return
+            return False
         finally:
             if workbook is not None:
                 try:
@@ -1314,11 +1375,88 @@ QTableWidget::indicator {{
 
         status_bar_getter = getattr(self, "statusBar", None)
         status_bar = status_bar_getter() if callable(status_bar_getter) else None
-        if status_bar is not None:
+        if show_success_status and status_bar is not None:
             status_bar.showMessage("Файл сохранён", 3_000)
+        return True
+
+    def on_save_clicked(self) -> None:
+        self._save_current_retrade_excel(show_success_status=True)
 
     def on_import_clicked(self) -> None:
-        QMessageBox.information(self, "Импорт", "Функция в разработке")
+        file_path = str(getattr(self, "current_retrade_excel_path", "") or "").strip()
+        if not file_path or not os.path.exists(file_path):
+            QMessageBox.warning(self, "Ошибка", "Текущий Excel файл переторжки не найден")
+            return
+
+        if not self._save_current_retrade_excel(show_success_status=False):
+            return
+
+        try:
+            bid_id = self._get_retrade_bid_id_for_import()
+            self._start_retrade_import_worker(bid_id=bid_id, file_path=file_path)
+        except Exception as exc:
+            self._on_retrade_import_error(str(exc))
+
+    def _get_retrade_bid_id_for_import(self) -> int:
+        stored_bid_id = getattr(self, "current_retrade_bid_id", None)
+        if stored_bid_id is not None:
+            try:
+                return self._parse_positive_bid_id(stored_bid_id)
+            except Exception:
+                Tool.write_log(f"Некорректный сохранённый bid_id переторжки: {stored_bid_id}")
+
+        return self._get_selected_retrade_bid_id_for_export()
+
+    def _start_retrade_import_worker(self, *, bid_id: int, file_path: str) -> None:
+        worker = getattr(self, "_retrade_import_worker", None)
+        is_running = getattr(worker, "isRunning", None)
+        if worker is not None and callable(is_running) and is_running():
+            raise RuntimeError("Импорт таблицы уже выполняется")
+
+        self._set_retrade_import_loading_state(is_loading=True)
+        worker = ImportRetradeWorker(
+            bid_id=bid_id,
+            file_path=file_path,
+            parent=self,
+        )
+        worker.finished.connect(self._on_retrade_import_finished)
+        worker.error.connect(self._on_retrade_import_error)
+        self._retrade_import_worker = worker
+        worker.start()
+
+    def _set_retrade_import_loading_state(self, *, is_loading: bool) -> None:
+        import_button = getattr(self, "import_button", None)
+        if isinstance(import_button, QPushButton):
+            import_button.setEnabled(not is_loading)
+            import_button.setText("Импорт..." if is_loading else "Импорт")
+
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and is_loading:
+            status_bar.showMessage("Импорт таблицы...")
+
+    def _finish_retrade_import(self, status_message: str) -> None:
+        self._set_retrade_import_loading_state(is_loading=False)
+        worker = getattr(self, "_retrade_import_worker", None)
+        self._retrade_import_worker = None
+        delete_later = getattr(worker, "deleteLater", None)
+        if callable(delete_later):
+            delete_later()
+
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and status_message:
+            status_bar.showMessage(status_message, 5_000)
+
+    def _on_retrade_import_finished(self, file_path: str) -> None:
+        Tool.write_log(f"Импорт переторжки завершен: {file_path}")
+        self._finish_retrade_import("Импорт завершен")
+
+    def _on_retrade_import_error(self, message: str) -> None:
+        error_text = str(message or "Неизвестная ошибка")
+        Tool.write_log(f"Ошибка импорта переторжки: {error_text}")
+        QMessageBox.warning(self, "Ошибка импорта", error_text)
+        self._finish_retrade_import("Ошибка импорта")
 
     def on_load_kp_clicked(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1384,6 +1522,7 @@ QTableWidget::indicator {{
             return
 
         self.current_retrade_excel_path = file_path
+        self.current_retrade_bid_id = None
         self._activate_retrade_tab()
         self._log_ui(f"Excel спецификации загружен: {file_path}")
         status_bar_getter = getattr(self, "statusBar", None)
@@ -3916,6 +4055,7 @@ QTableWidget::indicator {{
         if is_retrade and (bid_id is None or int(bid_id) <= 0):
             raise Exception("Выберите предложение переторжки")
 
+        self._pending_retrade_bid_id = int(bid_id) if is_retrade and bid_id is not None else None
         identifier_for_path: Any = (
             trade_id
             if trade_id is not None
@@ -3994,9 +4134,101 @@ QTableWidget::indicator {{
         self._export_trade_worker = None
         if worker is not None:
             worker.deleteLater()
+        self._pending_retrade_bid_id = None
         status_bar = self.statusBar()
         if status_bar is not None and status_message:
             status_bar.showMessage(status_message, 5_000)
+
+    def _prepare_exported_excel_for_opening(self, file_path_text: str) -> bool:
+        excel_processor = getattr(self, "excel_processor", None)
+        if excel_processor is None:
+            excel_processor = ExcelProcessor()
+            self.excel_processor = excel_processor
+
+        if not excel_processor.can_fill_exported_excel(file_path_text):
+            Tool.write_log(
+                "Пропуск пост-обработки Excel: файл сформирован напрямую из JSON"
+            )
+            return True
+
+        source_rows = self.get_table_rows()
+        try:
+            excel_processor.fill_exported_excel(file_path_text, source_rows)
+            return True
+        except RowCountMismatchError as exc:
+            action = self._ask_export_row_count_mismatch_action(exc)
+
+            if action == self.EXPORT_MISMATCH_OPEN_WITHOUT_COPY:
+                Tool.write_log(
+                    f"Открытие Excel без копирования данных из таблицы: {file_path_text}"
+                )
+                return True
+
+            if action == self.EXPORT_MISMATCH_OPEN_AND_COPY:
+                Tool.write_log(
+                    "Частичное копирование данных в Excel при несовпадении строк: "
+                    f"Excel={exc.excel_rows}, Таблица={exc.source_rows}"
+                )
+                excel_processor.fill_exported_excel(
+                    file_path_text,
+                    source_rows,
+                    strict_row_count=False,
+                )
+                return True
+
+            Tool.write_log(
+                f"Открытие Excel отменено после несовпадения строк: {file_path_text}"
+            )
+            return False
+
+    def _ask_export_row_count_mismatch_action(
+        self,
+        mismatch: RowCountMismatchError,
+    ) -> str:
+        message_box = QMessageBox(self)
+        icon_enum = getattr(QMessageBox, "Icon", None)
+        warning_icon = (
+            getattr(icon_enum, "Warning", None)
+            if icon_enum is not None
+            else getattr(QMessageBox, "Warning", None)
+        )
+        if warning_icon is not None:
+            message_box.setIcon(warning_icon)
+
+        message_box.setWindowTitle("Несовпадение строк")
+        message_box.setText(str(mismatch))
+        message_box.setInformativeText(
+            "Можно открыть скачанный Excel без копирования данных из таблицы. "
+            "При копировании будут заполнены только строки, которые есть и в Excel, "
+            "и в таблице."
+        )
+
+        role_enum = getattr(QMessageBox, "ButtonRole", QMessageBox)
+        accept_role = getattr(role_enum, "AcceptRole", 0)
+        action_role = getattr(role_enum, "ActionRole", accept_role)
+        reject_role = getattr(role_enum, "RejectRole", accept_role)
+        open_button = message_box.addButton(
+            "Открыть без копирования",
+            accept_role,
+        )
+        copy_button = message_box.addButton(
+            "Открыть и копировать",
+            action_role,
+        )
+        cancel_button = message_box.addButton(
+            "Отмена",
+            reject_role,
+        )
+        message_box.setDefaultButton(open_button)
+        message_box.setEscapeButton(cancel_button)
+        message_box.exec()
+
+        clicked_button = message_box.clickedButton()
+        if clicked_button == open_button:
+            return self.EXPORT_MISMATCH_OPEN_WITHOUT_COPY
+        if clicked_button == copy_button:
+            return self.EXPORT_MISMATCH_OPEN_AND_COPY
+        return self.EXPORT_MISMATCH_CANCEL
 
     def get_table_rows(self) -> list[dict]:
         table = getattr(getattr(self, "ui", None), "KpTable", None)
@@ -4098,25 +4330,22 @@ QTableWidget::indicator {{
             return
 
         if file_path_text:
-            excel_processor = getattr(self, "excel_processor", None)
-            if excel_processor is None:
-                excel_processor = ExcelProcessor()
-                self.excel_processor = excel_processor
-
             try:
-                if excel_processor.can_fill_exported_excel(file_path_text):
-                    excel_processor.fill_exported_excel(
-                        file_path_text,
-                        self.get_table_rows(),
-                    )
-                else:
-                    Tool.write_log(
-                        "Пропуск пост-обработки Excel: файл сформирован напрямую из JSON"
-                    )
+                if not self._prepare_exported_excel_for_opening(file_path_text):
+                    self._finish_export("Открытие Excel отменено")
+                    return
 
                 export_path = Path(file_path_text).expanduser()
                 if not export_path.exists() or not export_path.is_file():
                     raise FileNotFoundError(f"Excel файл не найден: {export_path}")
+
+                self.current_retrade_excel_path = str(export_path.resolve())
+                pending_bid_id = getattr(self, "_pending_retrade_bid_id", None)
+                self.current_retrade_bid_id = (
+                    int(pending_bid_id)
+                    if pending_bid_id is not None
+                    else None
+                )
 
                 try:
                     dataframe = pd.read_excel(export_path)

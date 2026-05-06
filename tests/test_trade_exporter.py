@@ -254,6 +254,44 @@ class TradeExporterTests(unittest.TestCase):
             )
             self.assertEqual(saved_path, target_path)
 
+    def test_import_retrade_lot_data_delegates_to_bid_import_when_bid_id_provided(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = os.path.join(tmpdir, "retrade.xlsx")
+            Path(source_path).write_bytes(b"placeholder")
+            with patch.object(
+                self.exporter,
+                "import_retrade_bid_data",
+                return_value=source_path,
+            ) as import_bid_mock:
+                imported_path = self.exporter.import_retrade_lot_data(
+                    lot_id=10,
+                    trade_id=999,
+                    bid_id=2,
+                    file_path=source_path,
+                )
+
+            import_bid_mock.assert_called_once_with(
+                bid_id=2,
+                file_path=source_path,
+            )
+            self.assertEqual(imported_path, source_path)
+
+    def test_validate_import_file_path_requires_existing_excel(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "retrade.xlsx"
+            source_path.write_bytes(b"placeholder")
+
+            self.assertEqual(
+                self.exporter._validate_import_file_path(str(source_path)),
+                source_path.resolve(),
+            )
+
+            with self.assertRaises(FileNotFoundError):
+                self.exporter._validate_import_file_path(str(source_path.with_name("missing.xlsx")))
+
+            with self.assertRaises(ValueError):
+                self.exporter._validate_import_file_path(str(source_path.with_suffix(".csv")))
+
 
 if __name__ == "__main__":
     unittest.main()

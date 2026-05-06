@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -10,9 +11,10 @@ from config import Config
 from tools import DatabaseTools as Tool
 
 try:
-    from playwright.sync_api import BrowserContext, Page, sync_playwright
+    from playwright.sync_api import BrowserContext, Locator, Page, sync_playwright
 except (ImportError, ModuleNotFoundError):  # pragma: no cover - dependency may be absent in test env
     BrowserContext = Any  # type: ignore[assignment]
+    Locator = Any  # type: ignore[assignment]
     Page = Any  # type: ignore[assignment]
     sync_playwright = None  # type: ignore[assignment]
 
@@ -285,6 +287,91 @@ query tradeWithCurrentStage($id: Int) {
         except Exception:
             pass
 
+    @staticmethod
+    def _log_import(message: str) -> None:
+        text = f"[IMPORT] {message}"
+        print(text)
+        Tool.write_log(text)
+
+    @staticmethod
+    def _click_locator_with_fallback(
+        page: Page,
+        locator: Locator,
+        *,
+        label: str,
+        timeout_ms: int = 15_000,
+        retries: int = 3,
+    ) -> None:
+        last_error: Exception | None = None
+        for attempt in range(max(1, retries)):
+            try:
+                locator.wait_for(state="visible", timeout=timeout_ms if attempt == 0 else 5_000)
+                locator.scroll_into_view_if_needed(timeout=5_000)
+                locator.click(timeout=5_000)
+                return
+            except Exception as exc:
+                last_error = exc
+
+            try:
+                element = locator.element_handle(timeout=3_000)
+                if element is not None:
+                    page.evaluate("(element) => element.click()", element)
+                    return
+            except Exception as exc:
+                last_error = exc
+
+            try:
+                page.wait_for_timeout(500 * (attempt + 1))
+            except Exception:
+                pass
+
+        raise RuntimeError(f"Не удалось нажать кнопку '{label}'") from last_error
+
+    def _goto_retrade_bid_page(self, page: Page, *, bid_id: int) -> None:
+        bid_id_int = self._parse_positive_int(bid_id, name="bid_id")
+        retrading_url = f"{self.BASE_URL}/bids/{bid_id_int}/retrading"
+        page.goto(
+            retrading_url,
+            wait_until="domcontentloaded",
+            timeout=max(60_000, self._timeout_ms),
+        )
+        page.wait_for_timeout(4000)
+
+    @staticmethod
+    def _get_retrade_specification_section(page: Page) -> Locator:
+        page.wait_for_selector("text=Спецификация", timeout=60_000)
+        print("[EXPORT] Блок спецификации найден")
+
+        specification_section = page.locator("section, article, div").filter(
+            has_text="Спецификация"
+        ).first
+        if specification_section.count() == 0:
+            raise RuntimeError("Не найден блок 'Спецификация'")
+        return specification_section
+
+    def _launch_retrade_persistent_context(self, playwright: Any) -> BrowserContext:
+        profile_dir = self._retrade_profile_dir.resolve()
+        profile_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            context = playwright.chromium.launch_persistent_context(
+                user_data_dir=str(profile_dir),
+                headless=False,
+                channel="chrome",
+                args=["--disable-blink-features=AutomationControlled"],
+                accept_downloads=True,
+            )
+            print("[EXPORT] launched persistent headed Chrome context")
+            return context
+        except Exception as chrome_exc:
+            print("[EXPORT] chrome channel launch failed, fallback to chromium:", str(chrome_exc))
+            return playwright.chromium.launch_persistent_context(
+                user_data_dir=str(profile_dir),
+                headless=False,
+                args=["--disable-blink-features=AutomationControlled"],
+                accept_downloads=True,
+            )
+
     def _export_retrade_bid_via_page(
         self,
         *,
@@ -293,26 +380,12 @@ query tradeWithCurrentStage($id: Int) {
         target_path: Path,
     ) -> str:
         bid_id_int = self._parse_positive_int(bid_id, name="bid_id")
-        retrading_url = f"{self.BASE_URL}/bids/{bid_id_int}/retrading"
         page = context.new_page()
         target_path_resolved = target_path.expanduser().resolve()
 
         try:
-            page.goto(
-                retrading_url,
-                wait_until="domcontentloaded",
-                timeout=max(60_000, self._timeout_ms),
-            )
-            page.wait_for_timeout(4000)
-
-            page.wait_for_selector("text=Спецификация", timeout=60_000)
-            print("[EXPORT] Блок спецификации найден")
-
-            specification_section = page.locator("section, article, div").filter(
-                has_text="Спецификация"
-            ).first
-            if specification_section.count() == 0:
-                raise RuntimeError("Не найден блок 'Спецификация'")
+            self._goto_retrade_bid_page(page, bid_id=bid_id_int)
+            specification_section = self._get_retrade_specification_section(page)
 
             export_button = specification_section.locator("button:has-text('Экспорт')").first
             print("[EXPORT] export_button найден:", export_button.count() > 0)
@@ -324,11 +397,13 @@ query tradeWithCurrentStage($id: Int) {
                 )
                 raise RuntimeError("Кнопка 'Экспорт' не найдена в блоке 'Спецификация'")
 
-            export_button.scroll_into_view_if_needed()
-
             try:
                 with page.expect_download(timeout=15_000) as download_info:
-                    export_button.click()
+                    self._click_locator_with_fallback(
+                        page,
+                        export_button,
+                        label="Экспорт",
+                    )
             except Exception as exc:
                 raise RuntimeError("Скачивание не произошло после клика по кнопке 'Экспорт'") from exc
 
@@ -350,6 +425,238 @@ query tradeWithCurrentStage($id: Int) {
                 page,
                 screenshot_path="export_error.png",
                 html_path="export_error.html",
+            )
+            raise
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _validate_import_file_path(file_path: str) -> Path:
+        source_path = Path(file_path).expanduser().resolve()
+        if source_path.suffix.lower() not in {".xlsx", ".xls"}:
+            raise ValueError("Файл импорта должен иметь расширение .xlsx или .xls")
+        if not source_path.exists() or not source_path.is_file():
+            raise FileNotFoundError(f"Excel файл для импорта не найден: {source_path}")
+        return source_path
+
+    @staticmethod
+    def _find_retrade_import_root(specification_section: Locator) -> Locator:
+        import_root = specification_section.locator("um-excel-import").first
+        if import_root.count() > 0:
+            return import_root
+        return specification_section
+
+    def _find_retrade_import_button(
+        self,
+        specification_section: Locator,
+    ) -> tuple[Locator, Locator]:
+        import_root = self._find_retrade_import_root(specification_section)
+        import_button = import_root.locator("button:has-text('Импорт')").first
+        if import_button.count() == 0:
+            import_button = specification_section.locator("button:has-text('Импорт')").first
+        if import_button.count() == 0:
+            raise RuntimeError("Кнопка 'Импорт' не найдена в блоке 'Спецификация'")
+        return import_button, import_root
+
+    @staticmethod
+    def _find_retrade_import_file_input(
+        page: Page,
+        import_root: Locator,
+        specification_section: Locator,
+    ) -> Locator:
+        for candidate in (
+            import_root.locator("input[type='file']").first,
+            specification_section.locator("um-excel-import input[type='file']").first,
+            specification_section.locator("input[type='file']").first,
+        ):
+            if candidate.count() > 0:
+                return candidate
+
+        try:
+            page.wait_for_selector("input[type='file']", timeout=15_000)
+        except Exception as exc:
+            raise RuntimeError("Поле выбора файла для импорта не появилось") from exc
+
+        file_input = page.locator("input[type='file']").first
+        if file_input.count() == 0:
+            raise RuntimeError("Поле выбора файла для импорта не появилось")
+        return file_input
+
+    def _select_retrade_import_file(
+        self,
+        page: Page,
+        specification_section: Locator,
+        import_button: Locator,
+        import_root: Locator,
+        source_path: Path,
+    ) -> None:
+        clicked_for_chooser = False
+        try:
+            with page.expect_file_chooser(timeout=5_000) as chooser_info:
+                self._click_locator_with_fallback(
+                    page,
+                    import_button,
+                    label="Импорт",
+                )
+                clicked_for_chooser = True
+            chooser_info.value.set_files(str(source_path))
+            return
+        except Exception:
+            if not clicked_for_chooser:
+                self._click_locator_with_fallback(
+                    page,
+                    import_button,
+                    label="Импорт",
+                )
+
+        file_input = self._find_retrade_import_file_input(
+            page,
+            import_root,
+            specification_section,
+        )
+        file_input.set_input_files(str(source_path))
+
+    def _confirm_retrade_import_if_needed(self, page: Page) -> None:
+        dialog = page.locator(
+            "[role='dialog'], .mat-dialog-container, .cdk-overlay-pane, .modal"
+        ).filter(has_text="Импорт").last
+        try:
+            if dialog.count() == 0:
+                return
+        except Exception:
+            return
+
+        for button_text in ("Подтвердить", "Загрузить", "Импорт", "ОК", "Да"):
+            button = dialog.locator(f"button:has-text('{button_text}')").first
+            try:
+                if button.count() > 0 and button.is_visible(timeout=1_000):
+                    self._click_locator_with_fallback(
+                        page,
+                        button,
+                        label=button_text,
+                        timeout_ms=5_000,
+                    )
+                    return
+            except Exception:
+                continue
+
+    @staticmethod
+    def _visible_notification_texts(page: Page) -> list[str]:
+        selector = (
+            "[role='alert'], .mat-snack-bar-container, simple-snack-bar, "
+            ".cdk-overlay-pane, .toast, .notification, .alert"
+        )
+        locator = page.locator(selector)
+        texts: list[str] = []
+        try:
+            count = min(locator.count(), 10)
+        except Exception:
+            return texts
+
+        for index in range(count):
+            item = locator.nth(index)
+            try:
+                if not item.is_visible(timeout=500):
+                    continue
+                text = " ".join(str(item.inner_text(timeout=1_000) or "").split())
+            except Exception:
+                continue
+            if text:
+                texts.append(text)
+        return texts
+
+    def _wait_for_retrade_import_completion(self, page: Page) -> None:
+        try:
+            page.wait_for_load_state("networkidle", timeout=30_000)
+        except Exception:
+            pass
+
+        try:
+            page.wait_for_function(
+                """
+() => {
+  const isVisible = (element) => {
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== 'none'
+      && style.visibility !== 'hidden'
+      && rect.width > 0
+      && rect.height > 0;
+  };
+  const loaders = Array.from(document.querySelectorAll(
+    'mat-progress-bar, .mat-progress-bar, mat-spinner, .mat-spinner, '
+    + '.spinner, .loader, .loading, [aria-busy="true"]'
+  ));
+  return !loaders.some(isVisible);
+}
+""",
+                timeout=30_000,
+            )
+        except Exception:
+            pass
+
+        success_pattern = re.compile(
+            r"(импорт\s+выполнен|импорт.{0,80}успеш|успешно.{0,80}импорт)",
+            re.IGNORECASE,
+        )
+        error_pattern = re.compile(
+            r"(ошибка|не\s+удалось|import\s+failed|failed|error)",
+            re.IGNORECASE,
+        )
+        for text in self._visible_notification_texts(page):
+            if success_pattern.search(text):
+                return
+            if error_pattern.search(text):
+                raise RuntimeError(f"Сайт вернул ошибку при импорте: {text}")
+
+        try:
+            body_text = page.locator("body").inner_text(timeout=5_000)
+        except Exception:
+            return
+        if success_pattern.search(body_text):
+            return
+
+    def _import_retrade_bid_via_page(
+        self,
+        *,
+        context: BrowserContext,
+        bid_id: int,
+        source_path: Path,
+    ) -> str:
+        bid_id_int = self._parse_positive_int(bid_id, name="bid_id")
+        page = context.new_page()
+
+        self._log_import("started")
+        try:
+            self._goto_retrade_bid_page(page, bid_id=bid_id_int)
+            specification_section = self._get_retrade_specification_section(page)
+
+            import_button, import_root = self._find_retrade_import_button(
+                specification_section
+            )
+            self._log_import("import button found")
+
+            self._select_retrade_import_file(
+                page,
+                specification_section,
+                import_button,
+                import_root,
+                source_path,
+            )
+            self._log_import("file selected")
+
+            self._confirm_retrade_import_if_needed(page)
+            self._wait_for_retrade_import_completion(page)
+            self._log_import("upload completed")
+            return str(source_path)
+        except Exception:
+            self._write_page_debug_dump(
+                page,
+                screenshot_path="import_error.png",
+                html_path="import_error.html",
             )
             raise
         finally:
@@ -985,28 +1292,7 @@ query tradeWithCurrentStage($id: Int) {
             raise RuntimeError("Не удалось подготовить cookies для Playwright")
 
         with sync_playwright() as playwright:
-            profile_dir = self._retrade_profile_dir.resolve()
-            profile_dir.mkdir(parents=True, exist_ok=True)
-            context: BrowserContext
-
-            try:
-                context = playwright.chromium.launch_persistent_context(
-                    user_data_dir=str(profile_dir),
-                    headless=False,
-                    channel="chrome",
-                    args=["--disable-blink-features=AutomationControlled"],
-                    accept_downloads=True,
-                )
-                print("[EXPORT] launched persistent headed Chrome context")
-            except Exception as chrome_exc:
-                print("[EXPORT] chrome channel launch failed, fallback to chromium:", str(chrome_exc))
-                context = playwright.chromium.launch_persistent_context(
-                    user_data_dir=str(profile_dir),
-                    headless=False,
-                    args=["--disable-blink-features=AutomationControlled"],
-                    accept_downloads=True,
-                )
-
+            context = self._launch_retrade_persistent_context(playwright)
             try:
                 context.add_cookies(playwright_cookies)
                 return self._export_retrade_bid_via_page(
@@ -1017,6 +1303,56 @@ query tradeWithCurrentStage($id: Int) {
             finally:
                 context.close()
 
+    def import_retrade_bid_data(
+        self,
+        *,
+        bid_id: int,
+        file_path: str,
+    ) -> str:
+        if sync_playwright is None:
+            raise RuntimeError(
+                "Playwright не установлен. Установите зависимость и выполните "
+                "`python -m playwright install chromium`."
+            )
+
+        bid_id_int = self._parse_positive_int(bid_id, name="bid_id")
+        source_path = self._validate_import_file_path(file_path)
+        cookies = self._load_cookies_for_export()
+        playwright_cookies = self._build_playwright_cookies(cookies)
+        if not playwright_cookies:
+            raise RuntimeError("Не удалось подготовить cookies для Playwright")
+
+        with sync_playwright() as playwright:
+            context = self._launch_retrade_persistent_context(playwright)
+            try:
+                context.add_cookies(playwright_cookies)
+                return self._import_retrade_bid_via_page(
+                    context=context,
+                    bid_id=bid_id_int,
+                    source_path=source_path,
+                )
+            finally:
+                context.close()
+
+    def import_retrade_lot_data(
+        self,
+        lot_id: int,
+        file_path: str,
+        *,
+        trade_id: int | None = None,
+        bid_id: int | None = None,
+    ) -> str:
+        self._parse_positive_int(lot_id, name="lot_id")
+        if trade_id is not None:
+            self._parse_positive_int(trade_id, name="trade_id")
+        if bid_id is None:
+            raise RuntimeError("Выберите предложение переторжки")
+        selected_bid_id = self._parse_positive_int(bid_id, name="bid_id")
+        return self.import_retrade_bid_data(
+            bid_id=selected_bid_id,
+            file_path=file_path,
+        )
+
     def export_trade(self, trade_id: int, download_path: str) -> str:
         return self.export_trade_data(trade_id=trade_id, download_path=download_path)
 
@@ -1025,6 +1361,9 @@ query tradeWithCurrentStage($id: Int) {
 
     def export_retrade_lot(self, lot_id: int, download_path: str) -> str:
         return self.export_retrade_lot_data(lot_id=lot_id, download_path=download_path)
+
+    def import_retrade_lot(self, lot_id: int, file_path: str, *, bid_id: int | None = None) -> str:
+        return self.import_retrade_lot_data(lot_id=lot_id, file_path=file_path, bid_id=bid_id)
 
     def export_retrade(
         self,
@@ -1037,6 +1376,21 @@ query tradeWithCurrentStage($id: Int) {
         return self.export_retrade_lot_data(
             lot_id=lot_id,
             download_path=download_path,
+            trade_id=trade_id,
+            bid_id=bid_id,
+        )
+
+    def import_retrade(
+        self,
+        lot_id: int,
+        file_path: str,
+        *,
+        trade_id: int | None = None,
+        bid_id: int | None = None,
+    ) -> str:
+        return self.import_retrade_lot_data(
+            lot_id=lot_id,
+            file_path=file_path,
             trade_id=trade_id,
             bid_id=bid_id,
         )

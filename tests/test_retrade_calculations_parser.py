@@ -769,7 +769,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
 
         self.assertIn("строка 2: Срок поставки", message)
         self.assertIn("строка 2: Производитель", message)
-        self.assertIn("Файл не сохранён.", message)
+        self.assertIn("Пропустить", message)
 
     def test_recalculate_retrade_main_row_values_updates_total(self):
         headers = ["Предлагаемая цена за ед.", "Кол-во", "Сумма"]

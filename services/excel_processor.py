@@ -3,6 +3,15 @@ from __future__ import annotations
 import pandas as pd
 
 
+class RowCountMismatchError(Exception):
+    def __init__(self, *, excel_rows: int, source_rows: int) -> None:
+        self.excel_rows = excel_rows
+        self.source_rows = source_rows
+        super().__init__(
+            f"Количество строк не совпадает: Excel={excel_rows}, Таблица={source_rows}"
+        )
+
+
 class ExcelProcessor:
     PRICE_COLUMN = "Предлагаемая цена за ед. (без учета НДС)"
     MANUFACTURER_COLUMN = "Производитель"
@@ -17,19 +26,27 @@ class ExcelProcessor:
         )
         return all(col in df.columns for col in required_columns)
 
-    def fill_exported_excel(self, file_path: str, source_rows: list) -> None:
+    def fill_exported_excel(
+        self,
+        file_path: str,
+        source_rows: list,
+        *,
+        strict_row_count: bool = True,
+    ) -> None:
         df = pd.read_excel(file_path)
 
         for col in [self.PRICE_COLUMN, self.MANUFACTURER_COLUMN, self.TECH_COLUMN]:
             if col not in df.columns:
                 raise Exception(f"Не найдена колонка: {col}")
 
-        if len(df) != len(source_rows):
-            raise Exception(
-                f"Количество строк не совпадает: Excel={len(df)}, Таблица={len(source_rows)}"
+        if strict_row_count and len(df) != len(source_rows):
+            raise RowCountMismatchError(
+                excel_rows=len(df),
+                source_rows=len(source_rows),
             )
 
-        for i in range(len(df)):
+        rows_to_copy = len(df) if strict_row_count else min(len(df), len(source_rows))
+        for i in range(rows_to_copy):
             row = source_rows[i] if isinstance(source_rows[i], dict) else {}
 
             manufacturer = row.get("manufacturer")

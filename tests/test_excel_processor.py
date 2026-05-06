@@ -4,7 +4,7 @@ import unittest
 
 import pandas as pd
 
-from services.excel_processor import ExcelProcessor
+from services.excel_processor import ExcelProcessor, RowCountMismatchError
 
 
 class ExcelProcessorTests(unittest.TestCase):
@@ -125,7 +125,7 @@ class ExcelProcessorTests(unittest.TestCase):
             ]
         )
 
-        with self.assertRaises(Exception) as context:
+        with self.assertRaises(RowCountMismatchError) as context:
             self.processor.fill_exported_excel(
                 path,
                 [
@@ -135,6 +135,36 @@ class ExcelProcessorTests(unittest.TestCase):
             )
 
         self.assertIn("Количество строк не совпадает", str(context.exception))
+        self.assertEqual(context.exception.excel_rows, 1)
+        self.assertEqual(context.exception.source_rows, 2)
+
+    def test_fill_exported_excel_can_copy_overlapping_rows_when_counts_differ(self):
+        path = self._create_excel(
+            [
+                {
+                    ExcelProcessor.PRICE_COLUMN: 0,
+                    ExcelProcessor.MANUFACTURER_COLUMN: "old-1",
+                    ExcelProcessor.TECH_COLUMN: "old-1",
+                },
+                {
+                    ExcelProcessor.PRICE_COLUMN: 0,
+                    ExcelProcessor.MANUFACTURER_COLUMN: "old-2",
+                    ExcelProcessor.TECH_COLUMN: "old-2",
+                },
+            ]
+        )
+
+        self.processor.fill_exported_excel(
+            path,
+            [{"price": 999, "manufacturer": "ООО Ромашка", "tech_characteristics": "IP65"}],
+            strict_row_count=False,
+        )
+
+        result = pd.read_excel(path)
+        self.assertEqual(result.at[0, ExcelProcessor.PRICE_COLUMN], 999)
+        self.assertEqual(result.at[0, ExcelProcessor.MANUFACTURER_COLUMN], "ООО Ромашка")
+        self.assertEqual(result.at[0, ExcelProcessor.TECH_COLUMN], "IP65")
+        self.assertEqual(result.at[1, ExcelProcessor.MANUFACTURER_COLUMN], "old-2")
 
 
 if __name__ == "__main__":
