@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from docx import Document
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PySide6.QtCore import QSettings, QThread, Signal, QTimer, Qt
@@ -914,6 +915,102 @@ QTableWidget::indicator {{
         finally:
             self._updating_retrade_main_table = False
             table.blockSignals(previous_block_state)
+
+    @staticmethod
+    def _extract_delivery_time_text(text: Any) -> str:
+        if text is None:
+            return ""
+        normalized_text = " ".join(str(text).replace("\xa0", " ").split())
+        if not normalized_text:
+            return ""
+
+        match = re.search(
+            r"\b\d+(?:[,.]\d+)?\s*(?:рабочих\s+|календарных\s+)?дн(?:ей|я|ь|\.)?\b",
+            normalized_text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group(0).strip(" ;,.")
+        return ""
+
+    @classmethod
+    def _extract_kp_delivery_times_from_document(cls, document: Any) -> list[str]:
+        delivery_times: list[str] = []
+        for table in getattr(document, "tables", []):
+            rows = list(getattr(table, "rows", []) or [])
+            header_row_index: int | None = None
+            delivery_column: int | None = None
+
+            for row_index, row in enumerate(rows):
+                cells = [
+                    str(getattr(cell, "text", "") or "").strip()
+                    for cell in getattr(row, "cells", [])
+                ]
+                for column_index, cell_text in enumerate(cells):
+                    normalized = cls._normalize_table_header(cell_text)
+                    if "срок" in normalized and "постав" in normalized:
+                        header_row_index = row_index
+                        delivery_column = column_index
+                        break
+                if delivery_column is not None:
+                    break
+
+            if delivery_column is not None and header_row_index is not None:
+                for row in rows[header_row_index + 1 :]:
+                    cells = [
+                        str(getattr(cell, "text", "") or "").strip()
+                        for cell in getattr(row, "cells", [])
+                    ]
+                    if delivery_column >= len(cells):
+                        continue
+                    raw_value = cells[delivery_column]
+                    value = cls._extract_delivery_time_text(raw_value) or raw_value
+                    if value:
+                        delivery_times.append(value)
+                continue
+
+            for row in rows:
+                for cell in getattr(row, "cells", []):
+                    value = cls._extract_delivery_time_text(
+                        getattr(cell, "text", "")
+                    )
+                    if value:
+                        delivery_times.append(value)
+                        break
+
+        return delivery_times
+
+    @staticmethod
+    def _extract_kp_manufacturer_from_document(document: Any) -> str:
+        for paragraph in getattr(document, "paragraphs", []):
+            text = " ".join(str(getattr(paragraph, "text", "") or "").split())
+            if "производитель" not in text.lower():
+                continue
+
+            match = re.search(
+                r"производитель\s*[-–—:]\s*([^;\n\r]+)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                return match.group(1).strip(" ;,.")
+
+            parts = re.split(r"[-–—:]", text, maxsplit=1)
+            if len(parts) == 2:
+                return parts[1].strip(" ;,.")
+        return ""
+
+    @classmethod
+    def _extract_kp_data_from_document(cls, document: Any) -> dict[str, Any]:
+        return {
+            "delivery_times": cls._extract_kp_delivery_times_from_document(document),
+            "manufacturer": cls._extract_kp_manufacturer_from_document(document),
+        }
+
+    @classmethod
+    def _load_kp_docx_data(cls, file_path: str) -> dict[str, Any]:
+        document = Document(file_path)
+        return cls._extract_kp_data_from_document(document)
 
     @staticmethod
     def _table_item_edit_value(item: Any) -> Any:
