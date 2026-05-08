@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from docx import Document
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PySide6.QtCore import QSettings, QThread, Signal, QTimer, Qt
@@ -34,6 +33,7 @@ from PySide6.QtWidgets import (
 
 from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from config import Config
+from retrade.retrade_service import RetradeService
 from services.excel_processor import ExcelProcessor, RowCountMismatchError
 from services.excel_recalc import force_excel_recalc
 from services.trade_exporter import TradeExporter
@@ -51,6 +51,7 @@ class ExportTradeWorker(QThread):
         lot_id: int | None = None,
         bid_id: int | None = None,
         is_retrade: bool = False,
+        is_submission_acceptance: bool = False,
         download_path: str,
         parent: Any = None,
     ) -> None:
@@ -59,6 +60,7 @@ class ExportTradeWorker(QThread):
         self._lot_id = int(lot_id) if lot_id is not None else None
         self._bid_id = int(bid_id) if bid_id is not None else None
         self._is_retrade = bool(is_retrade)
+        self._is_submission_acceptance = bool(is_submission_acceptance)
         if self._trade_id is None and self._lot_id is None:
             raise ValueError("Не указан trade_id или lot_id для экспорта")
         self._download_path = str(download_path)
@@ -72,6 +74,11 @@ class ExportTradeWorker(QThread):
                     download_path=self._download_path,
                     trade_id=self._trade_id,
                     bid_id=self._bid_id,
+                )
+            elif self._lot_id is not None and self._is_submission_acceptance:
+                saved_path = exporter.export_submission_lot_data(
+                    lot_id=self._lot_id,
+                    download_path=self._download_path,
                 )
             elif self._lot_id is not None:
                 saved_path = exporter.export_lot_data(
@@ -105,8 +112,7 @@ class ImportRetradeWorker(QThread):
 
     def run(self) -> None:
         try:
-            exporter = TradeExporter()
-            imported_path = exporter.import_retrade_bid_data(
+            imported_path = RetradeService.import_excel(
                 bid_id=self._bid_id,
                 file_path=self._file_path,
             )
@@ -160,6 +166,9 @@ class ExportMixin:
         self.current_retrade_excel_path = ""
         self.current_retrade_bid_id: int | None = None
         self._pending_retrade_bid_id: int | None = None
+        self._active_export_workflow = ""
+        self._pending_submission_export_metadata: dict[str, str] = {}
+        self.current_submission_acceptance_excel_path = ""
         self._updating_retrade_main_table = False
         self.calculations_file_path = ""
         self.workbook = None
@@ -555,22 +564,17 @@ QTableWidget::indicator {{
         self.save_button.setObjectName("save_button")
         self.import_button = QPushButton("Импорт", parent)
         self.import_button.setObjectName("import_button")
-        self.load_kp_button = QPushButton("Подгрузить КП", parent)
-        self.load_kp_button.setObjectName("load_kp_button")
 
         insert_index = controls_layout.indexOf(self.label_auto_trade_status)
         if insert_index < 0:
             insert_index = controls_layout.count()
         controls_layout.insertWidget(insert_index, self.save_button)
         controls_layout.insertWidget(insert_index + 1, self.import_button)
-        controls_layout.insertWidget(insert_index + 2, self.load_kp_button)
 
         self.ui.save_button = self.save_button
         self.ui.import_button = self.import_button
-        self.ui.load_kp_button = self.load_kp_button
         self.save_button.clicked.connect(self.on_save_clicked)
         self.import_button.clicked.connect(self.on_import_clicked)
-        self.load_kp_button.clicked.connect(self.on_load_kp_clicked)
 
     @staticmethod
     def _load_retrade_excel_rows(file_path: str) -> list[list[Any]]:
@@ -910,176 +914,6 @@ QTableWidget::indicator {{
         finally:
             self._updating_retrade_main_table = False
             table.blockSignals(previous_block_state)
-
-    @staticmethod
-    def _extract_delivery_time_text(text: Any) -> str:
-        if text is None:
-            return ""
-        normalized_text = " ".join(str(text).replace("\xa0", " ").split())
-        if not normalized_text:
-            return ""
-
-        match = re.search(
-            r"\b\d+(?:[,.]\d+)?\s*(?:рабочих\s+|календарных\s+)?дн(?:ей|я|ь|\.)?\b",
-            normalized_text,
-            flags=re.IGNORECASE,
-        )
-        if match:
-            return match.group(0).strip(" ;,.")
-        return ""
-
-    @classmethod
-    def _extract_kp_delivery_times_from_document(cls, document: Any) -> list[str]:
-        delivery_times: list[str] = []
-        for table in getattr(document, "tables", []):
-            rows = list(getattr(table, "rows", []) or [])
-            header_row_index: int | None = None
-            delivery_column: int | None = None
-
-            for row_index, row in enumerate(rows):
-                cells = [
-                    str(getattr(cell, "text", "") or "").strip()
-                    for cell in getattr(row, "cells", [])
-                ]
-                for column_index, cell_text in enumerate(cells):
-                    normalized = cls._normalize_table_header(cell_text)
-                    if "срок" in normalized and "постав" in normalized:
-                        header_row_index = row_index
-                        delivery_column = column_index
-                        break
-                if delivery_column is not None:
-                    break
-
-            if delivery_column is not None and header_row_index is not None:
-                for row in rows[header_row_index + 1 :]:
-                    cells = [
-                        str(getattr(cell, "text", "") or "").strip()
-                        for cell in getattr(row, "cells", [])
-                    ]
-                    if delivery_column >= len(cells):
-                        continue
-                    raw_value = cells[delivery_column]
-                    value = cls._extract_delivery_time_text(raw_value) or raw_value
-                    if value:
-                        delivery_times.append(value)
-                continue
-
-            for row in rows:
-                for cell in getattr(row, "cells", []):
-                    value = cls._extract_delivery_time_text(
-                        getattr(cell, "text", "")
-                    )
-                    if value:
-                        delivery_times.append(value)
-                        break
-
-        return delivery_times
-
-    @staticmethod
-    def _extract_kp_manufacturer_from_document(document: Any) -> str:
-        for paragraph in getattr(document, "paragraphs", []):
-            text = " ".join(str(getattr(paragraph, "text", "") or "").split())
-            if "производитель" not in text.lower():
-                continue
-
-            match = re.search(
-                r"производитель\s*[-–—:]\s*([^;\n\r]+)",
-                text,
-                flags=re.IGNORECASE,
-            )
-            if match:
-                return match.group(1).strip(" ;,.")
-
-            parts = re.split(r"[-–—:]", text, maxsplit=1)
-            if len(parts) == 2:
-                return parts[1].strip(" ;,.")
-        return ""
-
-    @classmethod
-    def _extract_kp_data_from_document(cls, document: Any) -> dict[str, Any]:
-        return {
-            "delivery_times": cls._extract_kp_delivery_times_from_document(document),
-            "manufacturer": cls._extract_kp_manufacturer_from_document(document),
-        }
-
-    @classmethod
-    def _load_kp_docx_data(cls, file_path: str) -> dict[str, Any]:
-        document = Document(file_path)
-        return cls._extract_kp_data_from_document(document)
-
-    def _set_retrade_main_table_value(
-        self,
-        table: QTableWidget,
-        row: int,
-        column: int,
-        value: Any,
-        columns: dict[str, int | None],
-    ) -> None:
-        item = table.item(row, column)
-        if item is None:
-            item = QTableWidgetItem()
-            table.setItem(row, column, item)
-        self._configure_retrade_main_item(
-            item,
-            value,
-            column,
-            columns,
-            self._retrade_main_editable_columns(columns),
-        )
-
-    def _apply_kp_data_to_retrade_main_table(
-        self,
-        table: QTableWidget,
-        kp_data: dict[str, Any],
-    ) -> int:
-        headers = self._table_headers(table)
-        columns = self._get_retrade_main_columns(headers)
-        delivery_column = columns.get("delivery_time")
-        manufacturer_column = columns.get("manufacturer")
-        position_columns = self._retrade_main_position_columns(headers, columns)
-        delivery_times = list(kp_data.get("delivery_times") or [])
-        manufacturer = str(kp_data.get("manufacturer") or "").strip()
-        if delivery_column is None and manufacturer_column is None:
-            return 0
-
-        updated_count = 0
-        previous_block_state = table.blockSignals(True)
-        self._updating_retrade_main_table = True
-        try:
-            for row in range(table.rowCount()):
-                if not self._retrade_main_row_has_position(
-                    table,
-                    row,
-                    position_columns,
-                ):
-                    continue
-
-                if delivery_column is not None and row < len(delivery_times):
-                    delivery_time = str(delivery_times[row] or "").strip()
-                    if delivery_time:
-                        self._set_retrade_main_table_value(
-                            table,
-                            row,
-                            int(delivery_column),
-                            delivery_time,
-                            columns,
-                        )
-                        updated_count += 1
-
-                if manufacturer_column is not None and manufacturer:
-                    self._set_retrade_main_table_value(
-                        table,
-                        row,
-                        int(manufacturer_column),
-                        manufacturer,
-                        columns,
-                    )
-                    updated_count += 1
-        finally:
-            self._updating_retrade_main_table = False
-            table.blockSignals(previous_block_state)
-
-        return updated_count
 
     @staticmethod
     def _table_item_edit_value(item: Any) -> Any:
@@ -1457,44 +1291,6 @@ QTableWidget::indicator {{
         Tool.write_log(f"Ошибка импорта переторжки: {error_text}")
         QMessageBox.warning(self, "Ошибка импорта", error_text)
         self._finish_retrade_import("Ошибка импорта")
-
-    def on_load_kp_clicked(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Выберите КП",
-            "",
-            "Word Files (*.docx)",
-        )
-        if not file_path:
-            return
-
-        table = getattr(self, "retrade_table", None)
-        if not isinstance(table, QTableWidget):
-            QMessageBox.warning(self, "Ошибка", "Основная таблица не найдена")
-            return
-
-        try:
-            kp_data = self._load_kp_docx_data(file_path)
-        except Exception as exc:
-            error_text = f"Не удалось распознать КП: {exc}"
-            Tool.write_log(error_text)
-            QMessageBox.warning(self, "Ошибка", "Не удалось распознать КП")
-            return
-
-        if not kp_data.get("delivery_times") and not kp_data.get("manufacturer"):
-            QMessageBox.warning(self, "Ошибка", "Не удалось распознать КП")
-            return
-
-        updated_count = self._apply_kp_data_to_retrade_main_table(table, kp_data)
-        if updated_count == 0:
-            QMessageBox.warning(self, "Ошибка", "Не удалось распознать КП")
-            return
-
-        resize_table_to_contents(table)
-        status_bar_getter = getattr(self, "statusBar", None)
-        status_bar = status_bar_getter() if callable(status_bar_getter) else None
-        if status_bar is not None:
-            status_bar.showMessage("КП подгружено", 3_000)
 
     def load_retrade_excel(self) -> None:
         default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
@@ -3929,13 +3725,23 @@ QTableWidget::indicator {{
 
     def export_selected_trade(self) -> None:
         try:
-            trade_id = self._get_selected_trade_id_for_export()
-            self._start_export_worker(trade_id=trade_id)
+            trade = self._get_selected_trade_for_submission_export()
+            self._set_pending_submission_export_metadata(trade)
+            lot_id = self._submission_lot_id_from_trade(trade)
+            self._start_export_worker(
+                lot_id=lot_id,
+                is_submission_acceptance=True,
+            )
         except Exception as exc:
             self._on_export_error(str(exc))
 
-    def export_trade(self, lot_id: int) -> None:
-        self._start_export_worker(lot_id=lot_id)
+    def export_trade(self, lot_id: int, trade: dict[str, Any] | None = None) -> None:
+        if isinstance(trade, dict):
+            self._set_pending_submission_export_metadata(trade)
+        self._start_export_worker(
+            lot_id=lot_id,
+            is_submission_acceptance=True,
+        )
 
     def export_selected_retrade(self) -> None:
         table_retrades = getattr(self, "table_retrades", None)
@@ -4029,6 +3835,87 @@ QTableWidget::indicator {{
 
         return self._parse_positive_bid_id(selected_offer.get("bid_id"))
 
+    def _get_selected_trade_for_submission_export(self) -> dict[str, Any]:
+        table = getattr(self.ui, "tradesTable", None)
+        if table is None:
+            raise RuntimeError("Таблица приема заявок не найдена")
+
+        selection_model = table.selectionModel()
+        selected_rows = selection_model.selectedRows() if selection_model is not None else []
+        if not selected_rows:
+            raise ValueError("Выберите заявку в таблице перед экспортом")
+
+        row = selected_rows[0].row()
+        item = table.item(row, 0)
+        if item is not None:
+            trade_data = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(trade_data, dict):
+                return trade_data
+
+        filtered_trades = getattr(self, "filtered_trades", [])
+        if isinstance(filtered_trades, list) and 0 <= row < len(filtered_trades):
+            trade = filtered_trades[row]
+            if isinstance(trade, dict):
+                return trade
+
+        raise ValueError("Не удалось получить данные выбранной заявки")
+
+    def _submission_lot_id_from_trade(self, trade: dict[str, Any]) -> int:
+        lots = trade.get("lots")
+        if isinstance(lots, list) and lots:
+            first_lot = lots[0]
+            if isinstance(first_lot, dict):
+                return self._parse_positive_lot_id(first_lot.get("id"))
+        raise ValueError("У выбранной заявки отсутствует lot_id")
+
+    def _get_selected_submission_lot_id_for_export(self) -> int:
+        return self._submission_lot_id_from_trade(
+            self._get_selected_trade_for_submission_export()
+        )
+
+    @staticmethod
+    def _trade_currency_text(trade: dict[str, Any]) -> str:
+        currency = trade.get("currency")
+        if isinstance(currency, dict):
+            return str(
+                currency.get("title")
+                or currency.get("code")
+                or currency.get("name")
+                or ""
+            ).strip()
+        return str(
+            trade.get("currency.title")
+            or trade.get("currency")
+            or ""
+        ).strip()
+
+    @classmethod
+    def _submission_export_metadata_from_trade(cls, trade: dict[str, Any]) -> dict[str, str]:
+        lot_id = ""
+        lots = trade.get("lots")
+        if isinstance(lots, list) and lots:
+            first_lot = lots[0]
+            if isinstance(first_lot, dict):
+                lot_id = str(first_lot.get("id") or "").strip()
+
+        return {
+            "number": str(
+                trade.get("registeredNumber")
+                or trade.get("number")
+                or ""
+            ).strip(),
+            "title": str(trade.get("title") or "").strip(),
+            "currency": cls._trade_currency_text(trade),
+            "lot_id": lot_id,
+        }
+
+    def _set_pending_submission_export_metadata(self, trade: dict[str, Any]) -> None:
+        self._pending_submission_export_metadata = (
+            self._submission_export_metadata_from_trade(trade)
+            if isinstance(trade, dict)
+            else {}
+        )
+
     def _start_export_worker(
         self,
         *,
@@ -4036,6 +3923,7 @@ QTableWidget::indicator {{
         lot_id: int | None = None,
         bid_id: int | None = None,
         is_retrade: bool = False,
+        is_submission_acceptance: bool = False,
     ) -> None:
         if self._export_trade_worker is not None and self._export_trade_worker.isRunning():
             raise RuntimeError("Экспорт заявки уже выполняется")
@@ -4054,8 +3942,17 @@ QTableWidget::indicator {{
             raise Exception("Не указан trade_id для открытия страницы переторжки")
         if is_retrade and (bid_id is None or int(bid_id) <= 0):
             raise Exception("Выберите предложение переторжки")
+        if is_submission_acceptance and (lot_id is None or int(lot_id) <= 0):
+            raise Exception("У выбранной заявки отсутствует lot_id")
 
         self._pending_retrade_bid_id = int(bid_id) if is_retrade and bid_id is not None else None
+        self._active_export_workflow = (
+            "retrade"
+            if is_retrade
+            else "submission_acceptance"
+            if is_submission_acceptance
+            else "trade"
+        )
         identifier_for_path: Any = (
             trade_id
             if trade_id is not None
@@ -4063,7 +3960,11 @@ QTableWidget::indicator {{
             if lot_id is not None
             else "unknown"
         )
-        download_path = self._build_export_download_path(identifier_for_path)
+        download_path = (
+            self._build_submission_export_download_path(identifier_for_path)
+            if is_submission_acceptance
+            else self._build_export_download_path(identifier_for_path)
+        )
         self._set_export_loading_state(is_loading=True)
 
         worker = ExportTradeWorker(
@@ -4071,6 +3972,7 @@ QTableWidget::indicator {{
             lot_id=lot_id,
             bid_id=bid_id,
             is_retrade=is_retrade,
+            is_submission_acceptance=is_submission_acceptance,
             download_path=download_path,
             parent=self,
         )
@@ -4118,6 +4020,17 @@ QTableWidget::indicator {{
         file_name = f"trade_{safe_identifier}_{timestamp}.xlsx"
         return str((base_dir / file_name).resolve())
 
+    @staticmethod
+    def _build_submission_export_download_path(identifier: Any) -> str:
+        base_dir = Path("temp") / "exports" / "submission"
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        identifier_text = str(identifier or "").strip()
+        safe_identifier = re.sub(r"[^0-9A-Za-z_-]+", "_", identifier_text).strip("_") or "unknown"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"submission_{safe_identifier}_{timestamp}.xlsx"
+        return str((base_dir / file_name).resolve())
+
     def _set_export_loading_state(self, *, is_loading: bool) -> None:
         if hasattr(self, "btn_export_trade"):
             self.btn_export_trade.setEnabled(not is_loading)
@@ -4135,9 +4048,15 @@ QTableWidget::indicator {{
         if worker is not None:
             worker.deleteLater()
         self._pending_retrade_bid_id = None
+        self._active_export_workflow = ""
+        self._pending_submission_export_metadata = {}
         status_bar = self.statusBar()
         if status_bar is not None and status_message:
             status_bar.showMessage(status_message, 5_000)
+
+    @staticmethod
+    def _developer_skip_table_fill_errors_enabled() -> bool:
+        return bool(Config.settings.get("developer_skip_table_fill_errors", False))
 
     def _prepare_exported_excel_for_opening(self, file_path_text: str) -> bool:
         excel_processor = getattr(self, "excel_processor", None)
@@ -4145,17 +4064,24 @@ QTableWidget::indicator {{
             excel_processor = ExcelProcessor()
             self.excel_processor = excel_processor
 
-        if not excel_processor.can_fill_exported_excel(file_path_text):
-            Tool.write_log(
-                "Пропуск пост-обработки Excel: файл сформирован напрямую из JSON"
-            )
-            return True
-
-        source_rows = self.get_table_rows()
         try:
+            if not excel_processor.can_fill_exported_excel(file_path_text):
+                Tool.write_log(
+                    "Пропуск пост-обработки Excel: файл сформирован напрямую из JSON"
+                )
+                return True
+
+            source_rows = self.get_table_rows()
             excel_processor.fill_exported_excel(file_path_text, source_rows)
             return True
         except RowCountMismatchError as exc:
+            if self._developer_skip_table_fill_errors_enabled():
+                Tool.write_log(
+                    "Несовпадение строк Excel пропущено настройкой разработчика: "
+                    f"{exc}"
+                )
+                return True
+
             action = self._ask_export_row_count_mismatch_action(exc)
 
             if action == self.EXPORT_MISMATCH_OPEN_WITHOUT_COPY:
@@ -4180,6 +4106,14 @@ QTableWidget::indicator {{
                 f"Открытие Excel отменено после несовпадения строк: {file_path_text}"
             )
             return False
+        except Exception as exc:
+            if self._developer_skip_table_fill_errors_enabled():
+                Tool.write_log(
+                    "Ошибка пост-обработки Excel пропущена настройкой разработчика: "
+                    f"{exc}"
+                )
+                return True
+            raise
 
     def _ask_export_row_count_mismatch_action(
         self,
@@ -4237,28 +4171,98 @@ QTableWidget::indicator {{
 
         rows: list[dict] = []
         row_count = table.rowCount()
+        column_count = table.columnCount()
+        headers = [
+            table.horizontalHeaderItem(column).text()
+            if table.horizontalHeaderItem(column) is not None
+            else ""
+            for column in range(column_count)
+        ]
+        normalized_headers = [self._normalize_table_header(header) for header in headers]
+
+        def find_column(kind: str) -> int | None:
+            for column, normalized in enumerate(normalized_headers):
+                if not normalized:
+                    continue
+                if kind == "number" and normalized in {"№", "n", "номер"}:
+                    return column
+                if kind == "name" and "наимен" in normalized:
+                    return column
+                if kind == "sku" and ("каталож" in normalized or "артикул" in normalized):
+                    return column
+                if kind == "unit" and ("едизм" in normalized or "единицаизмер" in normalized):
+                    return column
+                if kind == "qty" and ("колво" in normalized or "количество" in normalized):
+                    return column
+                if kind == "manufacturer" and "производ" in normalized:
+                    return column
+            return None
+
+        def safe_column(header_kind: str, fallback: int) -> int | None:
+            detected = find_column(header_kind)
+            if detected is not None:
+                return detected
+            return fallback if fallback < column_count else None
+
+        number_col = safe_column("number", 0)
+        name_col = safe_column("name", 1)
+        sku_col = safe_column("sku", 2)
+        unit_col = safe_column("unit", 3)
+        qty_col = safe_column("qty", 4)
+        base_price_col = 5 if 5 < column_count else None
+        base_total_col = 6 if 6 < column_count else None
+        final_price_col = 10 if 10 < column_count else base_price_col
+        final_total_col = 11 if 11 < column_count else base_total_col
+        delivery_col = 13 if 13 < column_count else None
+        supplier_delivery_col = 14 if 14 < column_count else None
+        manufacturer_col = find_column("manufacturer")
+
+        def cell_text(row: int, column: int | None) -> str:
+            if column is None or column < 0 or column >= column_count:
+                return ""
+            item = table.item(row, column)
+            if item is None:
+                return ""
+            value = self._table_item_edit_value(item)
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        def first_text(row: int, *columns: int | None) -> str:
+            for column in columns:
+                text = cell_text(row, column)
+                if text:
+                    return text
+            return ""
+
+        def money_value(text: str) -> float | str:
+            parsed = self._parse_retrade_number_or_none(text)
+            if parsed is not None:
+                return parsed
+            return text
 
         for row_index in range(row_count):
-            price_item = table.item(row_index, 10) or table.item(row_index, 5)
-            manufacturer_item = table.item(row_index, 1)
-            tech_item = table.item(row_index, 2)
-
-            price_text = price_item.text().strip() if price_item is not None else ""
-            _, raw_price = Tool.parsePrice(price_text)
-            raw_price = str(raw_price or "").replace(" ", "").replace(",", ".").strip()
-            if raw_price:
-                try:
-                    price_value = float(raw_price)
-                except ValueError:
-                    price_value = raw_price
-            else:
-                price_value = ""
+            price_text = first_text(row_index, final_price_col, base_price_col)
+            total_text = first_text(row_index, final_total_col, base_total_col)
+            delivery_time = first_text(row_index, delivery_col, supplier_delivery_col)
+            manufacturer = cell_text(row_index, manufacturer_col)
+            if not manufacturer:
+                manufacturer = cell_text(row_index, name_col)
 
             rows.append(
                 {
-                    "price": price_value,
-                    "manufacturer": manufacturer_item.text().strip() if manufacturer_item is not None else "",
-                    "tech_characteristics": tech_item.text().strip() if tech_item is not None else "",
+                    "number": cell_text(row_index, number_col),
+                    "name": cell_text(row_index, name_col),
+                    "sku": cell_text(row_index, sku_col),
+                    "unit": cell_text(row_index, unit_col),
+                    "qty": cell_text(row_index, qty_col),
+                    "price": money_value(price_text) if price_text else "",
+                    "total": money_value(total_text) if total_text else "",
+                    "delivery_time": delivery_time,
+                    "supplier_delivery_time": cell_text(row_index, supplier_delivery_col),
+                    "manufacturer": manufacturer,
+                    "tech_characteristics": manufacturer,
+                    "technical_characteristics": manufacturer,
                 }
             )
 
@@ -4316,8 +4320,180 @@ QTableWidget::indicator {{
         if isinstance(inner_tabs, QTabWidget):
             inner_tabs.setCurrentIndex(self.RETRADE_INNER_TAB_MAIN)
 
+    def _activate_submission_acceptance_tab(self) -> None:
+        tabs = getattr(self, "tabWidget", None)
+        if tabs is None:
+            tabs = getattr(getattr(self, "ui", None), "tabWidget", None)
+        web_tab = getattr(getattr(self, "ui", None), "webTab", None)
+        if isinstance(tabs, QTabWidget) and web_tab is not None:
+            index = tabs.indexOf(web_tab)
+            if index >= 0:
+                tabs.setCurrentIndex(index)
+
+    def _ensure_submission_acceptance_export_table(self) -> QTableWidget:
+        table = getattr(getattr(self, "ui", None), "submission_acceptance_export_table", None)
+        if isinstance(table, QTableWidget):
+            return table
+
+        web_tab = getattr(getattr(self, "ui", None), "webTab", None)
+        if web_tab is None:
+            raise RuntimeError("Вкладка 'Прием заявок' не найдена")
+
+        root_layout = web_tab.layout()
+        if root_layout is None:
+            raise RuntimeError("Не найден layout вкладки 'Прием заявок'")
+
+        label = QLabel("Экспорт приема заявок", web_tab)
+        label.setObjectName("submissionAcceptanceExportLabel")
+
+        table = QTableWidget(web_tab)
+        table.setObjectName("submission_acceptance_export_table")
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        table.setAlternatingRowColors(True)
+        table.setSortingEnabled(False)
+        table.verticalHeader().setVisible(False)
+        configure_table_autosize(table)
+
+        trades_table = getattr(getattr(self, "ui", None), "tradesTable", None)
+        insert_index = root_layout.indexOf(trades_table) if trades_table is not None else -1
+        if insert_index >= 0:
+            root_layout.insertWidget(insert_index + 1, label)
+            root_layout.insertWidget(insert_index + 2, table)
+        else:
+            root_layout.addWidget(label)
+            root_layout.addWidget(table)
+
+        self.submission_acceptance_export_label = label
+        self.submission_acceptance_export_table = table
+        self.ui.submission_acceptance_export_label = label
+        self.ui.submission_acceptance_export_table = table
+        return table
+
+    @staticmethod
+    def _dataframe_to_display_text(value: Any) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value)
+
+    def update_submission_acceptance_export_table(self, dataframe: pd.DataFrame) -> None:
+        table = self._ensure_submission_acceptance_export_table()
+        frame = dataframe if isinstance(dataframe, pd.DataFrame) else pd.DataFrame()
+        headers = [str(column) for column in frame.columns.tolist()]
+
+        table.setUpdatesEnabled(False)
+        try:
+            table.clear()
+            table.setRowCount(len(frame))
+            table.setColumnCount(len(headers))
+            if headers:
+                table.setHorizontalHeaderLabels(headers)
+            for row_index, row_values in enumerate(frame.itertuples(index=False, name=None)):
+                for column_index, value in enumerate(row_values):
+                    table.setItem(
+                        row_index,
+                        column_index,
+                        QTableWidgetItem(self._dataframe_to_display_text(value)),
+                    )
+        finally:
+            table.setUpdatesEnabled(True)
+
+        resize_table_to_contents(table)
+        label = getattr(self, "submission_acceptance_export_label", None)
+        if isinstance(label, QLabel):
+            label.show()
+        table.show()
+
+    def _prepare_submission_export_for_loading(self, file_path_text: str) -> None:
+        excel_processor = getattr(self, "excel_processor", None)
+        if excel_processor is None:
+            excel_processor = ExcelProcessor()
+            self.excel_processor = excel_processor
+
+        try:
+            source_rows = self.get_table_rows()
+            if not source_rows:
+                Tool.write_log(
+                    "Заполнение файла приема заявок пропущено: Полная таблица пуста"
+                )
+                return
+
+            if not excel_processor.can_fill_exported_excel(file_path_text):
+                Tool.write_log(
+                    "Заполнение файла приема заявок пропущено: не найдены подходящие колонки"
+                )
+                return
+
+            excel_processor.fill_exported_excel(
+                file_path_text,
+                source_rows,
+                strict_row_count=False,
+            )
+            Tool.write_log(
+                "Файл приема заявок заполнен данными из Полной таблицы: "
+                f"{file_path_text}"
+            )
+        except Exception as exc:
+            if self._developer_skip_table_fill_errors_enabled():
+                Tool.write_log(
+                    "Ошибка заполнения файла приема заявок пропущена настройкой "
+                    f"разработчика: {exc}"
+                )
+                return
+            raise
+
+    def _on_submission_acceptance_export_finished(self, file_path_text: str) -> None:
+        if not file_path_text:
+            QMessageBox.warning(self, "Экспорт приема заявок", "Файл не был скачан")
+            self._finish_export("Экспорт не выполнен")
+            return
+
+        try:
+            export_path = Path(file_path_text).expanduser()
+            if not export_path.exists() or not export_path.is_file():
+                raise FileNotFoundError(f"Excel файл не найден: {export_path}")
+
+            self.current_submission_acceptance_excel_path = str(export_path.resolve())
+            self._prepare_submission_export_for_loading(str(export_path))
+            load_submission_export = getattr(self, "load_submission_export_file", None)
+            if not callable(load_submission_export):
+                raise RuntimeError("Метод загрузки во вкладку Подача заявки не найден")
+            rows_count = int(load_submission_export(str(export_path)))
+            apply_submission_metadata = getattr(
+                self,
+                "apply_submission_export_metadata",
+                None,
+            )
+            if callable(apply_submission_metadata):
+                apply_submission_metadata(
+                    getattr(self, "_pending_submission_export_metadata", {})
+                )
+        except Exception as exc:
+            error_text = str(exc or "Ошибка обработки Excel")
+            Tool.write_log(f"Ошибка загрузки Excel во вкладку Подача заявки: {error_text}")
+            QMessageBox.critical(self, "Ошибка", error_text)
+            set_pipeline_error_status = getattr(self, "_set_pipeline_error_status", None)
+            if callable(set_pipeline_error_status):
+                set_pipeline_error_status()
+            self._finish_export("Ошибка обработки Excel")
+            return
+
+        Tool.write_log(f"Экспорт приема заявок завершен: {file_path_text}")
+        QMessageBox.information(
+            self,
+            "Экспорт приема заявок",
+            f"Файл успешно экспортирован и загружен во вкладку Подача заявки:\n"
+            f"{file_path_text}\n\n"
+            f"Позиций: {rows_count}",
+        )
+        self._finish_export("Excel приема заявок экспортирован")
+
     def _on_export_finished(self, file_path: str) -> None:
         file_path_text = str(file_path or "").strip()
+
+        if getattr(self, "_active_export_workflow", "") == "submission_acceptance":
+            self._on_submission_acceptance_export_finished(file_path_text)
+            return
 
         if not file_path_text:
             Tool.write_log("Экспорт переторжки пропущен: пользователь не участвует")

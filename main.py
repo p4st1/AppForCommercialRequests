@@ -98,6 +98,7 @@ from ui_mixins.excel_viewer_mixin import ExcelViewerMixin
 from ui_mixins.export_mixin import ExportMixin
 from ui_mixins.platform_mixin import PlatformMixin
 from ui_mixins.upload_mixin import UploadMixin
+from submission.submission_tab import SubmissionTabMixin
 from tools import DatabaseTools as Tool
 from database import Database
 from config import Config
@@ -154,6 +155,7 @@ class mainWindow(
     HistoryFlowMixin,
     ExcelViewerMixin,
     ExportMixin,
+    SubmissionTabMixin,
     UploadMixin,
     PlatformMixin,
     QMainWindow,
@@ -301,6 +303,7 @@ class mainWindow(
         self.init_platform_mixin()
         self.init_excel_viewer_mixin()
         self.init_export_mixin()
+        self.init_submission_tab()
         self.init_upload_mixin()
         self._setup_full_table_input_layout()
         self._full_table_panel_widgets = list(

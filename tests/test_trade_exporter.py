@@ -1,10 +1,17 @@
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import patch
 
 import pandas as pd
+
+try:
+    import requests  # noqa: F401
+except ModuleNotFoundError:
+    sys.modules["requests"] = ModuleType("requests")
 
 from services.trade_exporter import TradeExporter
 
@@ -51,6 +58,11 @@ class _FakeSession:
 
     def close(self):
         self.closed = True
+
+
+class _FakePage:
+    def __init__(self, url):
+        self.url = url
 
 
 class TradeExporterTests(unittest.TestCase):
@@ -232,6 +244,34 @@ class TradeExporterTests(unittest.TestCase):
             frame = pd.read_excel(target_path)
             self.assertEqual(int(frame.at[0, "ID"]), 8001)
             self.assertEqual(frame.at[0, "Валюта"], "USD")
+
+    def test_submission_export_url_uses_bids_new_lot_page(self):
+        self.assertEqual(
+            TradeExporter._build_submission_export_url(556675785),
+            "https://etp.metal-it.ru/bids/new?lot=556675785",
+        )
+
+    def test_validate_submission_export_page_rejects_wrong_route(self):
+        TradeExporter._validate_submission_export_page(
+            _FakePage("https://etp.metal-it.ru/bids/new?lot=556675785")
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "неправильная страница"):
+            TradeExporter._validate_submission_export_page(
+                _FakePage("https://etp.metal-it.ru/trades/123")
+            )
+
+    def test_submission_download_path_preserves_excel_suffix(self):
+        target_path = Path("/tmp/export.xlsx")
+
+        self.assertEqual(
+            TradeExporter._target_path_for_download(target_path, "export.xls"),
+            Path("/tmp/export.xls"),
+        )
+        self.assertEqual(
+            TradeExporter._target_path_for_download(target_path, "export.csv"),
+            Path("/tmp/export.csv"),
+        )
 
     def test_export_retrade_lot_data_delegates_to_bid_export_when_bid_id_provided(self):
         with tempfile.TemporaryDirectory() as tmpdir:

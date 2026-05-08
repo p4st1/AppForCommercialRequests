@@ -22,6 +22,7 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - dependency may 
 class TradeExporter:
     BASE_URL = "https://etp.metal-it.ru"
     TRADE_DETAILS_ENDPOINT_PATTERN = "{base_url}/trades/{trade_id}"
+    SUBMISSION_EXPORT_URL_TEMPLATE = "{base_url}/bids/new?lot={lot_id}"
     TRADE_SEARCH_ENDPOINT = "https://etp.metal-it.ru/graphql/tradeSearch"
     TRADE_WITH_CURRENT_STAGE_ENDPOINT = "https://etp.metal-it.ru/graphql/tradeWithCurrentStage"
     GRAPHQL_FALLBACK_ENDPOINT = "https://etp.metal-it.ru/graphql"
@@ -349,7 +350,7 @@ query tradeWithCurrentStage($id: Int) {
             raise RuntimeError("Не найден блок 'Спецификация'")
         return specification_section
 
-    def _launch_retrade_persistent_context(self, playwright: Any) -> BrowserContext:
+    def _launch_persistent_context(self, playwright: Any) -> BrowserContext:
         profile_dir = self._retrade_profile_dir.resolve()
         profile_dir.mkdir(parents=True, exist_ok=True)
 
@@ -371,6 +372,244 @@ query tradeWithCurrentStage($id: Int) {
                 args=["--disable-blink-features=AutomationControlled"],
                 accept_downloads=True,
             )
+
+    def _launch_retrade_persistent_context(self, playwright: Any) -> BrowserContext:
+        return self._launch_persistent_context(playwright)
+
+    @classmethod
+    def _build_submission_export_url(cls, lot_id: int) -> str:
+        return cls.SUBMISSION_EXPORT_URL_TEMPLATE.format(
+            base_url=cls.BASE_URL.rstrip("/"),
+            lot_id=lot_id,
+        )
+
+    @staticmethod
+    def _log_submission_export(message: str) -> None:
+        text = f"[SUBMISSION EXPORT] {message}"
+        print(text)
+        Tool.write_log(text)
+
+    @staticmethod
+    def _wait_for_any_selector(
+        page: Page,
+        selectors: tuple[str, ...],
+        *,
+        label: str,
+        timeout_ms: int,
+    ) -> Locator:
+        locator = page.locator(", ".join(selectors)).first
+        try:
+            locator.wait_for(state="visible", timeout=timeout_ms)
+            return locator
+        except Exception as exc:
+            raise RuntimeError(f"Не найден элемент страницы: {label}") from exc
+
+    @staticmethod
+    def _validate_submission_export_page(page: Page) -> None:
+        if "/bids/new?lot=" not in str(getattr(page, "url", "") or ""):
+            raise RuntimeError(
+                "Открыта неправильная страница для экспорта приема заявок"
+            )
+
+    @staticmethod
+    def _locator_is_enabled(locator: Locator) -> bool:
+        try:
+            return bool(locator.is_enabled(timeout=1_000))
+        except Exception:
+            return False
+
+    def _find_submission_export_button(self, page: Page) -> Locator:
+        selectors = (
+            "kendo-grid-toolbar button:has-text('Экспорт')",
+            "kendo-grid-toolbar [role='button']:has-text('Экспорт')",
+            "button.mat-stroked-button:has-text('Экспорт')",
+            "button:has-text('Экспорт')",
+            "[role='button']:has-text('Экспорт')",
+        )
+        for selector in selectors:
+            locator = page.locator(selector)
+            try:
+                count = locator.count()
+            except Exception:
+                continue
+            self._log_submission_export(f"export candidates {selector}: {count}")
+            for index in range(count):
+                candidate = locator.nth(index)
+                try:
+                    candidate.wait_for(state="visible", timeout=3_000)
+                except Exception:
+                    continue
+                if not self._locator_is_enabled(candidate):
+                    continue
+                self._log_submission_export("export button found")
+                return candidate
+        raise RuntimeError("Кнопка 'Экспорт' не найдена на странице приема заявок")
+
+    @staticmethod
+    def _target_path_for_download(target_path: Path, suggested_filename: str) -> Path:
+        suggested_suffix = Path(str(suggested_filename or "")).suffix.lower()
+        if suggested_suffix in {".xlsx", ".xls", ".csv"} and suggested_suffix != target_path.suffix.lower():
+            return target_path.with_suffix(suggested_suffix)
+        return target_path
+
+    @staticmethod
+    def _is_export_response(response: Any) -> bool:
+        response_url = str(getattr(response, "url", "") or "").lower()
+        headers = getattr(response, "headers", {}) or {}
+        content_type = str(headers.get("content-type", "") or "").lower()
+        content_disposition = str(headers.get("content-disposition", "") or "").lower()
+        return (
+            "attachment" in content_disposition
+            or "excel" in content_type
+            or "spreadsheet" in content_type
+            or "octet-stream" in content_type
+            or any(keyword in response_url for keyword in ("export", "excel", "xlsx", "report"))
+        )
+
+    @staticmethod
+    def _save_response_body(response: Any, target_path: Path) -> str:
+        body = response.body()
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(body)
+        return str(target_path)
+
+    def _click_submission_export_button(self, page: Page, export_button: Locator) -> Any:
+        export_responses: list[Any] = []
+
+        def _on_response(response: Any) -> None:
+            try:
+                if self._is_export_response(response):
+                    export_responses.append(response)
+            except Exception:
+                pass
+
+        page.on("response", _on_response)
+        click_attempts = (
+            ("normal", lambda: self._click_locator_with_fallback(
+                page,
+                export_button,
+                label="Экспорт",
+                timeout_ms=10_000,
+            )),
+            ("force", lambda: export_button.click(force=True, timeout=5_000)),
+            ("dispatch", lambda: export_button.dispatch_event("click")),
+            (
+                "dom",
+                lambda: page.evaluate(
+                    "(element) => element.click()",
+                    export_button.element_handle(timeout=3_000),
+                ),
+            ),
+        )
+
+        try:
+            last_error: Exception | None = None
+            for attempt_name, click_action in click_attempts:
+                self._log_submission_export(f"click export attempt: {attempt_name}")
+                try:
+                    with page.expect_download(timeout=20_000) as download_info:
+                        click_action()
+                    return download_info.value
+                except Exception as exc:
+                    last_error = exc
+                    try:
+                        page.wait_for_timeout(2_000)
+                    except Exception:
+                        pass
+                    if export_responses:
+                        return export_responses[-1]
+
+            if export_responses:
+                return export_responses[-1]
+            raise RuntimeError("Скачивание не произошло после клика по кнопке 'Экспорт'") from last_error
+        finally:
+            try:
+                page.remove_listener("response", _on_response)
+            except Exception:
+                pass
+
+    def _export_submission_lot_via_page(
+        self,
+        *,
+        context: BrowserContext,
+        lot_id: int,
+        target_path: Path,
+    ) -> str:
+        lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
+        page = context.new_page()
+        target_path_resolved = target_path.expanduser().resolve()
+
+        try:
+            self._log_submission_export("opening bids/new page")
+            self._log_submission_export(f"lot_id={lot_id_int}")
+            submission_url = self._build_submission_export_url(lot_id_int)
+            page.goto(
+                submission_url,
+                wait_until="domcontentloaded",
+                timeout=max(60_000, self._timeout_ms),
+            )
+            try:
+                page.wait_for_load_state("networkidle", timeout=10_000)
+            except Exception as exc:
+                self._log_submission_export(
+                    f"networkidle timeout ignored: {str(exc).splitlines()[0]}"
+                )
+            self._validate_submission_export_page(page)
+
+            self._wait_for_any_selector(
+                page,
+                (
+                    "table",
+                    "mat-table",
+                    ".mat-table",
+                    "[role='table']",
+                    ".ag-root",
+                    "um-table",
+                ),
+                label="таблица приема заявок",
+                timeout_ms=60_000,
+            )
+            self._wait_for_any_selector(
+                page,
+                (
+                    "mat-toolbar",
+                    ".mat-toolbar",
+                    ".toolbar",
+                    "[role='toolbar']",
+                    "um-toolbar",
+                    "button:has-text('Экспорт')",
+                ),
+                label="toolbar приема заявок",
+                timeout_ms=60_000,
+            )
+
+            export_button = self._find_submission_export_button(page)
+            download = self._click_submission_export_button(page, export_button)
+
+            if hasattr(download, "save_as"):
+                final_path = self._target_path_for_download(
+                    target_path_resolved,
+                    str(download.suggested_filename or ""),
+                )
+                final_path.parent.mkdir(parents=True, exist_ok=True)
+                download.save_as(str(final_path))
+            else:
+                final_path = target_path_resolved
+                self._save_response_body(download, final_path)
+            self._log_submission_export("download completed")
+            return str(final_path)
+        except Exception:
+            self._write_page_debug_dump(
+                page,
+                screenshot_path="submission_export_error.png",
+                html_path="submission_export_error.html",
+            )
+            raise
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
 
     def _export_retrade_bid_via_page(
         self,
@@ -1221,6 +1460,32 @@ query tradeWithCurrentStage($id: Int) {
             )
         finally:
             session.close()
+
+    def export_submission_lot_data(self, lot_id: int, download_path: str) -> str:
+        if sync_playwright is None:
+            raise RuntimeError(
+                "Playwright не установлен. Установите зависимость и выполните "
+                "`python -m playwright install chromium`."
+            )
+
+        lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
+        target_path = self._validate_target_path(download_path)
+        cookies = self._load_cookies_for_export()
+        playwright_cookies = self._build_playwright_cookies(cookies)
+        if not playwright_cookies:
+            raise RuntimeError("Не удалось подготовить cookies для Playwright")
+
+        with sync_playwright() as playwright:
+            context = self._launch_persistent_context(playwright)
+            try:
+                context.add_cookies(playwright_cookies)
+                return self._export_submission_lot_via_page(
+                    context=context,
+                    lot_id=lot_id_int,
+                    target_path=target_path,
+                )
+            finally:
+                context.close()
 
     def export_trade_data(self, trade_id: int, download_path: str) -> str:
         trade_id_int = self._parse_positive_int(trade_id, name="trade_id")

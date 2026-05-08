@@ -94,20 +94,20 @@ class DocExportFlowMixin:
         self._web_pipeline_active = True
 
         try:
-            self.set_pipeline_status("🌐 Переход на вкладку Веб...")
+            self.set_pipeline_status("🌐 Переход на вкладку Прием заявок...")
             ensure_tab = getattr(self, "_ensure_platform_tab", None)
             if callable(ensure_tab):
                 ensure_tab()
             index_web = self.ui.tabWidget.indexOf(self.ui.webTab)
             if index_web < 0:
-                raise RuntimeError("Вкладка 'Веб' не найдена")
+                raise RuntimeError("Вкладка 'Прием заявок' не найдена")
             self.ui.tabWidget.setCurrentIndex(index_web)
         except Exception as exc:
             self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
                 "Ошибка",
-                self._pipeline_error_text("переключение на вкладку 'Веб'", str(exc)),
+                self._pipeline_error_text("переключение на вкладку 'Прием заявок'", str(exc)),
             )
             return
 
@@ -182,6 +182,13 @@ class DocExportFlowMixin:
             export_trade_method = getattr(self, "export_trade", None)
             if not callable(export_trade_method):
                 raise RuntimeError("Метод export_trade не найден")
+            set_submission_metadata = getattr(
+                self,
+                "_set_pending_submission_export_metadata",
+                None,
+            )
+            if callable(set_submission_metadata):
+                set_submission_metadata(trade)
             export_trade_method(lot_id)
         except Exception as exc:
             self._set_pipeline_error_status()

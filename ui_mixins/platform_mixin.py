@@ -346,7 +346,7 @@ class PlatformMixin:
         root_layout.addWidget(self.table_retrades)
         root_layout.addWidget(retrade_offers_label)
         root_layout.addWidget(self.table_retrade_offers)
-        self.ui.tabWidget.addTab(self.ui.webTab, "Веб")
+        self.ui.tabWidget.addTab(self.ui.webTab, "Прием заявок")
 
         self._setup_trades_table()
         self._setup_retrades_table()

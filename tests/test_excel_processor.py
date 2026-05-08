@@ -31,8 +31,7 @@ class ExcelProcessorTests(unittest.TestCase):
         invalid_path = self._create_excel(
             [
                 {
-                    ExcelProcessor.PRICE_COLUMN: 0,
-                    ExcelProcessor.MANUFACTURER_COLUMN: "old",
+                    "Случайная колонка": "old",
                 }
             ]
         )
@@ -44,14 +43,26 @@ class ExcelProcessorTests(unittest.TestCase):
         path = self._create_excel(
             [
                 {
-                    ExcelProcessor.PRICE_COLUMN: 0,
-                    ExcelProcessor.MANUFACTURER_COLUMN: "old",
-                    ExcelProcessor.TECH_COLUMN: "old",
+                    "Наименование": "Насос",
+                    "Ед. изм.": "шт",
+                    "Кол-во": 2,
+                    ExcelProcessor.PRICE_COLUMN: None,
+                    "Сумма, RUB (без учета НДС)": 0,
+                    "Срок поставки": None,
+                    ExcelProcessor.MANUFACTURER_COLUMN: None,
+                    ExcelProcessor.TECH_COLUMN: None,
+                    "Условия гарантий качества": "12 мес.",
                 },
                 {
-                    ExcelProcessor.PRICE_COLUMN: 0,
-                    ExcelProcessor.MANUFACTURER_COLUMN: "old",
-                    ExcelProcessor.TECH_COLUMN: "old",
+                    "Наименование": "Клапан",
+                    "Ед. изм.": "шт",
+                    "Кол-во": 1,
+                    ExcelProcessor.PRICE_COLUMN: None,
+                    "Сумма, RUB (без учета НДС)": 0,
+                    "Срок поставки": None,
+                    ExcelProcessor.MANUFACTURER_COLUMN: None,
+                    ExcelProcessor.TECH_COLUMN: None,
+                    "Условия гарантий качества": "24 мес.",
                 },
             ]
         )
@@ -61,11 +72,15 @@ class ExcelProcessorTests(unittest.TestCase):
             [
                 {
                     "price": 12345,
+                    "total": 24690,
+                    "delivery_time": "30 дней",
                     "manufacturer": "ООО Ромашка",
                     "tech_characteristics": "IP65",
                 },
                 {
                     "price": 200,
+                    "total": 200,
+                    "delivery_time": "10 дней",
                     "manufacturer": "АО Лотос",
                     "tech_characteristics": "220V",
                 },
@@ -73,27 +88,73 @@ class ExcelProcessorTests(unittest.TestCase):
         )
 
         result = pd.read_excel(path)
+        self.assertEqual(result.at[0, "Наименование"], "Насос")
+        self.assertEqual(result.at[0, "Ед. изм."], "шт")
+        self.assertEqual(result.at[0, "Кол-во"], 2)
         self.assertEqual(result.at[0, ExcelProcessor.PRICE_COLUMN], 12345)
+        self.assertEqual(result.at[0, "Сумма, RUB (без учета НДС)"], 24690)
+        self.assertEqual(result.at[0, "Срок поставки"], "30 дней")
         self.assertEqual(result.at[0, ExcelProcessor.MANUFACTURER_COLUMN], "ООО Ромашка")
-        self.assertEqual(result.at[0, ExcelProcessor.TECH_COLUMN], "IP65")
+        self.assertEqual(result.at[0, ExcelProcessor.TECH_COLUMN], "ООО Ромашка")
+        self.assertEqual(result.at[0, "Условия гарантий качества"], "12 мес.")
         self.assertEqual(result.at[1, ExcelProcessor.PRICE_COLUMN], 200)
+        self.assertEqual(result.at[1, "Сумма, RUB (без учета НДС)"], 200)
+        self.assertEqual(result.at[1, "Срок поставки"], "10 дней")
         self.assertEqual(result.at[1, ExcelProcessor.MANUFACTURER_COLUMN], "АО Лотос")
-        self.assertEqual(result.at[1, ExcelProcessor.TECH_COLUMN], "220V")
+        self.assertEqual(result.at[1, ExcelProcessor.TECH_COLUMN], "АО Лотос")
 
-    def test_fill_exported_excel_uses_manufacturer_for_tech_fallback(self):
+    def test_fill_exported_excel_does_not_overwrite_existing_cells(self):
         path = self._create_excel(
             [
                 {
-                    ExcelProcessor.PRICE_COLUMN: 0,
-                    ExcelProcessor.MANUFACTURER_COLUMN: "old",
-                    ExcelProcessor.TECH_COLUMN: "old",
+                    ExcelProcessor.PRICE_COLUMN: 100,
+                    "Сумма, RUB (без учета НДС)": 300,
+                    "Срок поставки": "old срок",
+                    ExcelProcessor.MANUFACTURER_COLUMN: "old manufacturer",
+                    ExcelProcessor.TECH_COLUMN: "old tech",
                 }
             ]
         )
 
         self.processor.fill_exported_excel(
             path,
-            [{"price": 1500, "manufacturer": "ООО Ромашка"}],
+            [
+                {
+                    "price": 999,
+                    "total": 999,
+                    "delivery_time": "new срок",
+                    "manufacturer": "new manufacturer",
+                }
+            ],
+        )
+
+        result = pd.read_excel(path)
+        self.assertEqual(result.at[0, ExcelProcessor.PRICE_COLUMN], 100)
+        self.assertEqual(result.at[0, "Сумма, RUB (без учета НДС)"], 300)
+        self.assertEqual(result.at[0, "Срок поставки"], "old срок")
+        self.assertEqual(result.at[0, ExcelProcessor.MANUFACTURER_COLUMN], "old manufacturer")
+        self.assertEqual(result.at[0, ExcelProcessor.TECH_COLUMN], "old tech")
+
+    def test_fill_exported_excel_uses_manufacturer_for_tech_fallback(self):
+        path = self._create_excel(
+            [
+                {
+                    ExcelProcessor.PRICE_COLUMN: 0,
+                    ExcelProcessor.MANUFACTURER_COLUMN: None,
+                    ExcelProcessor.TECH_COLUMN: None,
+                }
+            ]
+        )
+
+        self.processor.fill_exported_excel(
+            path,
+            [
+                {
+                    "price": 1500,
+                    "manufacturer": "ООО Ромашка",
+                    "tech_characteristics": "IP65",
+                }
+            ],
         )
 
         result = pd.read_excel(path)
@@ -103,8 +164,7 @@ class ExcelProcessorTests(unittest.TestCase):
         path = self._create_excel(
             [
                 {
-                    ExcelProcessor.PRICE_COLUMN: 0,
-                    ExcelProcessor.MANUFACTURER_COLUMN: "old",
+                    "Случайная колонка": "old",
                 }
             ]
         )
@@ -143,8 +203,8 @@ class ExcelProcessorTests(unittest.TestCase):
             [
                 {
                     ExcelProcessor.PRICE_COLUMN: 0,
-                    ExcelProcessor.MANUFACTURER_COLUMN: "old-1",
-                    ExcelProcessor.TECH_COLUMN: "old-1",
+                    ExcelProcessor.MANUFACTURER_COLUMN: None,
+                    ExcelProcessor.TECH_COLUMN: None,
                 },
                 {
                     ExcelProcessor.PRICE_COLUMN: 0,
@@ -163,8 +223,29 @@ class ExcelProcessorTests(unittest.TestCase):
         result = pd.read_excel(path)
         self.assertEqual(result.at[0, ExcelProcessor.PRICE_COLUMN], 999)
         self.assertEqual(result.at[0, ExcelProcessor.MANUFACTURER_COLUMN], "ООО Ромашка")
-        self.assertEqual(result.at[0, ExcelProcessor.TECH_COLUMN], "IP65")
+        self.assertEqual(result.at[0, ExcelProcessor.TECH_COLUMN], "ООО Ромашка")
         self.assertEqual(result.at[1, ExcelProcessor.MANUFACTURER_COLUMN], "old-2")
+
+    def test_fill_exported_csv_uses_semicolon_delimiter(self):
+        fd, path = tempfile.mkstemp(suffix=".csv")
+        os.close(fd)
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(
+                f"{ExcelProcessor.PRICE_COLUMN};{ExcelProcessor.MANUFACTURER_COLUMN};"
+                f"{ExcelProcessor.TECH_COLUMN}\n"
+                "0;;\n"
+            )
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+
+        self.processor.fill_exported_excel(
+            path,
+            [{"price": 123, "manufacturer": "ООО Ромашка"}],
+        )
+
+        result = pd.read_csv(path, sep=";")
+        self.assertEqual(result.at[0, ExcelProcessor.PRICE_COLUMN], 123)
+        self.assertEqual(result.at[0, ExcelProcessor.MANUFACTURER_COLUMN], "ООО Ромашка")
+        self.assertEqual(result.at[0, ExcelProcessor.TECH_COLUMN], "ООО Ромашка")
 
 
 if __name__ == "__main__":
