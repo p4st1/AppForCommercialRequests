@@ -132,7 +132,7 @@ class createTextFile:
             "{{Producer}}": f"{extraData[3]}",
             "{{Pay_period}}": f"{extraData[2]}",
             "{{Pay_cond}}": f"{docxData[5]}",
-            "{{date_20days}}": f"{(datetime.now() + timedelta(days=10)).strftime('%d.%m.%Y')}"
+            "{{date_20days}}": f"{(datetime.now() + timedelta(days=20)).strftime('%d.%m.%Y')}"
         }
 
         ITEMS = [

@@ -2,9 +2,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
-from docx import Document
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 
@@ -223,6 +222,11 @@ def _ensure_pyside_stubs() -> None:
 
 
 _ensure_pyside_stubs()
+
+try:
+    import requests  # noqa: F401
+except ModuleNotFoundError:
+    sys.modules["requests"] = ModuleType("requests")
 
 from ui_mixins.export_mixin import ExportMixin
 
@@ -569,51 +573,6 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertEqual(ExportMixin.parse_number("1,25"), 1.25)
         self.assertEqual(ExportMixin.parse_number(None), 0.0)
 
-    def test_extract_delivery_time_text(self):
-        self.assertEqual(
-            ExportMixin._extract_delivery_time_text("Срок поставки: 40 дней"),
-            "40 дней",
-        )
-        self.assertEqual(
-            ExportMixin._extract_delivery_time_text("до 45 календарных дней"),
-            "45 календарных дней",
-        )
-
-    def test_extract_kp_data_from_document(self):
-        document = Document()
-        table = document.add_table(rows=3, cols=3)
-        table.rows[0].cells[0].text = "Наименование"
-        table.rows[0].cells[1].text = "Срок поставки"
-        table.rows[0].cells[2].text = "Цена"
-        table.rows[1].cells[0].text = "Позиция 1"
-        table.rows[1].cells[1].text = "40 дней"
-        table.rows[2].cells[0].text = "Позиция 2"
-        table.rows[2].cells[1].text = "45 дней"
-        document.add_paragraph("Производитель - CAT;")
-
-        data = ExportMixin._extract_kp_data_from_document(document)
-
-        self.assertEqual(data["delivery_times"], ["40 дней", "45 дней"])
-        self.assertEqual(data["manufacturer"], "CAT")
-
-    def test_load_kp_docx_data_reads_saved_file(self):
-        document = Document()
-        table = document.add_table(rows=2, cols=2)
-        table.rows[0].cells[0].text = "Позиция"
-        table.rows[0].cells[1].text = "Срок поставки"
-        table.rows[1].cells[0].text = "Позиция 1"
-        table.rows[1].cells[1].text = "30 дней"
-        document.add_paragraph("Производитель: Atlas Copco;")
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            file_path = Path(tmpdir) / "kp.docx"
-            document.save(file_path)
-
-            data = ExportMixin._load_kp_docx_data(str(file_path))
-
-        self.assertEqual(data["delivery_times"], ["30 дней"])
-        self.assertEqual(data["manufacturer"], "Atlas Copco")
-
     def test_write_retrade_table_to_worksheet_preserves_formulas_and_blanks(self):
         workbook = Workbook()
         worksheet = workbook.active
@@ -758,6 +717,39 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertFalse(
             ExportMixin._retrade_main_row_has_position(table, 1, position_columns)
         )
+
+    def test_get_table_rows_uses_sale_price_and_default_producer(self):
+        headers = [
+            "№",
+            "Наименование",
+            "Каталожный номер",
+            "Ед. изм.",
+            "Кол-во",
+            "Цена за ед. без НДС",
+            "Итого без НДС",
+            "Логистика",
+            "Таможня",
+            "Цена за ед",
+            "Цена реализации за ед. без НДС",
+            "Итого реализации без НДС",
+            "Итого реализации с НДС",
+            "Срок поставки",
+            "Срок поставщика",
+        ]
+        table = _FakeEditableTable(
+            [["1", "Насос", "P-1", "шт", 2, 100, 200, "", "", "", 150, 300, 360, "30 дней", "20 дней"]],
+            headers=headers,
+        )
+        window = ExportMixin()
+        window.ui = SimpleNamespace(KpTable=table)
+
+        rows = window.get_table_rows(default_manufacturer="Завод")
+
+        self.assertEqual(rows[0]["name"], "Насос")
+        self.assertEqual(rows[0]["price"], 150.0)
+        self.assertEqual(rows[0]["total"], 300.0)
+        self.assertEqual(rows[0]["manufacturer"], "Завод")
+        self.assertEqual(rows[0]["technical_characteristics"], "Завод")
 
     def test_format_missing_retrade_required_cells_message(self):
         message = ExportMixin._format_missing_retrade_required_cells_message(

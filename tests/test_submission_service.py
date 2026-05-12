@@ -78,6 +78,24 @@ class SubmissionServiceTests(unittest.TestCase):
         self.assertEqual(rows[0].unit_price, 100.0)
         self.assertEqual(rows[0].total, 200.0)
 
+    def test_rows_from_matrix_prefers_name_over_alternative_name(self):
+        rows = SubmissionService._rows_from_matrix(
+            [
+                [
+                    "Наименование",
+                    "Ед. изм.",
+                    "Кол-во",
+                    "Предлагаемая цена за ед. (без учета НДС)",
+                    "Альтернативное наименование",
+                ],
+                ["Насос", "шт", "1", "123", ""],
+            ]
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].name, "Насос")
+        self.assertEqual(rows[0].unit_price, 123.0)
+
     def test_rows_from_matrix_splits_semicolon_rows(self):
         rows = SubmissionService._rows_from_matrix(
             [

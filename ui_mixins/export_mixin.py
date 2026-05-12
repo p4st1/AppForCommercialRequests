@@ -4006,12 +4006,43 @@ QTableWidget::indicator {{
             "lot_id": lot_id,
         }
 
-    def _set_pending_submission_export_metadata(self, trade: dict[str, Any]) -> None:
-        self._pending_submission_export_metadata = (
+    @staticmethod
+    def _normalize_submission_context_metadata(
+        submission_context: dict[str, Any] | None,
+    ) -> dict[str, str]:
+        context = submission_context if isinstance(submission_context, dict) else {}
+        return {
+            "customer": str(context.get("customer", "") or "").strip(),
+            "producer": str(
+                context.get("producer", "")
+                or context.get("manufacturer", "")
+                or ""
+            ).strip(),
+            "offer_validity_period": str(
+                context.get("offer_validity_period", "") or ""
+            ).strip(),
+        }
+
+    def _set_pending_submission_export_metadata(
+        self,
+        trade: dict[str, Any],
+        *,
+        submission_context: dict[str, Any] | None = None,
+    ) -> None:
+        metadata = (
             self._submission_export_metadata_from_trade(trade)
             if isinstance(trade, dict)
             else {}
         )
+        context_metadata = self._normalize_submission_context_metadata(submission_context)
+        if context_metadata["customer"]:
+            metadata["customer"] = context_metadata["customer"]
+        if context_metadata["producer"]:
+            metadata["producer"] = context_metadata["producer"]
+            metadata["manufacturer"] = context_metadata["producer"]
+        if context_metadata["offer_validity_period"]:
+            metadata["offer_validity_period"] = context_metadata["offer_validity_period"]
+        self._pending_submission_export_metadata = metadata
 
     def _start_export_worker(
         self,
@@ -4261,7 +4292,7 @@ QTableWidget::indicator {{
             return self.EXPORT_MISMATCH_OPEN_AND_COPY
         return self.EXPORT_MISMATCH_CANCEL
 
-    def get_table_rows(self) -> list[dict]:
+    def get_table_rows(self, *, default_manufacturer: str = "") -> list[dict]:
         table = getattr(getattr(self, "ui", None), "KpTable", None)
         if table is None:
             return []
@@ -4293,6 +4324,19 @@ QTableWidget::indicator {{
                     return column
                 if kind == "manufacturer" and "производ" in normalized:
                     return column
+                if kind == "sale_price" and (
+                    "ценареализациизаедбезндс" in normalized
+                    or (
+                        "ценареализациизаед" in normalized
+                        and "ндс" in normalized
+                    )
+                ):
+                    return column
+                if kind == "sale_total" and (
+                    "итогореализациибезндс" in normalized
+                    or "суммареализациибезндс" in normalized
+                ):
+                    return column
             return None
 
         def safe_column(header_kind: str, fallback: int) -> int | None:
@@ -4308,11 +4352,26 @@ QTableWidget::indicator {{
         qty_col = safe_column("qty", 4)
         base_price_col = 5 if 5 < column_count else None
         base_total_col = 6 if 6 < column_count else None
-        final_price_col = 10 if 10 < column_count else base_price_col
-        final_total_col = 11 if 11 < column_count else base_total_col
+        sale_price_col = find_column("sale_price")
+        sale_total_col = find_column("sale_total")
+        final_price_col = (
+            sale_price_col
+            if sale_price_col is not None
+            else 10
+            if 10 < column_count
+            else base_price_col
+        )
+        final_total_col = (
+            sale_total_col
+            if sale_total_col is not None
+            else 11
+            if 11 < column_count
+            else base_total_col
+        )
         delivery_col = 13 if 13 < column_count else None
         supplier_delivery_col = 14 if 14 < column_count else None
         manufacturer_col = find_column("manufacturer")
+        default_manufacturer_text = str(default_manufacturer or "").strip()
 
         def cell_text(row: int, column: int | None) -> str:
             if column is None or column < 0 or column >= column_count:
@@ -4339,12 +4398,12 @@ QTableWidget::indicator {{
             return text
 
         for row_index in range(row_count):
-            price_text = first_text(row_index, final_price_col, base_price_col)
-            total_text = first_text(row_index, final_total_col, base_total_col)
+            price_text = first_text(row_index, final_price_col)
+            total_text = first_text(row_index, final_total_col)
             delivery_time = first_text(row_index, delivery_col, supplier_delivery_col)
             manufacturer = cell_text(row_index, manufacturer_col)
             if not manufacturer:
-                manufacturer = cell_text(row_index, name_col)
+                manufacturer = default_manufacturer_text
 
             rows.append(
                 {
@@ -4508,7 +4567,17 @@ QTableWidget::indicator {{
             self.excel_processor = excel_processor
 
         try:
-            source_rows = self.get_table_rows()
+            metadata = getattr(self, "_pending_submission_export_metadata", {})
+            default_manufacturer = ""
+            if isinstance(metadata, dict):
+                default_manufacturer = str(
+                    metadata.get("producer", "")
+                    or metadata.get("manufacturer", "")
+                    or ""
+                ).strip()
+            source_rows = self.get_table_rows(
+                default_manufacturer=default_manufacturer,
+            )
             if not source_rows:
                 Tool.write_log(
                     "Заполнение файла приема заявок пропущено: Полная таблица пуста"

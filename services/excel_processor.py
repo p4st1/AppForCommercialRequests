@@ -39,9 +39,9 @@ class ExcelProcessor:
             return []
 
         candidates: list[tuple[str, int]] = []
-        if "альтернативноенаимен" in normalized:
+        if normalized in {"наименование", "наименованиетовара"}:
             candidates.append(("name", 100))
-        elif "наименован" in normalized:
+        elif "альтернативноенаимен" not in normalized and "наименован" in normalized:
             candidates.append(("name", 40))
 
         if "едизм" in normalized or "единицаизмер" in normalized:
@@ -190,7 +190,13 @@ class ExcelProcessor:
         if field == "price":
             return cls._source_value_from_keys(
                 row,
-                ("price", "unit_price", "proposal_price", "Цена за ед."),
+                (
+                    "price",
+                    "unit_price",
+                    "proposal_price",
+                    "Цена реализации за ед. без НДС",
+                    "Цена за ед.",
+                ),
             )
         if field == "total":
             explicit_total = cls._source_value_from_keys(

@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from PySide6.QtCore import Signal, Qt, QSignalBlocker
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -44,6 +46,7 @@ class Dialog:
 class mainWindow(QMainWindow):
     windowClosed = Signal()
     SUMMARY_COLUMNS = 9
+    OFFER_VALIDITY_DAYS = 20
 
     def __init__(self, parent=None, tableData=None):
         super(mainWindow, self).__init__(parent)
@@ -295,7 +298,13 @@ class mainWindow(QMainWindow):
             try:
                 run_web_pipeline = getattr(self.parent(), "run_web_pipeline", None)
                 if callable(run_web_pipeline):
-                    run_web_pipeline(trade_number=self.ui.numLine.text().strip())
+                    run_web_pipeline(
+                        trade_number=self.ui.numLine.text().strip(),
+                        submission_context=self._submission_context(
+                            confirmedSuppliers,
+                            extraData,
+                        ),
+                    )
                 else:
                     if callable(set_pipeline_success_status):
                         set_pipeline_success_status()
@@ -318,6 +327,29 @@ class mainWindow(QMainWindow):
                 set_pipeline_status("✅ Готово")
 
         self.close()
+
+    @classmethod
+    def _default_offer_validity_period(cls) -> str:
+        return (datetime.now() + timedelta(days=cls.OFFER_VALIDITY_DAYS)).strftime("%d.%m.%Y")
+
+    @staticmethod
+    def _customer_company_name(customer_data) -> str:
+        if isinstance(customer_data, (list, tuple)) and len(customer_data) > 7:
+            return str(customer_data[7] or "").strip()
+        return ""
+
+    def _submission_context(self, confirmed_suppliers, extra_data):
+        first_supplier = confirmed_suppliers[0] if confirmed_suppliers else None
+        producer = str(
+            extra_data[3]
+            if len(extra_data) > 3 and extra_data[3] is not None
+            else ""
+        ).strip()
+        return {
+            "customer": self._customer_company_name(first_supplier),
+            "producer": producer,
+            "offer_validity_period": self._default_offer_validity_period(),
+        }
 
     def _history_summary(self):
         rows = self.tableData[1] if self.tableData and len(self.tableData) > 1 else []

@@ -314,30 +314,54 @@ class SubmissionService:
 
     @classmethod
     def _column_kind(cls, header: Any) -> str | None:
+        candidates = cls._column_candidates(header)
+        if not candidates:
+            return None
+        return max(candidates, key=lambda item: item[1])[0]
+
+    @classmethod
+    def _column_candidates(cls, header: Any) -> list[tuple[str, int]]:
         normalized = cls._normalize_header(header)
         if not normalized:
-            return None
-        if "наимен" in normalized or normalized in {"name", "title"}:
-            return "name"
-        if "колво" in normalized or "количество" in normalized or normalized == "qty":
-            return "qty"
+            return []
+
+        candidates: list[tuple[str, int]] = []
+        if normalized in {"наименование", "наименованиетовара", "name", "title"}:
+            candidates.append(("name", 100))
+        elif "альтернативноенаимен" in normalized:
+            candidates.append(("name", 20))
+        elif "наимен" in normalized:
+            candidates.append(("name", 40))
+        if (
+            "предлагаемоеколво" in normalized
+            or "предлагаемоеколичество" in normalized
+        ):
+            candidates.append(("qty", 100))
+        elif "колво" in normalized or "количество" in normalized or normalized == "qty":
+            candidates.append(("qty", 80))
         if "едизм" in normalized or "единиц" in normalized or normalized == "unit":
-            return "unit"
-        if "цена" in normalized and "сумма" not in normalized and "итого" not in normalized:
-            return "unit_price"
+            candidates.append(("unit", 100))
+        if (
+            "предлагаемаяценазаед" in normalized
+            and "сумма" not in normalized
+            and "итого" not in normalized
+        ):
+            candidates.append(("unit_price", 100))
+        elif "цена" in normalized and "сумма" not in normalized and "итого" not in normalized:
+            candidates.append(("unit_price", 70))
         if "сумма" in normalized or "итого" in normalized or normalized == "total":
-            return "total"
+            candidates.append(("total", 90))
         if "срок" in normalized and "постав" in normalized:
-            return "delivery_time"
+            candidates.append(("delivery_time", 100))
         if "производ" in normalized:
-            return "manufacturer"
+            candidates.append(("manufacturer", 100))
         if "характерист" in normalized or "техническ" in normalized:
-            return "technical"
+            candidates.append(("technical", 100))
         if "статус" in normalized and "постав" in normalized:
-            return "supplier_status"
+            candidates.append(("supplier_status", 100))
         if "гарант" in normalized:
-            return "warranty"
-        return None
+            candidates.append(("warranty", 100))
+        return candidates
 
     @classmethod
     def _rows_from_matrix(cls, matrix: list[list[Any]]) -> list[SubmissionRow]:
@@ -352,10 +376,15 @@ class SubmissionService:
         header_index = 0
         column_map: dict[int, str] = {}
         for row_index, row in enumerate(cleaned[:10]):
+            detected_fields: dict[str, tuple[int, int]] = {}
+            for column_index, cell in enumerate(row):
+                for kind, priority in cls._column_candidates(cell):
+                    current = detected_fields.get(kind)
+                    if current is None or priority > current[1]:
+                        detected_fields[kind] = (column_index, priority)
             detected = {
                 column_index: kind
-                for column_index, cell in enumerate(row)
-                if (kind := cls._column_kind(cell)) is not None
+                for kind, (column_index, _priority) in detected_fields.items()
             }
             if len(detected) >= 2:
                 header_index = row_index

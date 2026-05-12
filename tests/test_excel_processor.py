@@ -103,6 +103,43 @@ class ExcelProcessorTests(unittest.TestCase):
         self.assertEqual(result.at[1, ExcelProcessor.MANUFACTURER_COLUMN], "АО Лотос")
         self.assertEqual(result.at[1, ExcelProcessor.TECH_COLUMN], "АО Лотос")
 
+    def test_fill_exported_excel_uses_real_name_not_alternative_name(self):
+        path = self._create_excel(
+            [
+                {
+                    "Наименование": None,
+                    "Ед. изм.": "шт",
+                    "Альтернативное наименование": None,
+                    ExcelProcessor.PRICE_COLUMN: None,
+                }
+            ]
+        )
+
+        self.processor.fill_exported_excel(
+            path,
+            [
+                {
+                    "name": "Насос",
+                    "price": 12345,
+                }
+            ],
+        )
+
+        result = pd.read_excel(path)
+        self.assertEqual(result.at[0, "Наименование"], "Насос")
+        self.assertTrue(pd.isna(result.at[0, "Альтернативное наименование"]))
+
+    def test_fill_exported_excel_accepts_sale_price_source_key(self):
+        path = self._create_excel([{"Наименование": "Позиция", ExcelProcessor.PRICE_COLUMN: None}])
+
+        self.processor.fill_exported_excel(
+            path,
+            [{"Цена реализации за ед. без НДС": 777}],
+        )
+
+        result = pd.read_excel(path)
+        self.assertEqual(result.at[0, ExcelProcessor.PRICE_COLUMN], 777)
+
     def test_fill_exported_excel_does_not_overwrite_existing_cells(self):
         path = self._create_excel(
             [

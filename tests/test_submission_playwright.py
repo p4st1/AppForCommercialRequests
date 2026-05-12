@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+import submission.submission_playwright as submission_playwright_module
 from submission.submission_playwright import SubmissionPlaywright
 from submission.submission_service import SubmissionHeader, SubmissionPayload
 
@@ -170,6 +171,21 @@ class SubmissionPlaywrightTests(unittest.TestCase):
         with NamedTemporaryFile(suffix=".txt") as tmp_file:
             with self.assertRaisesRegex(ValueError, "Excel файл"):
                 SubmissionPlaywright._validate_import_file_path(tmp_file.name)
+
+    def test_submit_default_mode_is_blocked_without_allow_submit(self):
+        payload = SubmissionPayload(
+            header=SubmissionHeader(number="125475", title="Заявка", lot_id="557621478"),
+            rows=[],
+        )
+        old_sync_playwright = submission_playwright_module.sync_playwright
+        submission_playwright_module.sync_playwright = lambda: None
+        try:
+            submitter = SubmissionPlaywright({"JSESSIONID": "cookie"}, allow_submit=False)
+            with NamedTemporaryFile(suffix=".xlsx") as tmp_file:
+                with self.assertRaisesRegex(PermissionError, "allow_submit=False"):
+                    submitter.submit(payload, import_file_path=tmp_file.name)
+        finally:
+            submission_playwright_module.sync_playwright = old_sync_playwright
 
     def test_normalize_offer_validity_period_accepts_common_date_formats(self):
         self.assertEqual(

@@ -125,6 +125,7 @@ class _FakeMainWindow(DocExportFlowMixin):
         self.finish_loading_messages = []
         self.auth_status_values = []
         self.all_trades = []
+        self.pending_submission_metadata_calls = []
 
     def error(self, title, message):
         self.error_calls.append((title, message))
@@ -149,6 +150,9 @@ class _FakeMainWindow(DocExportFlowMixin):
 
     def export_trade(self, lot_id):
         self.export_trade_calls.append(lot_id)
+
+    def _set_pending_submission_export_metadata(self, trade, *, submission_context=None):
+        self.pending_submission_metadata_calls.append((trade, submission_context))
 
     def _finish_trades_loading(self, status_message):
         self.finish_loading_messages.append(status_message)
@@ -250,7 +254,12 @@ class DocExportFlowMixinTests(unittest.TestCase):
 
     def test_on_trades_loaded_continues_pipeline_and_exports_lot(self):
         window = _FakeMainWindow()
-        window.run_web_pipeline("A-100")
+        context = {
+            "customer": "ООО Тест",
+            "producer": "Завод",
+            "offer_validity_period": "01.06.2026",
+        }
+        window.run_web_pipeline("A-100", submission_context=context)
         window.all_trades = [
             {"registeredNumber": "ZZ-1", "lots": [{"id": 10}]},
             {"registeredNumber": "A-100", "lots": [{"id": 77}]},
@@ -260,6 +269,19 @@ class DocExportFlowMixinTests(unittest.TestCase):
 
         self.assertEqual(window.export_trade_calls, [77])
         self.assertEqual(window._web_pipeline_trade_number, "")
+        self.assertEqual(
+            window.pending_submission_metadata_calls,
+            [(window.all_trades[1], context)],
+        )
+
+    def test_run_web_pipeline_adds_default_offer_validity_to_context(self):
+        window = _FakeMainWindow()
+
+        window.run_web_pipeline("A-100", submission_context={"customer": "ООО Тест"})
+
+        context = window._web_pipeline_submission_context
+        self.assertEqual(context["customer"], "ООО Тест")
+        self.assertRegex(context["offer_validity_period"], r"^\d{2}\.\d{2}\.\d{4}$")
 
     @patch("app.ui.doc_export_flow_mixin.QMessageBox.warning")
     def test_on_trades_loaded_shows_warning_when_trade_not_found(self, warning):

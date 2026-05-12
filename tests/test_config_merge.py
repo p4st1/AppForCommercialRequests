@@ -49,6 +49,19 @@ class ConfigMergeTests(unittest.TestCase):
         self.assertFalse(merged["settings"]["use_auto_trade_timer"])
         self.assertEqual(merged["settings"]["auto_trade_timer_minutes"], 30)
 
+    def test_developer_skip_table_fill_errors_defaults_to_false(self):
+        merged = Tool.merge_config_with_defaults({"config": {}, "settings": {}})
+        self.assertFalse(merged["settings"]["developer_skip_table_fill_errors"])
+
+    def test_developer_skip_table_fill_errors_can_be_enabled(self):
+        merged = Tool.merge_config_with_defaults(
+            {
+                "config": {},
+                "settings": {"developer_skip_table_fill_errors": "true"},
+            }
+        )
+        self.assertTrue(merged["settings"]["developer_skip_table_fill_errors"])
+
     def test_auto_trade_timer_minutes_keeps_integer_value(self):
         merged = Tool.merge_config_with_defaults(
             {"config": {}, "settings": {"auto_trade_timer_minutes": "45"}}

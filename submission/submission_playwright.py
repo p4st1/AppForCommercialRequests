@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .submission_service import FIELD_LABELS, FIELD_ORDER, SubmissionPayload
 
@@ -170,10 +170,13 @@ class SubmissionPlaywright:
         payload: SubmissionPayload,
         *,
         import_file_path: str | Path | None = None,
+        final_submit: bool | None = None,
+        on_manual_confirmation_ready: Callable[[str], None] | None = None,
     ) -> str:
         if sync_playwright is None:
             raise RuntimeError("Playwright недоступен в текущем окружении")
-        if not self._allow_submit:
+        should_click_final_submit = True if final_submit is None else bool(final_submit)
+        if should_click_final_submit and not self._allow_submit:
             raise PermissionError(
                 "Подача заявки заблокирована: allow_submit=False. "
                 "Подтвердите действие в интерфейсе перед отправкой."
@@ -196,12 +199,20 @@ class SubmissionPlaywright:
                     page,
                     getattr(payload.header, "offer_validity_period", ""),
                 )
-                self._click_submit(page)
-                self._wait_for_success(page)
+                if should_click_final_submit:
+                    self._click_submit(page)
+                    self._wait_for_success(page)
+                    return f"Заявка {payload.header.number} подана"
+
+                ready_message = (
+                    "Таблица и срок действия КП загружены на сайт. "
+                    "Проверьте заявку и нажмите финальную кнопку на сайте вручную."
+                )
+                if callable(on_manual_confirmation_ready):
+                    on_manual_confirmation_ready(ready_message)
+                return self._wait_for_manual_submission_or_close(page, payload)
             finally:
                 browser.close()
-
-        return f"Заявка {payload.header.number} подана"
 
     def _open_submission_form(self, page: Page) -> None:
         candidates = (
@@ -716,3 +727,63 @@ class SubmissionPlaywright:
                 continue
 
         raise RuntimeError("Не удалось подтвердить подачу заявки на странице")
+
+    def _wait_for_manual_submission_or_close(
+        self,
+        page: Page,
+        payload: SubmissionPayload,
+    ) -> str:
+        success_patterns = (
+            re.compile(r"успеш", re.IGNORECASE),
+            re.compile(r"заявк.*подан", re.IGNORECASE),
+            re.compile(r"предложени.*подан", re.IGNORECASE),
+            re.compile(r"отправлен|отправлена|отправлено", re.IGNORECASE),
+            re.compile(r"зарегистрирован|зарегистрирована|зарегистрировано", re.IGNORECASE),
+        )
+        error_patterns = (
+            re.compile(r"ошиб", re.IGNORECASE),
+            re.compile(r"не удалось", re.IGNORECASE),
+        )
+
+        while True:
+            try:
+                if page.is_closed():
+                    return (
+                        "Таблица и срок действия КП были загружены. "
+                        "Браузер закрыт пользователем."
+                    )
+            except Exception:
+                return (
+                    "Таблица и срок действия КП были загружены. "
+                    "Ожидание пользователя завершено."
+                )
+
+            for pattern in success_patterns:
+                try:
+                    page.get_by_text(pattern).first.wait_for(
+                        state="visible",
+                        timeout=700,
+                    )
+                    return f"Заявка {payload.header.number} подана пользователем"
+                except PlaywrightTimeoutError:
+                    continue
+                except Exception:
+                    continue
+
+            for pattern in error_patterns:
+                try:
+                    locator = page.get_by_text(pattern).first
+                    if locator.is_visible(timeout=300):
+                        raise RuntimeError(
+                            f"Площадка вернула ошибку: {locator.inner_text().strip()}"
+                        )
+                except PlaywrightTimeoutError:
+                    continue
+
+            try:
+                page.wait_for_timeout(1_000)
+            except Exception:
+                return (
+                    "Таблица и срок действия КП были загружены. "
+                    "Браузер закрыт пользователем."
+                )

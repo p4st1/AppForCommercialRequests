@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from createDocument import mainWindow as createDocWindow
 from PySide6.QtWidgets import QMessageBox
 from config import Config
@@ -15,6 +17,8 @@ except Exception:
 
 
 class DocExportFlowMixin:
+    SUBMISSION_OFFER_VALIDITY_DAYS = 20
+
     def openCreateDocWindow(self, tableData):
         window = createDocWindow(self, tableData=tableData)
         window.ui.numLine.setText(self.ui.requestNumberLine.text().strip())
@@ -39,6 +43,43 @@ class DocExportFlowMixin:
         trade_number = str(getattr(self, "_web_pipeline_trade_number", "") or "").strip()
         self._web_pipeline_trade_number = ""
         return trade_number
+
+    @classmethod
+    def _default_submission_offer_validity_period(cls) -> str:
+        return (
+            datetime.now() + timedelta(days=cls.SUBMISSION_OFFER_VALIDITY_DAYS)
+        ).strftime("%d.%m.%Y")
+
+    @classmethod
+    def _normalize_web_pipeline_submission_context(
+        cls,
+        submission_context,
+    ) -> dict[str, str]:
+        context = submission_context if isinstance(submission_context, dict) else {}
+        result = {
+            "customer": str(context.get("customer", "") or "").strip(),
+            "producer": str(
+                context.get("producer", "")
+                or context.get("manufacturer", "")
+                or ""
+            ).strip(),
+            "offer_validity_period": str(
+                context.get("offer_validity_period", "") or ""
+            ).strip(),
+        }
+        if not result["offer_validity_period"]:
+            result["offer_validity_period"] = cls._default_submission_offer_validity_period()
+        return result
+
+    def _set_web_pipeline_submission_context(self, submission_context) -> None:
+        self._web_pipeline_submission_context = (
+            self._normalize_web_pipeline_submission_context(submission_context)
+        )
+
+    def _pop_web_pipeline_submission_context(self) -> dict[str, str]:
+        context = getattr(self, "_web_pipeline_submission_context", {})
+        self._web_pipeline_submission_context = {}
+        return context if isinstance(context, dict) else {}
 
     def set_pipeline_status(self, text: str):
         label = getattr(self, "label_pipeline_status", None)
@@ -75,7 +116,7 @@ class DocExportFlowMixin:
         self.set_pipeline_status("❌ Ошибка")
         self._schedule_pipeline_status_reset()
 
-    def run_web_pipeline(self, trade_number: str = "") -> None:
+    def run_web_pipeline(self, trade_number: str = "", submission_context=None) -> None:
         try:
             raw_trade_number = str(trade_number or "").strip()
             if not raw_trade_number and hasattr(self.ui, "requestNumberLine"):
@@ -83,6 +124,7 @@ class DocExportFlowMixin:
             if not raw_trade_number:
                 raise ValueError("Номер заявки не указан")
         except Exception as exc:
+            self._pop_web_pipeline_submission_context()
             self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
@@ -92,6 +134,7 @@ class DocExportFlowMixin:
             return
 
         self._web_pipeline_active = True
+        self._set_web_pipeline_submission_context(submission_context)
 
         try:
             self.set_pipeline_status("🌐 Переход на вкладку Прием заявок...")
@@ -120,6 +163,7 @@ class DocExportFlowMixin:
             load_trades_method()
         except Exception as exc:
             self._pop_web_pipeline_trade_number()
+            self._pop_web_pipeline_submission_context()
             self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
@@ -143,6 +187,7 @@ class DocExportFlowMixin:
                 None,
             )
         except Exception as exc:
+            self._pop_web_pipeline_submission_context()
             self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
@@ -152,6 +197,7 @@ class DocExportFlowMixin:
             return
 
         if trade is None:
+            self._pop_web_pipeline_submission_context()
             self._set_pipeline_error_status()
             QMessageBox.warning(
                 self,
@@ -160,6 +206,7 @@ class DocExportFlowMixin:
             )
             return
 
+        submission_context = self._pop_web_pipeline_submission_context()
         try:
             lots = trade.get("lots")
             if not isinstance(lots, list) or not lots:
@@ -188,7 +235,10 @@ class DocExportFlowMixin:
                 None,
             )
             if callable(set_submission_metadata):
-                set_submission_metadata(trade)
+                set_submission_metadata(
+                    trade,
+                    submission_context=submission_context,
+                )
             export_trade_method(lot_id)
         except Exception as exc:
             self._set_pipeline_error_status()
@@ -210,6 +260,7 @@ class DocExportFlowMixin:
         trade_number = str(getattr(self, "_web_pipeline_trade_number", "") or "").strip()
         if trade_number:
             self._pop_web_pipeline_trade_number()
+            self._pop_web_pipeline_submission_context()
             error_text = str(message or "Неизвестная ошибка")
             Tool.write_log(f"Ошибка загрузки заявок (pipeline): {error_text}")
             set_auth_status = getattr(self, "_set_auth_status", None)

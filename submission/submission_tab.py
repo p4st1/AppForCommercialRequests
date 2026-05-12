@@ -42,6 +42,7 @@ from .submission_service import (
 
 
 class SubmitSubmissionWorker(QThread):
+    ready = Signal(str)
     finished = Signal(str)
     error = Signal(str)
 
@@ -63,12 +64,14 @@ class SubmitSubmissionWorker(QThread):
             submitter = SubmissionPlaywright(
                 self._cookies,
                 headless=False,
-                allow_submit=True,
+                allow_submit=False,
                 timeout_ms=90_000,
             )
             result = submitter.submit(
                 self._payload,
                 import_file_path=self._import_file_path,
+                final_submit=False,
+                on_manual_confirmation_ready=self.ready.emit,
             )
             self.finished.emit(result)
         except Exception as exc:
@@ -343,7 +346,6 @@ class SubmissionTabMixin:
                     str(import_path),
                     self._submission_source_rows_for_excel(payload),
                     strict_row_count=False,
-                    overwrite_existing=True,
                 )
         except Exception as exc:
             Tool.write_log(f"Не удалось обновить Excel перед импортом заявки: {exc}")
@@ -645,8 +647,9 @@ class SubmissionTabMixin:
             message_box.setIcon(question_icon)
         message_box.setWindowTitle("Подтверждение подачи")
         message_box.setText(
-            "Вы уверены, что хотите подать заявку?\n"
-            "Перед подачей обязательно проверьте:\n"
+            "Открыть сайт и подготовить заявку к ручной подаче?\n"
+            "Программа загрузит таблицу и срок действия КП, но финальную кнопку на сайте не нажмет.\n\n"
+            "Перед ручной подачей обязательно проверьте:\n"
             "- цены\n"
             "- сроки\n"
             "- характеристики\n"
@@ -693,6 +696,7 @@ class SubmissionTabMixin:
             import_file_path=import_file_path,
             parent=self,
         )
+        worker.ready.connect(self._on_submission_ready_for_manual_confirmation)
         worker.finished.connect(self._on_submission_finished)
         worker.error.connect(self._on_submission_error)
         self._submission_submit_worker = worker
@@ -708,9 +712,9 @@ class SubmissionTabMixin:
                 button.setEnabled(not is_loading)
         if isinstance(getattr(self, "btn_submit_submission", None), QPushButton):
             self.btn_submit_submission.setEnabled(not is_loading)
-            self.btn_submit_submission.setText("Подача..." if is_loading else "Подать заявку")
+            self.btn_submit_submission.setText("Подготовка..." if is_loading else "Подать заявку")
         if is_loading:
-            self._set_submission_status("idle", "Подача...")
+            self._set_submission_status("idle", "Подготовка...")
 
     def _finish_submission_worker(self) -> None:
         self._set_submission_loading_state(is_loading=False)
@@ -719,9 +723,22 @@ class SubmissionTabMixin:
         if worker is not None:
             worker.deleteLater()
 
+    def _on_submission_ready_for_manual_confirmation(self, message: str) -> None:
+        info_text = str(message or "").strip()
+        Tool.write_log(f"Заявка подготовлена к ручной подаче: {info_text}")
+        self._set_submission_status("warning", "Ожидание пользователя")
+        status_bar = self.statusBar() if callable(getattr(self, "statusBar", None)) else None
+        if status_bar is not None:
+            status_bar.showMessage(
+                info_text or "Таблица загружена на сайт. Ожидается ручная подача.",
+                10_000,
+            )
+
     def _on_submission_finished(self, message: str) -> None:
         Tool.write_log(f"Подача заявки завершена: {message}")
-        self._set_submission_status("ready", "Подано")
+        message_text = str(message or "")
+        status_text = "Подано" if "подан" in message_text.casefold() else "Загружено"
+        self._set_submission_status("ready", status_text)
         self._finish_submission_worker()
         QMessageBox.information(self, "Подача заявки", message)
 

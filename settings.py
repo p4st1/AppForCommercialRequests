@@ -60,6 +60,9 @@ class mainWindow(QMainWindow):
         )
         self._setup_auto_trade_settings_block()
         self._setup_table_settings_block()
+        self.developer_skip_table_fill_errors_checkbox.setChecked(
+            bool(Config.settings.get('developer_skip_table_fill_errors', False))
+        )
         self.skip_auto_trade_warning_checkbox.setChecked(
             bool(Config.settings.get('skip_auto_trade_warning', False))
         )
@@ -91,6 +94,9 @@ class mainWindow(QMainWindow):
         self.table_font_size_spinbox.valueChanged.connect(self.tableFontSizeChange)
         self.table_alternating_rows_checkbox.toggled.connect(
             self.tableAlternatingRowsChange
+        )
+        self.developer_skip_table_fill_errors_checkbox.toggled.connect(
+            self.developerSkipTableFillErrorsChange
         )
         self.table_settings_reset_button.clicked.connect(self.resetTableSettings)
 
@@ -145,6 +151,9 @@ class mainWindow(QMainWindow):
     def autoTradeTimerMinutesChange(self, value):
         minutes = self._normalize_auto_trade_timer_minutes(value)
         Config.settings['auto_trade_timer_minutes'] = minutes
+
+    def developerSkipTableFillErrorsChange(self, signal):
+        Config.settings['developer_skip_table_fill_errors'] = bool(signal)
 
     def _table_settings_store(self):
         return QSettings(self.TABLE_SETTINGS_ORG, self.TABLE_SETTINGS_APP)
@@ -445,6 +454,19 @@ class mainWindow(QMainWindow):
         alternating_checkbox.setFont(self.ui.openUpdateTab.font())
         container.addWidget(alternating_checkbox)
 
+        developer_skip_checkbox = QCheckBox(
+            "Для разработчика: пропускать ошибки заполнения таблиц",
+            self.ui.scrollAreaWidgetContents,
+        )
+        developer_skip_checkbox.setObjectName("developerSkipTableFillErrorsCheckBox")
+        developer_skip_checkbox.setStyleSheet(self.ui.openUpdateTab.styleSheet())
+        developer_skip_checkbox.setFont(self.ui.openUpdateTab.font())
+        developer_skip_checkbox.setToolTip(
+            "Если включено, ошибки автозаполнения и проверки таблиц будут "
+            "записаны в лог, но не остановят workflow."
+        )
+        container.addWidget(developer_skip_checkbox)
+
         reset_button = QPushButton("Сбросить настройки", self.ui.scrollAreaWidgetContents)
         reset_button.setObjectName("resetTableSettingsButton")
         reset_button.setMinimumSize(180, 32)
@@ -461,11 +483,13 @@ class mainWindow(QMainWindow):
         self.table_settings_layout = container
         self.table_font_size_spinbox = font_spinbox
         self.table_alternating_rows_checkbox = alternating_checkbox
+        self.developer_skip_table_fill_errors_checkbox = developer_skip_checkbox
         self.table_settings_reset_button = reset_button
         self.table_settings_values = self.TABLE_SETTINGS_DEFAULTS.copy()
         self.ui.table_settings_label = section_widget
         self.ui.table_font_size_spinbox = font_spinbox
         self.ui.table_alternating_rows_checkbox = alternating_checkbox
+        self.ui.developer_skip_table_fill_errors_checkbox = developer_skip_checkbox
         self.ui.table_settings_reset_button = reset_button
 
     def _setup_payment_templates_editor(self):

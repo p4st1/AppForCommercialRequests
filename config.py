@@ -14,6 +14,7 @@ class Config:
         "skip_auto_trade_warning": False,
         "use_auto_trade_timer": False,
         "auto_trade_timer_minutes": 30,
+        "developer_skip_table_fill_errors": False,
     }
 
     DEFAULT_CONFIG = {
