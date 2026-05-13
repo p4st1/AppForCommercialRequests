@@ -52,6 +52,8 @@ class SubmissionServiceTests(unittest.TestCase):
                 number="REQ-1",
                 title="Заявка",
                 offer_validity_period="31.12.2026",
+                delivery_order="Доставка до склада",
+                payment_terms="Оплата по договору",
             ),
             [
                 SubmissionRow(name="Насос", qty="2", unit_price="100,50"),
@@ -63,6 +65,8 @@ class SubmissionServiceTests(unittest.TestCase):
         self.assertEqual(payload.rows[0].total, 201.0)
         self.assertEqual(payload.header.total, 201.0)
         self.assertEqual(payload.header.offer_validity_period, "31.12.2026")
+        self.assertEqual(payload.header.delivery_order, "Доставка до склада")
+        self.assertEqual(payload.header.payment_terms, "Оплата по договору")
 
     def test_rows_from_matrix_detects_headers(self):
         rows = SubmissionService._rows_from_matrix(

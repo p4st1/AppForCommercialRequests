@@ -156,6 +156,11 @@ class DatabaseTools:
         config["lastTable"] = str(config.get("lastTable", "")).strip()
         config["pathToSaveCP"] = str(config.get("pathToSaveCP", "")).strip()
         config["pathToSaveExcel"] = str(config.get("pathToSaveExcel", "")).strip()
+        config["offerValidityDays"] = str(
+            Config.normalize_offer_validity_days(config.get("offerValidityDays"))
+        )
+        if not isinstance(config.get("lastCreateDocFields"), dict):
+            config["lastCreateDocFields"] = {}
 
         payment_templates_raw = config.get("paymentTemplates")
         if isinstance(payment_templates_raw, str):

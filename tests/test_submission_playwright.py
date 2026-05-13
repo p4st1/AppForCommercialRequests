@@ -15,6 +15,7 @@ class _FakeElement:
         self.scrolled = False
         self.dispatched = False
         self.files = []
+        self.filled_value = None
 
     def is_visible(self, timeout=None):
         return self.visible
@@ -33,6 +34,9 @@ class _FakeElement:
 
     def set_input_files(self, files):
         self.files = [str(files)]
+
+    def fill(self, value, timeout=None):
+        self.filled_value = value
 
     def wait_for(self, *_args, **_kwargs):
         return None
@@ -196,6 +200,30 @@ class SubmissionPlaywrightTests(unittest.TestCase):
             SubmissionPlaywright._normalize_offer_validity_period("31/12/2026"),
             "31.12.2026",
         )
+
+    def test_fill_delivery_order_uses_visible_labeled_field(self):
+        field = _FakeElement()
+        page = _FakePage(
+            {
+                "mat-form-field:has-text('Порядок доставки') input": [field],
+            }
+        )
+        submitter = SubmissionPlaywright({"JSESSIONID": "cookie"}, allow_submit=True)
+
+        self.assertTrue(submitter._fill_delivery_order(page, "До склада"))
+        self.assertEqual(field.filled_value, "До склада")
+
+    def test_fill_payment_terms_uses_visible_labeled_field(self):
+        field = _FakeElement()
+        page = _FakePage(
+            {
+                "mat-form-field:has-text('Условие оплаты') input": [field],
+            }
+        )
+        submitter = SubmissionPlaywright({"JSESSIONID": "cookie"}, allow_submit=True)
+
+        self.assertTrue(submitter._fill_payment_terms(page, "Оплата по договору"))
+        self.assertEqual(field.filled_value, "Оплата по договору")
 
 
 if __name__ == "__main__":

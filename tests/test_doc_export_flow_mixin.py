@@ -258,6 +258,9 @@ class DocExportFlowMixinTests(unittest.TestCase):
             "customer": "ООО Тест",
             "producer": "Завод",
             "offer_validity_period": "01.06.2026",
+            "delivery_order": "",
+            "payment_terms": "",
+            "payment_condition": "",
         }
         window.run_web_pipeline("A-100", submission_context=context)
         window.all_trades = [

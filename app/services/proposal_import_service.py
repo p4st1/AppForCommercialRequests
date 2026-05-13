@@ -8,12 +8,29 @@ from tools import DatabaseTools as Tool
 
 class ProposalImportService:
     CURRENCY_PATTERN = re.compile(r"[¥$₽€]")
+    DASH_PLACEHOLDER_CHARS = frozenset("-–—−")
 
     @staticmethod
     def normalize_header(text):
         value = str(text or "").strip().lower().replace("ё", "е")
         value = re.sub(r"[^a-zа-я0-9]+", "", value)
         return value
+
+    @classmethod
+    def is_dash_placeholder(cls, text):
+        value = str(text or "").strip().replace("\u00A0", "").replace(" ", "")
+        return bool(value) and all(char in cls.DASH_PLACEHOLDER_CHARS for char in value)
+
+    def detect_price_column_currency(self, df, price_col, header_row):
+        for row_idx in range(header_row + 1, len(df.index)):
+            price_text = str(df.iat[row_idx, price_col]).strip()
+            currency, _price_value = Tool.parsePrice(price_text)
+            if currency:
+                return currency
+            match = self.CURRENCY_PATTERN.search(price_text)
+            if match:
+                return match.group(0)
+        return ""
 
     def read_source_table(self, filename):
         import pandas as pd
@@ -111,6 +128,7 @@ class ProposalImportService:
 
     def parse_source_rows(self, df):
         header_row, mapping = self.detect_columns(df)
+        fallback_currency = self.detect_price_column_currency(df, mapping["price"], header_row)
         parsed_rows = []
         warnings = []
         blank_streak = 0
@@ -148,9 +166,18 @@ class ProposalImportService:
                     if match:
                         currency = match.group(0)
                         price_value = price_text.replace(currency, "").strip()
+                if not currency and self.is_dash_placeholder(price_value):
+                    currency = fallback_currency
                 if not currency:
                     raise ValueError("Не указана валюта")
-                unit_price = Tool.parse_float(price_value, f"Цена (строка {row_idx + 1})", allow_zero=True)
+                if self.is_dash_placeholder(price_value):
+                    unit_price = 0
+                else:
+                    unit_price = Tool.parse_float(
+                        price_value,
+                        f"Цена (строка {row_idx + 1})",
+                        allow_zero=True,
+                    )
             except ValueError as error:
                 warnings.append(f"Строка {row_idx + 1}: {error}")
                 continue

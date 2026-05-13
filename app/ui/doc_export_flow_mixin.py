@@ -17,7 +17,8 @@ except Exception:
 
 
 class DocExportFlowMixin:
-    SUBMISSION_OFFER_VALIDITY_DAYS = 20
+    SUBMISSION_OFFER_VALIDITY_DAYS = Config.DEFAULT_OFFER_VALIDITY_DAYS
+    PIPELINE_TRADE_SEARCH_LIMIT = 1000
 
     def openCreateDocWindow(self, tableData):
         window = createDocWindow(self, tableData=tableData)
@@ -47,7 +48,7 @@ class DocExportFlowMixin:
     @classmethod
     def _default_submission_offer_validity_period(cls) -> str:
         return (
-            datetime.now() + timedelta(days=cls.SUBMISSION_OFFER_VALIDITY_DAYS)
+            datetime.now() + timedelta(days=Config.get_offer_validity_days())
         ).strftime("%d.%m.%Y")
 
     @classmethod
@@ -65,6 +66,11 @@ class DocExportFlowMixin:
             ).strip(),
             "offer_validity_period": str(
                 context.get("offer_validity_period", "") or ""
+            ).strip(),
+            "delivery_order": str(context.get("delivery_order", "") or "").strip(),
+            "payment_terms": str(context.get("payment_terms", "") or "").strip(),
+            "payment_condition": str(
+                context.get("payment_condition", "") or ""
             ).strip(),
         }
         if not result["offer_validity_period"]:
@@ -157,11 +163,14 @@ class DocExportFlowMixin:
         self._set_web_pipeline_trade_number(raw_trade_number)
         try:
             self.set_pipeline_status("📥 Загрузка заявок...")
+            self._trades_load_max_items_override = self.PIPELINE_TRADE_SEARCH_LIMIT
             load_trades_method = getattr(self, "load_trades", None)
             if not callable(load_trades_method):
                 raise RuntimeError("Метод load_trades не найден")
             load_trades_method()
         except Exception as exc:
+            if hasattr(self, "_trades_load_max_items_override"):
+                del self._trades_load_max_items_override
             self._pop_web_pipeline_trade_number()
             self._pop_web_pipeline_submission_context()
             self._set_pipeline_error_status()
@@ -171,21 +180,59 @@ class DocExportFlowMixin:
                 self._pipeline_error_text("загрузка заявок", str(exc)),
             )
 
+    @staticmethod
+    def _normalize_trade_search_text(value) -> str:
+        return str(value or "").strip().casefold()
+
+    @classmethod
+    def _trade_matches_number(cls, trade: dict, trade_number: str) -> bool:
+        needle = cls._normalize_trade_search_text(trade_number)
+        if not needle:
+            return False
+        needle_digits = "".join(ch for ch in needle if ch.isdigit())
+
+        values = [
+            trade.get("registeredNumber"),
+            trade.get("number"),
+            trade.get("id"),
+        ]
+        lots = trade.get("lots")
+        if isinstance(lots, list):
+            for lot in lots:
+                if isinstance(lot, dict):
+                    values.append(lot.get("id"))
+
+        for value in values:
+            text = cls._normalize_trade_search_text(value)
+            if not text:
+                continue
+            if needle in text:
+                return True
+            text_digits = "".join(ch for ch in text if ch.isdigit())
+            if needle_digits and text_digits and needle_digits == text_digits:
+                return True
+        return False
+
+    @classmethod
+    def _find_trade_for_pipeline(cls, trades: list, trade_number: str) -> dict | None:
+        for current_trade in trades:
+            if isinstance(current_trade, dict) and cls._trade_matches_number(
+                current_trade,
+                trade_number,
+            ):
+                return current_trade
+        return None
+
     def _continue_web_pipeline_after_load(self) -> None:
+        if hasattr(self, "_trades_load_max_items_override"):
+            del self._trades_load_max_items_override
         trade_number = self._pop_web_pipeline_trade_number()
         if not trade_number:
             return
 
         try:
             trades = self.all_trades if isinstance(self.all_trades, list) else []
-            trade = next(
-                (
-                    current_trade
-                    for current_trade in trades
-                    if trade_number in str(current_trade.get("registeredNumber", ""))
-                ),
-                None,
-            )
+            trade = self._find_trade_for_pipeline(trades, trade_number)
         except Exception as exc:
             self._pop_web_pipeline_submission_context()
             self._set_pipeline_error_status()
@@ -259,6 +306,8 @@ class DocExportFlowMixin:
     def on_error(self, message):
         trade_number = str(getattr(self, "_web_pipeline_trade_number", "") or "").strip()
         if trade_number:
+            if hasattr(self, "_trades_load_max_items_override"):
+                del self._trades_load_max_items_override
             self._pop_web_pipeline_trade_number()
             self._pop_web_pipeline_submission_context()
             error_text = str(message or "Неизвестная ошибка")

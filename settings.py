@@ -60,6 +60,8 @@ class mainWindow(QMainWindow):
         )
         self._setup_auto_trade_settings_block()
         self._setup_table_settings_block()
+        self._setup_offer_validity_settings_block()
+        self._setup_tab_visibility_settings_block()
         self.developer_skip_table_fill_errors_checkbox.setChecked(
             bool(Config.settings.get('developer_skip_table_fill_errors', False))
         )
@@ -99,6 +101,11 @@ class mainWindow(QMainWindow):
             self.developerSkipTableFillErrorsChange
         )
         self.table_settings_reset_button.clicked.connect(self.resetTableSettings)
+        self.offer_validity_days_spinbox.valueChanged.connect(
+            self.offerValidityDaysChange
+        )
+        for key, checkbox in self.tab_visibility_checkboxes.items():
+            checkbox.toggled.connect(partial(self.tabVisibilityChange, key))
 
         default_dir = Path.home() / "Documents"
         cp_dir = Tool.ensure_directory(Config.config.get('pathToSaveCP'), default_dir)
@@ -154,6 +161,18 @@ class mainWindow(QMainWindow):
 
     def developerSkipTableFillErrorsChange(self, signal):
         Config.settings['developer_skip_table_fill_errors'] = bool(signal)
+
+    def offerValidityDaysChange(self, value):
+        Config.config['offerValidityDays'] = str(
+            Config.normalize_offer_validity_days(value)
+        )
+
+    def tabVisibilityChange(self, key, signal):
+        Config.settings[str(key)] = bool(signal)
+        parent_window = self.parent()
+        apply_visibility = getattr(parent_window, "_apply_main_tab_visibility", None)
+        if callable(apply_visibility):
+            apply_visibility()
 
     def _table_settings_store(self):
         return QSettings(self.TABLE_SETTINGS_ORG, self.TABLE_SETTINGS_APP)
@@ -491,6 +510,82 @@ class mainWindow(QMainWindow):
         self.ui.table_alternating_rows_checkbox = alternating_checkbox
         self.ui.developer_skip_table_fill_errors_checkbox = developer_skip_checkbox
         self.ui.table_settings_reset_button = reset_button
+
+    def _setup_offer_validity_settings_block(self):
+        section_label = QLabel("Настройки КП", self.ui.scrollAreaWidgetContents)
+        section_label.setStyleSheet(
+            "color: #2c3e50;\n"
+            "font-size: 16px;\n"
+            "font-weight: 600;\n"
+            "padding: 2px;"
+        )
+
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.setContentsMargins(7, 0, -1, -1)
+
+        label = QLabel("Срок действия КП, дней:", self.ui.scrollAreaWidgetContents)
+        spinbox = QSpinBox(self.ui.scrollAreaWidgetContents)
+        spinbox.setObjectName("offerValidityDaysSpinBox")
+        spinbox.setMinimum(Config.OFFER_VALIDITY_MIN_DAYS)
+        spinbox.setMaximum(Config.OFFER_VALIDITY_MAX_DAYS)
+        spinbox.setValue(Config.get_offer_validity_days())
+        spinbox.setSuffix(" дн.")
+
+        row.addWidget(label)
+        row.addWidget(spinbox)
+        row.addStretch(1)
+
+        insert_index = self.ui.verticalLayout.indexOf(self.ui.line_2)
+        if insert_index < 0:
+            insert_index = self.ui.verticalLayout.count()
+        self.ui.verticalLayout.insertLayout(insert_index, row)
+        self.ui.verticalLayout.insertWidget(insert_index, section_label)
+
+        self.offer_validity_settings_label = section_label
+        self.offer_validity_days_spinbox = spinbox
+        self.ui.offer_validity_settings_label = section_label
+        self.ui.offer_validity_days_spinbox = spinbox
+
+    def _setup_tab_visibility_settings_block(self):
+        section_label = QLabel("Видимость вкладок", self.ui.scrollAreaWidgetContents)
+        section_label.setStyleSheet(
+            "color: #2c3e50;\n"
+            "font-size: 16px;\n"
+            "font-weight: 600;\n"
+            "padding: 2px;"
+        )
+
+        controls = QVBoxLayout()
+        controls.setSpacing(6)
+        controls.setContentsMargins(7, 0, -1, -1)
+
+        items = (
+            ("show_retrade_tab", "Показывать вкладку «Переторжка»"),
+            ("show_platform_tab", "Показывать вкладку «Прием заявок»"),
+            ("show_submission_tab", "Показывать вкладку «Подача заявки»"),
+            ("show_history_tab", "Показывать вкладку «История»"),
+            ("show_updates_tab", "Показывать вкладку «Обновления»"),
+        )
+        self.tab_visibility_checkboxes = {}
+        for key, caption in items:
+            checkbox = QCheckBox(caption, self.ui.scrollAreaWidgetContents)
+            checkbox.setObjectName(f"{key}CheckBox")
+            checkbox.setStyleSheet(self.ui.openUpdateTab.styleSheet())
+            checkbox.setFont(self.ui.openUpdateTab.font())
+            checkbox.setChecked(bool(Config.settings.get(key, True)))
+            controls.addWidget(checkbox)
+            self.tab_visibility_checkboxes[key] = checkbox
+            setattr(self.ui, f"{key}_checkbox", checkbox)
+
+        insert_index = self.ui.verticalLayout.indexOf(self.ui.line_2)
+        if insert_index < 0:
+            insert_index = self.ui.verticalLayout.count()
+        self.ui.verticalLayout.insertLayout(insert_index, controls)
+        self.ui.verticalLayout.insertWidget(insert_index, section_label)
+
+        self.tab_visibility_settings_label = section_label
+        self.ui.tab_visibility_settings_label = section_label
 
     def _setup_payment_templates_editor(self):
         self.paymentTemplatesLabel = QLabel("Шаблоны оплаты", self.ui.scrollAreaWidgetContents)

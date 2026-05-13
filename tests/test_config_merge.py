@@ -53,6 +53,22 @@ class ConfigMergeTests(unittest.TestCase):
         merged = Tool.merge_config_with_defaults({"config": {}, "settings": {}})
         self.assertFalse(merged["settings"]["developer_skip_table_fill_errors"])
 
+    def test_offer_validity_days_defaults_to_ten(self):
+        merged = Tool.merge_config_with_defaults({"config": {}, "settings": {}})
+        self.assertEqual(
+            merged["config"]["offerValidityDays"],
+            str(Config.DEFAULT_OFFER_VALIDITY_DAYS),
+        )
+
+    def test_offer_validity_days_normalizes_invalid_value(self):
+        merged = Tool.merge_config_with_defaults(
+            {"config": {"offerValidityDays": "bad"}, "settings": {}}
+        )
+        self.assertEqual(
+            merged["config"]["offerValidityDays"],
+            str(Config.DEFAULT_OFFER_VALIDITY_DAYS),
+        )
+
     def test_developer_skip_table_fill_errors_can_be_enabled(self):
         merged = Tool.merge_config_with_defaults(
             {

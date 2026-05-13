@@ -47,6 +47,9 @@ class SubmissionHeader:
     customer: str = ""
     currency: str = ""
     offer_validity_period: str = ""
+    delivery_order: str = ""
+    payment_terms: str = ""
+    payment_condition: str = ""
     total: float = 0.0
     lot_id: str = ""
 
@@ -225,6 +228,11 @@ class SubmissionService:
             currency=str(header.currency or "").strip(),
             offer_validity_period=str(
                 getattr(header, "offer_validity_period", "") or ""
+            ).strip(),
+            delivery_order=str(getattr(header, "delivery_order", "") or "").strip(),
+            payment_terms=str(getattr(header, "payment_terms", "") or "").strip(),
+            payment_condition=str(
+                getattr(header, "payment_condition", "") or ""
             ).strip(),
             lot_id=str(getattr(header, "lot_id", "") or "").strip(),
             total=round(total, 2),

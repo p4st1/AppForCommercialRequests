@@ -547,7 +547,7 @@ QTableWidget::indicator {{
             self._on_retrade_main_table_item_changed
         )
 
-        tab_index = tabs.addTab(retrade_tab, "Переторжка")
+        tab_index = tabs.insertTab(0, retrade_tab, "Переторжка")
         self.retrade_tab_index = tab_index
         self.retrade_inner_tabs.setCurrentIndex(self.RETRADE_INNER_TAB_MAIN)
         self._clear_retrade_calculations_view()
@@ -4021,6 +4021,11 @@ QTableWidget::indicator {{
             "offer_validity_period": str(
                 context.get("offer_validity_period", "") or ""
             ).strip(),
+            "delivery_order": str(context.get("delivery_order", "") or "").strip(),
+            "payment_terms": str(context.get("payment_terms", "") or "").strip(),
+            "payment_condition": str(
+                context.get("payment_condition", "") or ""
+            ).strip(),
         }
 
     def _set_pending_submission_export_metadata(
@@ -4042,6 +4047,14 @@ QTableWidget::indicator {{
             metadata["manufacturer"] = context_metadata["producer"]
         if context_metadata["offer_validity_period"]:
             metadata["offer_validity_period"] = context_metadata["offer_validity_period"]
+        if context_metadata["delivery_order"]:
+            metadata["delivery_order"] = context_metadata["delivery_order"]
+        if context_metadata["payment_terms"]:
+            metadata["payment_terms"] = context_metadata["payment_terms"]
+        elif context_metadata["payment_condition"]:
+            metadata["payment_terms"] = context_metadata["payment_condition"]
+        if context_metadata["payment_condition"]:
+            metadata["payment_condition"] = context_metadata["payment_condition"]
         self._pending_submission_export_metadata = metadata
 
     def _start_export_worker(

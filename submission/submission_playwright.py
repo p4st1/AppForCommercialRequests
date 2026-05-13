@@ -199,13 +199,22 @@ class SubmissionPlaywright:
                     page,
                     getattr(payload.header, "offer_validity_period", ""),
                 )
+                self._fill_delivery_order(
+                    page,
+                    getattr(payload.header, "delivery_order", ""),
+                )
+                self._fill_payment_terms(
+                    page,
+                    getattr(payload.header, "payment_terms", "")
+                    or getattr(payload.header, "payment_condition", ""),
+                )
                 if should_click_final_submit:
                     self._click_submit(page)
                     self._wait_for_success(page)
                     return f"Заявка {payload.header.number} подана"
 
                 ready_message = (
-                    "Таблица и срок действия КП загружены на сайт. "
+                    "Таблица, срок действия КП, порядок доставки и условие оплаты загружены на сайт. "
                     "Проверьте заявку и нажмите финальную кнопку на сайте вручную."
                 )
                 if callable(on_manual_confirmation_ready):
@@ -285,19 +294,43 @@ class SubmissionPlaywright:
     ) -> bool:
         text_value = "" if value is None else str(value)
         for label in labels:
-            locators = (
-                page.get_by_label(re.compile(re.escape(label), re.IGNORECASE)).first,
-                page.get_by_placeholder(re.compile(re.escape(label), re.IGNORECASE)).first,
-                page.locator(f"input[name*='{label}' i]").first,
-                page.locator(f"textarea[name*='{label}' i]").first,
-            )
+            pattern = re.compile(re.escape(label), re.IGNORECASE)
+            locators = []
+            for getter_name in ("get_by_label", "get_by_placeholder"):
+                getter = getattr(page, getter_name, None)
+                if callable(getter):
+                    try:
+                        locators.append(getter(pattern))
+                    except Exception:
+                        pass
+            locator_getter = getattr(page, "locator", None)
+            if callable(locator_getter):
+                for selector in (
+                    f"mat-form-field:has-text('{label}') input",
+                    f"mat-form-field:has-text('{label}') textarea",
+                    f"um-string-field:has-text('{label}') input",
+                    f"um-string-field:has-text('{label}') textarea",
+                    f"um-text-field:has-text('{label}') input",
+                    f"um-text-field:has-text('{label}') textarea",
+                    f"input[name*='{label}' i]",
+                    f"textarea[name*='{label}' i]",
+                ):
+                    try:
+                        locators.append(locator_getter(selector))
+                    except Exception:
+                        pass
             for locator in locators:
                 try:
-                    if locator.count() == 0 or not locator.is_visible(timeout=500):
+                    if locator.count() == 0:
                         continue
-                    locator.fill(text_value, timeout=3_000)
+                    candidate = locator.first if hasattr(locator, "first") else locator
+                    if not candidate.is_visible(timeout=500):
+                        continue
+                    candidate.fill(text_value, timeout=3_000)
                     return True
                 except PlaywrightTimeoutError:
+                    continue
+                except AttributeError:
                     continue
         return False
 
@@ -384,6 +417,24 @@ class SubmissionPlaywright:
                 continue
 
         return False
+
+    def _fill_delivery_order(self, page: Page, value: Any) -> bool:
+        if not str(value or "").strip():
+            return False
+        return self._fill_first_matching_field(
+            page,
+            ("Порядок доставки", "delivery order"),
+            value,
+        )
+
+    def _fill_payment_terms(self, page: Page, value: Any) -> bool:
+        if not str(value or "").strip():
+            return False
+        return self._fill_first_matching_field(
+            page,
+            ("Условие оплаты", "Условия оплаты", "payment terms"),
+            value,
+        )
 
     def _wait_for_submission_import_ready(self, page: Page) -> None:
         try:
@@ -749,12 +800,12 @@ class SubmissionPlaywright:
             try:
                 if page.is_closed():
                     return (
-                        "Таблица и срок действия КП были загружены. "
+                        "Таблица, срок действия КП, порядок доставки и условие оплаты были загружены. "
                         "Браузер закрыт пользователем."
                     )
             except Exception:
                 return (
-                    "Таблица и срок действия КП были загружены. "
+                    "Таблица, срок действия КП, порядок доставки и условие оплаты были загружены. "
                     "Ожидание пользователя завершено."
                 )
 
@@ -784,6 +835,6 @@ class SubmissionPlaywright:
                 page.wait_for_timeout(1_000)
             except Exception:
                 return (
-                    "Таблица и срок действия КП были загружены. "
+                    "Таблица, срок действия КП, порядок доставки и условие оплаты были загружены. "
                     "Браузер закрыт пользователем."
                 )

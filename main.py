@@ -309,6 +309,7 @@ class mainWindow(
         self._full_table_panel_widgets = list(
             dict.fromkeys(self._collect_layout_widgets(self.ui.funcButtons))
         )
+        self._apply_main_tab_visibility()
         self.ui.tabWidget.currentChanged.connect(self._on_main_tab_changed)
         self.updateHistoryTable()
 
@@ -320,10 +321,14 @@ class mainWindow(
                 Config.config["lastTable"] = ""
                 self.saveConfig()
 
-        if Config.settings["openUpdateTab"]:
-            self.ui.tabWidget.setCurrentIndex(2)
-        else:
-            self.ui.tabWidget.setCurrentIndex(1)
+        target_tab = self.ui.tab_2 if Config.settings["openUpdateTab"] else self.ui.tab
+        target_index = self.ui.tabWidget.indexOf(target_tab)
+        target_visible = True
+        try:
+            target_visible = self.ui.tabWidget.isTabVisible(target_index)
+        except Exception:
+            target_visible = True
+        self.ui.tabWidget.setCurrentWidget(target_tab if target_visible else self.ui.tab)
         self._on_main_tab_changed(self.ui.tabWidget.currentIndex())
 
     def applyEnterpriseStyle(self):
@@ -473,6 +478,42 @@ class mainWindow(
         show_panel = self.ui.tabWidget.currentWidget() is self.ui.tab
         for widget in self._full_table_panel_widgets:
             widget.setVisible(show_panel)
+
+    def _apply_main_tab_visibility(self):
+        tabs = getattr(getattr(self, "ui", None), "tabWidget", None)
+        if tabs is None or not hasattr(tabs, "setTabVisible"):
+            return
+
+        tab_settings = (
+            ("show_retrade_tab", getattr(self, "retrade_tab", None)),
+            ("show_platform_tab", getattr(self.ui, "webTab", None)),
+            ("show_submission_tab", getattr(self, "submission_tab", None)),
+            ("show_history_tab", getattr(self.ui, "historyTab", None)),
+            ("show_updates_tab", getattr(self.ui, "tab_2", None)),
+        )
+        for key, tab in tab_settings:
+            if tab is None:
+                continue
+            index = tabs.indexOf(tab)
+            if index >= 0:
+                tabs.setTabVisible(index, bool(Config.settings.get(key, True)))
+
+        current_index = tabs.currentIndex()
+        current_visible = True
+        try:
+            current_visible = tabs.isTabVisible(current_index)
+        except Exception:
+            current_visible = True
+        if current_visible:
+            return
+
+        for index in range(tabs.count()):
+            try:
+                if tabs.isTabVisible(index):
+                    tabs.setCurrentIndex(index)
+                    return
+            except Exception:
+                continue
 
     def _load_updates_tab_text(self):
         updates_path = Path(self.resourcePath("assets/updates.txt"))

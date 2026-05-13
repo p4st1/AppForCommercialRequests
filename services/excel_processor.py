@@ -180,6 +180,11 @@ class ExcelProcessor:
             return None
 
     @classmethod
+    def _row_price_is_zero(cls, row: dict[str, Any]) -> bool:
+        price = cls._number_or_none(cls._source_value(row, "price"))
+        return price is not None and price == 0.0
+
+    @classmethod
     def _source_value(cls, row: dict[str, Any], field: str) -> Any:
         if field == "name":
             return cls._source_value_from_keys(row, ("name", "title", "Наименование"))
@@ -307,6 +312,8 @@ class ExcelProcessor:
             rows_to_copy = excel_rows if strict_row_count else min(excel_rows, len(source_rows))
             for index in range(rows_to_copy):
                 row = source_rows[index] if isinstance(source_rows[index], dict) else {}
+                if self._row_price_is_zero(row):
+                    continue
                 excel_row = header_row + 1 + index
                 for field, column in target_columns.items():
                     value = self._source_value(row, field)
@@ -314,7 +321,8 @@ class ExcelProcessor:
                         continue
                     cell = worksheet.cell(row=excel_row, column=column)
                     zero_is_empty = field in self._ZERO_PLACEHOLDER_FIELDS
-                    if overwrite_existing or self._is_empty_value(
+                    should_overwrite = overwrite_existing or field == "delivery_time"
+                    if should_overwrite or self._is_empty_value(
                         cell.value,
                         zero_is_empty=zero_is_empty,
                     ):
@@ -410,13 +418,16 @@ class ExcelProcessor:
 
         for index in range(rows_to_copy):
             row = source_rows[index] if isinstance(source_rows[index], dict) else {}
+            if self._row_price_is_zero(row):
+                continue
             for field, column_number in target_columns.items():
                 value = self._source_value(row, field)
                 if self._is_empty_value(value):
                     continue
                 column_name = headers[column_number - 1]
                 zero_is_empty = field in self._ZERO_PLACEHOLDER_FIELDS
-                if overwrite_existing or self._is_empty_value(
+                should_overwrite = overwrite_existing or field == "delivery_time"
+                if should_overwrite or self._is_empty_value(
                     dataframe.at[index, column_name],
                     zero_is_empty=zero_is_empty,
                 ):

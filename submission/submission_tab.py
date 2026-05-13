@@ -128,6 +128,10 @@ class SubmissionTabMixin:
         self.submission_offer_validity_input = QLineEdit(tab)
         self.submission_offer_validity_input.setObjectName("submission_offer_validity_input")
         self.submission_offer_validity_input.setPlaceholderText("дд.мм.гггг")
+        self.submission_delivery_order_input = QLineEdit(tab)
+        self.submission_delivery_order_input.setObjectName("submission_delivery_order_input")
+        self.submission_payment_terms_input = QLineEdit(tab)
+        self.submission_payment_terms_input.setObjectName("submission_payment_terms_input")
         self.submission_total_label = QLabel("0,00", tab)
         self.submission_total_label.setObjectName("submission_total_label")
         self.submission_status_label = QLabel("Черновик", tab)
@@ -141,7 +145,9 @@ class SubmissionTabMixin:
             ("Валюта:", self.submission_currency_input, 1, 2),
             ("Срок действия КП:", self.submission_offer_validity_input, 2, 0),
             ("Общая сумма:", self.submission_total_label, 2, 2),
-            ("Статус:", self.submission_status_label, 3, 0),
+            ("Порядок доставки:", self.submission_delivery_order_input, 3, 0),
+            ("Условие оплаты:", self.submission_payment_terms_input, 3, 2),
+            ("Статус:", self.submission_status_label, 4, 0),
         )
         for caption, widget, row, column in header_items:
             caption_label = QLabel(caption, tab)
@@ -179,6 +185,8 @@ class SubmissionTabMixin:
         self.submission_tab = tab
         self.ui.submission_tab = tab
         self.ui.submission_offer_validity_input = self.submission_offer_validity_input
+        self.ui.submission_delivery_order_input = self.submission_delivery_order_input
+        self.ui.submission_payment_terms_input = self.submission_payment_terms_input
         self.ui.submission_table = self.submission_table
         self.ui.btn_load_submission_kp = self.btn_load_submission_kp
         self.ui.btn_fill_submission_from_kp = self.btn_fill_submission_from_kp
@@ -198,6 +206,8 @@ class SubmissionTabMixin:
             self.submission_customer_input,
             self.submission_currency_input,
             self.submission_offer_validity_input,
+            self.submission_delivery_order_input,
+            self.submission_payment_terms_input,
         ):
             input_widget.textChanged.connect(self._set_submission_dirty_status)
 
@@ -290,6 +300,8 @@ class SubmissionTabMixin:
             customer=self.submission_customer_input.text().strip(),
             currency=self.submission_currency_input.text().strip(),
             offer_validity_period=self.submission_offer_validity_input.text().strip(),
+            delivery_order=self.submission_delivery_order_input.text().strip(),
+            payment_terms=self.submission_payment_terms_input.text().strip(),
             lot_id=str(getattr(self, "_submission_lot_id", "") or "").strip(),
         )
 
@@ -453,6 +465,8 @@ class SubmissionTabMixin:
             ("customer", self.submission_customer_input),
             ("currency", self.submission_currency_input),
             ("offer_validity_period", self.submission_offer_validity_input),
+            ("delivery_order", self.submission_delivery_order_input),
+            ("payment_terms", self.submission_payment_terms_input),
         )
         blockers: list[QSignalBlocker] = []
         try:

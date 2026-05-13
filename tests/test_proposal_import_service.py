@@ -72,6 +72,39 @@ class ProposalImportServiceTests(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("Кол-во", warnings[0])
 
+    def test_parse_source_rows_treats_dash_price_as_zero(self):
+        df = _FakeTable(
+            [
+                ["№", "Наименование", "Каталожный номер", "Ед.", "Кол-во", "Цена", "Срок"],
+                ["1", "Ось 1234568", "1234568", "шт.", "1", " -   ₽ ", "20 дней"],
+            ]
+        )
+
+        rows, warnings = self.service.parse_source_rows(df)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["currency"], "₽")
+        self.assertEqual(rows[0]["unitPrice"], 0)
+        self.assertEqual(rows[0]["supplierTermDays"], 20)
+
+    def test_parse_source_rows_uses_column_currency_for_plain_dash_price(self):
+        df = _FakeTable(
+            [
+                ["№", "Наименование", "Каталожный номер", "Ед.", "Кол-во", "Цена", "Срок"],
+                ["1", "Ось 1234568", "1234568", "шт.", "1", "-", "20 дней"],
+                ["2", "Ось 1234569", "1234569", "шт.", "1", "100 ₽", "21 дней"],
+            ]
+        )
+
+        rows, warnings = self.service.parse_source_rows(df)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["currency"], "₽")
+        self.assertEqual(rows[0]["unitPrice"], 0)
+        self.assertEqual(rows[1]["unitPrice"], 100)
+
     def test_parse_source_rows_raises_when_no_valid_rows(self):
         df = _FakeTable(
             [

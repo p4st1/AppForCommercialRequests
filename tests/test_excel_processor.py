@@ -140,7 +140,7 @@ class ExcelProcessorTests(unittest.TestCase):
         result = pd.read_excel(path)
         self.assertEqual(result.at[0, ExcelProcessor.PRICE_COLUMN], 777)
 
-    def test_fill_exported_excel_does_not_overwrite_existing_cells(self):
+    def test_fill_exported_excel_does_not_overwrite_existing_cells_except_delivery_time(self):
         path = self._create_excel(
             [
                 {
@@ -168,9 +168,55 @@ class ExcelProcessorTests(unittest.TestCase):
         result = pd.read_excel(path)
         self.assertEqual(result.at[0, ExcelProcessor.PRICE_COLUMN], 100)
         self.assertEqual(result.at[0, "Сумма, RUB (без учета НДС)"], 300)
-        self.assertEqual(result.at[0, "Срок поставки"], "old срок")
+        self.assertEqual(result.at[0, "Срок поставки"], "new срок")
         self.assertEqual(result.at[0, ExcelProcessor.MANUFACTURER_COLUMN], "old manufacturer")
         self.assertEqual(result.at[0, ExcelProcessor.TECH_COLUMN], "old tech")
+
+    def test_fill_exported_excel_skips_row_when_price_is_zero(self):
+        path = self._create_excel(
+            [
+                {
+                    "Наименование": "Нулевая позиция",
+                    ExcelProcessor.PRICE_COLUMN: None,
+                    "Сумма, RUB (без учета НДС)": None,
+                    "Срок поставки": "old срок",
+                    ExcelProcessor.MANUFACTURER_COLUMN: None,
+                },
+                {
+                    "Наименование": "Рабочая позиция",
+                    ExcelProcessor.PRICE_COLUMN: None,
+                    "Сумма, RUB (без учета НДС)": None,
+                    "Срок поставки": None,
+                    ExcelProcessor.MANUFACTURER_COLUMN: None,
+                },
+            ]
+        )
+
+        self.processor.fill_exported_excel(
+            path,
+            [
+                {
+                    "price": 0,
+                    "total": 0,
+                    "delivery_time": "30 дней",
+                    "manufacturer": "ООО Ноль",
+                },
+                {
+                    "price": 200,
+                    "total": 200,
+                    "delivery_time": "10 дней",
+                    "manufacturer": "АО Лотос",
+                },
+            ],
+        )
+
+        result = pd.read_excel(path)
+        self.assertTrue(pd.isna(result.at[0, ExcelProcessor.PRICE_COLUMN]))
+        self.assertTrue(pd.isna(result.at[0, "Сумма, RUB (без учета НДС)"]))
+        self.assertEqual(result.at[0, "Срок поставки"], "old срок")
+        self.assertTrue(pd.isna(result.at[0, ExcelProcessor.MANUFACTURER_COLUMN]))
+        self.assertEqual(result.at[1, ExcelProcessor.PRICE_COLUMN], 200)
+        self.assertEqual(result.at[1, "Срок поставки"], "10 дней")
 
     def test_fill_exported_excel_uses_manufacturer_for_tech_fallback(self):
         path = self._create_excel(

@@ -980,6 +980,14 @@ class PlatformMixin:
         self.populate_retrade_offers_table(offers)
 
     def _parse_max_items_input(self) -> int:
+        override = getattr(self, "_trades_load_max_items_override", None)
+        if override is not None:
+            try:
+                value = int(override)
+            except (TypeError, ValueError):
+                value = 50
+            return value if value > 0 else 50
+
         max_items = 50
         try:
             max_items = int(self.input_limit.text())
