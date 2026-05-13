@@ -629,10 +629,7 @@ class SubmissionTabMixin:
         if cookies:
             return cookies
 
-        candidate_paths: list[Path] = [Path("config.json"), Path("utilities/config.json")]
-        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
-        if cfg_path:
-            candidate_paths.insert(0, Path(cfg_path))
+        candidate_paths = Tool.config_candidate_paths()
 
         seen: set[Path] = set()
         for path in candidate_paths:

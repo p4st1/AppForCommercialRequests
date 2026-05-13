@@ -5,6 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from tools import DatabaseTools as Tool
+
 from .submission_service import FIELD_LABELS, FIELD_ORDER, SubmissionPayload
 
 try:
@@ -734,7 +736,7 @@ class SubmissionPlaywright:
     @staticmethod
     def _save_debug_artifacts(page: Page, prefix: str) -> None:
         try:
-            target_dir = Path("temp") / "submission"
+            target_dir = Tool.user_data_dir("MyApp") / "debug" / "submission"
             target_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             html_path = target_dir / f"{prefix}_{timestamp}.html"

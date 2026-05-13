@@ -130,7 +130,10 @@ query tradeWithCurrentStage($id: Int) {
         self._headless = bool(headless)
         self._timeout_ms = int(timeout_ms)
         self._debug_manual_export = bool(debug_manual_export)
-        self._retrade_profile_dir = Path(retrade_profile_dir).expanduser()
+        profile_dir = Path(retrade_profile_dir).expanduser()
+        if retrade_profile_dir == "playwright_profile" and not profile_dir.is_absolute():
+            profile_dir = Tool.user_data_dir("MyApp") / "playwright_profile"
+        self._retrade_profile_dir = profile_dir
 
     @staticmethod
     def _normalize_cookies(raw_value: Any) -> dict[str, str]:
@@ -164,18 +167,7 @@ query tradeWithCurrentStage($id: Int) {
         return {}
 
     def _load_cookies_from_config(self) -> dict[str, str]:
-        candidate_paths: list[Path] = []
-
-        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
-        if cfg_path:
-            candidate_paths.append(Path(cfg_path))
-
-        candidate_paths.extend(
-            [
-                Path("config.json"),
-                Path("utilities/config.json"),
-            ]
-        )
+        candidate_paths = Tool.config_candidate_paths()
 
         seen: set[Path] = set()
         errors: list[str] = []
@@ -279,12 +271,20 @@ query tradeWithCurrentStage($id: Int) {
         screenshot_path: str,
         html_path: str,
     ) -> None:
+        debug_dir = Tool.user_data_dir("MyApp") / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_file = Path(screenshot_path).expanduser()
+        html_file = Path(html_path).expanduser()
+        if not screenshot_file.is_absolute():
+            screenshot_file = debug_dir / screenshot_file
+        if not html_file.is_absolute():
+            html_file = debug_dir / html_file
         try:
-            page.screenshot(path=screenshot_path, full_page=True)
+            page.screenshot(path=str(screenshot_file), full_page=True)
         except Exception:
             pass
         try:
-            Path(html_path).write_text(page.content(), encoding="utf-8")
+            html_file.write_text(page.content(), encoding="utf-8")
         except Exception:
             pass
 

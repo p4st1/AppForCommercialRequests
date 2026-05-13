@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from services.trade_exporter import TradeExporter
+from utilities.paths import user_path
 
 
 def _load_cookies_from_storage_state(storage_state_path: str) -> dict[str, str]:
@@ -45,7 +46,11 @@ def export_all(
     if not bid_ids:
         return {}
 
-    exports_path = Path(exports_dir).expanduser().resolve()
+    raw_exports_path = Path(exports_dir).expanduser()
+    if exports_dir == "exports" and not raw_exports_path.is_absolute():
+        exports_path = user_path("exports")
+    else:
+        exports_path = raw_exports_path.resolve()
     exports_path.mkdir(parents=True, exist_ok=True)
 
     cookies = _load_cookies_from_storage_state(storage_state_path)
@@ -65,7 +70,9 @@ def export_all(
         except Exception as exc:
             print(f"[ERROR] bid_id={bid_id_int}: {exc}")
             error_payload: dict[str, Any] = {"bid_id": bid_id_int, "error": str(exc)}
-            with Path("export_debug.log").open("a", encoding="utf-8") as log_file:
+            log_path = user_path("logs", "export_debug.log")
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as log_file:
                 log_file.write(json.dumps(error_payload, ensure_ascii=False) + "\n")
 
     return results

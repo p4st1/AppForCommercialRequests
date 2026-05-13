@@ -452,7 +452,7 @@ QTableWidget::indicator {{
         if callable(resource_path):
             candidate_paths.append(Path(resource_path(self.RETRADE_UI_FILE)))
         candidate_paths.append(Path(Tool.resourcePath(self.RETRADE_UI_FILE)))
-        candidate_paths.append(Path(__file__).resolve().parents[1] / self.RETRADE_UI_FILE)
+        candidate_paths.append(Tool.app_dir() / self.RETRADE_UI_FILE)
 
         for candidate_path in candidate_paths:
             if candidate_path.exists():
@@ -4163,7 +4163,7 @@ QTableWidget::indicator {{
 
     @staticmethod
     def _build_submission_export_download_path(identifier: Any) -> str:
-        base_dir = Path("temp") / "exports" / "submission"
+        base_dir = Tool.user_data_dir("MyApp") / "temp" / "exports" / "submission"
         base_dir.mkdir(parents=True, exist_ok=True)
 
         identifier_text = str(identifier or "").strip()

@@ -541,11 +541,7 @@ class PlatformMixin:
         if login and password:
             return login, password
 
-        candidate_paths: list[Path] = [Path("config.json")]
-        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
-        if cfg_path:
-            candidate_paths.append(Path(cfg_path))
-        candidate_paths.append(Path("utilities/config.json"))
+        candidate_paths = Tool.config_candidate_paths()
 
         seen: set[Path] = set()
         for path in candidate_paths:
@@ -617,28 +613,21 @@ class PlatformMixin:
             Config.config["platformLogin"] = login
             Config.config["platformPassword"] = password
 
+        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
+        cfg_file = Path(cfg_path).expanduser() if cfg_path else Tool.user_config_path()
         self._save_web_auth_credentials_to_path(
-            Path("config.json"),
+            cfg_file,
             login=login,
             password=password,
         )
-
-        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
-        if cfg_path:
-            cfg_file = Path(cfg_path).expanduser()
-            if cfg_file != Path("config.json"):
-                self._save_web_auth_credentials_to_path(
-                    cfg_file,
-                    login=login,
-                    password=password,
-                )
 
     def _save_web_auth_to_root_config(self, cookies_raw: Any) -> None:
         cookies = self._normalize_cookies(cookies_raw)
         if not cookies:
             return
 
-        config_path = Path("config.json")
+        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
+        config_path = Path(cfg_path).expanduser() if cfg_path else Tool.user_config_path()
         payload: dict[str, Any] = {}
         if config_path.exists():
             try:
@@ -662,11 +651,7 @@ class PlatformMixin:
             Config.config["cookies"] = cookies
 
     def load_cookies(self) -> dict[str, str]:
-        candidate_paths: list[Path] = []
-        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
-        if cfg_path:
-            candidate_paths.append(Path(cfg_path))
-        candidate_paths.extend([Path("config.json"), Path("utilities/config.json")])
+        candidate_paths = Tool.config_candidate_paths()
 
         seen: set[Path] = set()
         errors: list[str] = []

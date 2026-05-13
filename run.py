@@ -8,62 +8,47 @@ import os
 import traceback
 
 
+APP_NAME = "MyApp"
+
 
 def resourcePath(relativePath):
     return Tool.resourcePath(relativePath)
 
 if __name__ == '__main__':
     try:
+        user_dir = Tool.user_data_dir(APP_NAME)
+        Config.log_path = user_dir / "logs" / "logs.log"
+        Config.log_path.parent.mkdir(parents=True, exist_ok=True)
+        Config.log_path.touch(exist_ok=True)
+
+        migrated = Tool.migrate_legacy_user_files(APP_NAME)
+        for target_name, source_path in migrated.items():
+            Tool.write_log(f"Мигрирован legacy-файл: {source_path} -> {user_dir / target_name}")
+
         Config.cfg_path = Tool.ensure_user_file(
-            'MyApp',
+            APP_NAME,
             'utilities/config.json',
             'config.json',
             sync_mode='merge_json_on_source_change',
         )
-        Config.db_path = Tool.ensure_user_file('MyApp', 'database/database.db', 'database.db')
+        Config.db_path = Tool.ensure_user_file(
+            APP_NAME,
+            'database/database.db',
+            'database/database.db',
+        )
         Config.vars_path = Tool.ensure_user_file(
-            'MyApp',
+            APP_NAME,
             'utilities/variables.json',
             'variables.json',
             sync_mode='merge_json_on_source_change',
         )
-        Config.template_path = Tool.ensure_user_file(
-            'MyApp',
-            'templates/template.xlsx',
-            'template.xlsx',
-            sync_mode='replace_on_source_change',
-        )
-        Config.template_docx_path = Tool.ensure_user_file(
-            'MyApp',
-            'templates/template.docx',
-            'template.docx',
-            sync_mode='replace_on_source_change',
-        )
-        Config.template_docx_path_short = Tool.ensure_user_file(
-            'MyApp',
-            'templates/template_short.docx',
-            'template_short.docx',
-            sync_mode='replace_on_source_change',
-        )
-        Config.log_path = Tool.ensure_user_file('MyApp', 'templates/logs.log', 'logs.log')
-        Config.logo_path = Tool.ensure_user_file(
-            'MyApp',
-            'assets/app.jpg',
-            'app.jpg',
-            sync_mode='replace_on_source_change',
-        )
-        Config.print_path = Tool.ensure_user_file(
-            'MyApp',
-            'assets/print.png',
-            'print.png',
-            sync_mode='replace_on_source_change',
-        )
-        Config.sign_path = Tool.ensure_user_file(
-            'MyApp',
-            'assets/sign.png',
-            'sign.png',
-            sync_mode='replace_on_source_change',
-        )
+        resources_dir = Tool.app_dir()
+        Config.template_path = resources_dir / 'templates' / 'template.xlsx'
+        Config.template_docx_path = resources_dir / 'templates' / 'template.docx'
+        Config.template_docx_path_short = resources_dir / 'templates' / 'template_short.docx'
+        Config.logo_path = resources_dir / 'assets' / 'app.jpg'
+        Config.print_path = resources_dir / 'assets' / 'print.png'
+        Config.sign_path = resources_dir / 'assets' / 'sign.png'
 
         try:
             current = Tool.load_json(Config.cfg_path)
@@ -80,31 +65,31 @@ if __name__ == '__main__':
         Config.settings = normalized["settings"]
 
         Tool.write_log("=" * 50)
-        Tool.write_log("🚀 APPLICATION STARTING")
-        Tool.write_log(f"Current working directory: {os.getcwd()}")
+        Tool.write_log("APPLICATION STARTING")
+        Tool.write_log(f"App resources directory: {Tool.app_dir()}")
+        Tool.write_log(f"User data directory: {user_dir}")
         Tool.write_log(f"Executable path: {sys.executable}")
         Tool.write_log(f"Python path: {sys.prefix}")
         Tool.write_log(f"argv[0]: {sys.argv[0]}")
         Tool.write_log(f"frozen: {getattr(sys, 'frozen', False)}")
-        Tool.write_log(f"MEIPASS: {getattr(sys, '_MEIPASS', 'NOT SET')}")
         Tool.write_log("Environment variables:")
         for key in ['PATH', 'PYTHONPATH', 'HOME', 'USER']:
             value = os.environ.get(key, 'NOT SET')
             Tool.write_log(f"  {key}: {value}")
-        Tool.write_log("=== ДИАГНОСТИКА ===")
-        Tool.write_log(f"Текущая папка: {os.getcwd()}")
-        Tool.write_log(f"MEIPASS: {getattr(sys, '_MEIPASS', 'NOT SET')}")
+        Tool.write_log("=== PATH DIAGNOSTICS ===")
         test_path = resourcePath("ui/mainGui.ui")
         Tool.write_log(f"Ожидаемый путь: {test_path}")
-        Tool.write_log(f"Файл существует: {os.path.exists(test_path)}")
+        Tool.write_log(f"Файл существует: {Path(test_path).exists()}")
         ui_dir = resourcePath("ui")
-        if os.path.exists(ui_dir):
-            Tool.write_log(f"Содержимое папки ui: {os.listdir(ui_dir)}")
+        if Path(ui_dir).exists():
+            Tool.write_log(f"Содержимое папки ui: {[path.name for path in Path(ui_dir).iterdir()]}")
         else:
             Tool.write_log("Папка ui не найдена!")
         ui_dir = resourcePath("utilities")
-        if os.path.exists(ui_dir):
-            Tool.write_log(f"Содержимое папки utilities: {os.listdir(ui_dir)}")
+        if Path(ui_dir).exists():
+            Tool.write_log(
+                f"Содержимое папки utilities: {[path.name for path in Path(ui_dir).iterdir()]}"
+            )
         else:
             Tool.write_log("Папка utilities не найдена!")
         Tool.write_log("Testing imports...")
@@ -150,5 +135,6 @@ if __name__ == '__main__':
     except Exception as e:
         Tool.log_exception("Критическая ошибка запуска приложения", e, include_traceback=True)
         error_details = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        error_file = Path.home() / 'myapp_error.txt'
+        error_file = Tool.user_data_dir(APP_NAME) / "logs" / "startup_error.txt"
+        error_file.parent.mkdir(parents=True, exist_ok=True)
         error_file.write_text(f"Error: {e}\n\n{error_details}")

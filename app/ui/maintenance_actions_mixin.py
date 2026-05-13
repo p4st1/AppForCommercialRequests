@@ -19,10 +19,8 @@ class MaintenanceActionsMixin:
         self.saveConfig()
 
     def clear_cache(self):
-        dst_dir = Tool.user_data_dir("MyApp")
-        dst_dir.mkdir(parents=True, exist_ok=True)
-
-        dst = dst_dir / "config.json"
+        dst = Tool.user_config_path()
+        dst.parent.mkdir(parents=True, exist_ok=True)
         src = Tool.resourcePath("utilities/config.json")
         shutil.copy2(src, dst)
 

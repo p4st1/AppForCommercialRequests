@@ -158,7 +158,10 @@ class UploadMixin:
             ):
                 return last_table_path.resolve()
 
-        project_dir = Path.cwd()
+        project_dir = Tool.ensure_directory(
+            Config.config.get("pathToSaveExcel") or Config.config.get("pathToSaveCP"),
+            Tool.user_data_dir("MyApp") / "imports",
+        )
         excel_candidates = sorted(
             [
                 *project_dir.glob("*.xlsx"),
@@ -177,13 +180,13 @@ class UploadMixin:
             return excel_candidates[0].resolve()
         if not excel_candidates:
             raise FileNotFoundError(
-                "Не найден Excel файл в текущем проекте. "
-                "Сначала откройте КП поставщика или положите .xlsx/.xls рядом с приложением."
+                "Не найден Excel файл в папке импорта. "
+                "Сначала откройте КП поставщика или выберите папку сохранения в настройках."
             )
 
         candidates_text = ", ".join(path.name for path in excel_candidates[:5])
         raise ValueError(
-            "Найдено несколько Excel файлов в проекте. "
+            "Найдено несколько Excel файлов в папке импорта. "
             f"Откройте нужный файл через 'Загрузить КП поставщика' (найдено: {candidates_text})."
         )
 

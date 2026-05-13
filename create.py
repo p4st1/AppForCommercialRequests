@@ -23,7 +23,13 @@ class createTextFile:
         self.error_message = ""
 
         Tools.write_log(f"test feature: {Config.settings['testFeature']}")
-        Tools.write_log(f"Docx path to save: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
+        documents_dir = Path.home() / "Documents"
+        docx_output_dir = Tools.ensure_directory(
+            Config.config.get("pathToSaveCP"),
+            documents_dir,
+        )
+        Config.config["pathToSaveCP"] = str(docx_output_dir)
+        Tools.write_log(f"Docx path to save: {docx_output_dir}")
         Tools.write_log('INIT DOCX...')
 
         tableData = docxData[0][1]
@@ -72,7 +78,7 @@ class createTextFile:
 
         lot_number = str(extraData[0]).strip() if len(extraData) > 0 else ""
         today_date = datetime.now().strftime('%d_%m_%Y')
-        OUTPUT_PATH = f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_{lot_number}_{today_date}.docx"
+        OUTPUT_PATH = str(docx_output_dir / f"КП_{lot_number}_{today_date}.docx")
         self.output_path = OUTPUT_PATH
 
         VAT_RATE = Decimal("0.20")
@@ -488,7 +494,7 @@ class createTextFile:
             else:
                 self.output_path = OUTPUT_PATH
             Tools.write_log("creating docx File...")
-            Tools.write_log(f"saving docx to: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
+            Tools.write_log(f"saving docx to: {docx_output_dir}")
             self.success = True
 
         except Exception as e:
@@ -872,8 +878,14 @@ class createExcelFile:
         indent = int(Config.config["ExcelIndent"])
         request_number = payload["request_number"]
         today_date = datetime.now().strftime("%d_%m_%Y")
+        documents_dir = Path.home() / "Documents"
+        excel_output_dir = Tools.ensure_directory(
+            Config.config.get("pathToSaveExcel") or Config.config.get("pathToSaveCP"),
+            documents_dir,
+        )
+        Config.config["pathToSaveExcel"] = str(excel_output_dir)
         new_file_path = self.save_with_number(
-            f"{Tools.resourcePath(Config.config['pathToSaveExcel'])}/Расчеты_{request_number}_{today_date}_.xlsx"
+            str(excel_output_dir / f"Расчеты_{request_number}_{today_date}_.xlsx")
         )
         self.output_path = new_file_path
         shutil.copy2(Config.template_path, new_file_path)

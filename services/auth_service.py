@@ -37,11 +37,7 @@ def _resolve_config_path() -> Path:
     if cfg_path:
         return Path(cfg_path).expanduser()
 
-    root_config = Path("config.json")
-    if root_config.exists():
-        return root_config
-
-    return Path("utilities/config.json")
+    return Tool.user_config_path()
 
 
 def save_config(data: dict) -> None:
@@ -175,7 +171,7 @@ class AuthService:
         if not cookies:
             return
 
-        config_path = Path("config.json")
+        config_path = _resolve_config_path()
         payload: dict[str, Any] = {}
         if config_path.exists():
             try:
