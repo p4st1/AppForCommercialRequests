@@ -1,0 +1,71 @@
+{
+  "config": {
+    "logisticVar": "0",
+    "logisticNum": "1",
+    "customNum": "1",
+    "termDelivery": "0",
+    "markup": "1",
+    "requestNumber": "",
+    "pathToSaveCP": "",
+    "pathToSaveExcel": "",
+    "pathToDB": "",
+    "ExcelIndent": "0",
+    "lastTable": "",
+    "paymentTemplates": [
+      "на дату подписания спецификации Поставщиком",
+      "на дату оплаты"
+    ],
+    "platformLogin": "d.burnashev@alphakappa.ru",
+    "platformPassword": "Alphakappa01",
+    "cookies": {
+      "__Host-JSESSIONID": "46A4B845B9DB9054E51DB2A6D4418DFF",
+      "__Host-refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzMDcxMTQ3MzQiLCJleHAiOjE3Nzg2OTk3ODEsImlhdCI6MTc3ODYxMzM4MX0.8FdSdhdMHP7y2dka5DuEnyhz0zTBzOsUnzByEbQRLYM",
+      "_ym_d": "1778613366",
+      "_ym_isad": "2",
+      "_ym_uid": "1778613365968456009",
+      "_ym_visorc": "b",
+      "bh": "EigiQ2hyb21pdW0iO3Y9IjE0NSIsICJOb3Q6QS1CcmFuZCI7dj0iOTkiGgNhcm0iDDE0NS4wLjc2MzIuNioCPzA6ByJtYWNPUyJCBjI2LjMuMUoCNjRSNiJDaHJvbWl1bSI7dj0iMTQ1LjAuNzYzMi42IiwiTm90OkEtQnJhbmQiO3Y9Ijk5LjAuMC4wImCN+Y3QBmoh3MrRtgG78Z+rBPrWhswI0tHt6wP8ua//B9/995wB84EC",
+      "gdpr": "0",
+      "i": "OaOhdB5zZ+CMRU9eavFUvVJvjzUt1SCfaBaPO0AzWxKBUD1s8ic4lyFuB4sF2MrFlgEy8r5dcL9lXw9y4KdhmvGuZ5E=",
+      "receive-cookie-deprecation": "1",
+      "yabs-sid": "2648482531778613361",
+      "yandexuid": "7129495901778613359",
+      "yashr": "1717223141778613359",
+      "ymex": "2093973361.yrts.1778613361",
+      "yuidss": "7129495901778613359"
+    },
+    "platform": {
+      "login": "d.burnashev@alphakappa.ru",
+      "password": "Alphakappa01"
+    }
+  },
+  "settings": {
+    "closeTable": true,
+    "autoFill": true,
+    "autoFillWebAuth": false,
+    "openUpdateTab": true,
+    "openLastTab": true,
+    "testFeature": false,
+    "skip_auto_trade_warning": false,
+    "use_auto_trade_timer": false,
+    "auto_trade_timer_minutes": 30,
+    "developer_skip_table_fill_errors": false
+  },
+  "cookies": {
+    "__Host-JSESSIONID": "46A4B845B9DB9054E51DB2A6D4418DFF",
+    "__Host-refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzMDcxMTQ3MzQiLCJleHAiOjE3Nzg2OTk3ODEsImlhdCI6MTc3ODYxMzM4MX0.8FdSdhdMHP7y2dka5DuEnyhz0zTBzOsUnzByEbQRLYM",
+    "_ym_d": "1778613366",
+    "_ym_isad": "2",
+    "_ym_uid": "1778613365968456009",
+    "_ym_visorc": "b",
+    "bh": "EigiQ2hyb21pdW0iO3Y9IjE0NSIsICJOb3Q6QS1CcmFuZCI7dj0iOTkiGgNhcm0iDDE0NS4wLjc2MzIuNioCPzA6ByJtYWNPUyJCBjI2LjMuMUoCNjRSNiJDaHJvbWl1bSI7dj0iMTQ1LjAuNzYzMi42IiwiTm90OkEtQnJhbmQiO3Y9Ijk5LjAuMC4wImCN+Y3QBmoh3MrRtgG78Z+rBPrWhswI0tHt6wP8ua//B9/995wB84EC",
+    "gdpr": "0",
+    "i": "OaOhdB5zZ+CMRU9eavFUvVJvjzUt1SCfaBaPO0AzWxKBUD1s8ic4lyFuB4sF2MrFlgEy8r5dcL9lXw9y4KdhmvGuZ5E=",
+    "receive-cookie-deprecation": "1",
+    "yabs-sid": "2648482531778613361",
+    "yandexuid": "7129495901778613359",
+    "yashr": "1717223141778613359",
+    "ymex": "2093973361.yrts.1778613361",
+    "yuidss": "7129495901778613359"
+  }
+}

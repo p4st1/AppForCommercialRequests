@@ -9,9 +9,12 @@ import math
 from openpyxl import load_workbook
 from openpyxl.styles import Border, Side, Alignment
 from config import Config
+from services.excel_recalc import force_excel_recalc
 import shutil
+import subprocess
 import os
 import re
+from pathlib import Path
 
 class createTextFile:
     def __init__(self, docxData):
@@ -29,6 +32,9 @@ class createTextFile:
         dbData = docxData[3]
         lastCol = docxData[4]
         condData = docxData[5]
+        output_format = self._normalize_output_format(
+            docxData[6] if len(docxData) > 6 else "docx"
+        )
 
         sum1, sum2 = Decimal("0.00"), Decimal("0.00")
 
@@ -50,7 +56,9 @@ class createTextFile:
         def _round_money(v: Decimal) -> Decimal:
             return Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-        if minDays == maxDays:
+        if minDays <= 0 and maxDays > 0:
+            period = f'до {maxDays}'
+        elif minDays == maxDays:
             period = f'до {minDays}'
         else:
             period = f'от {minDays} до {maxDays}'
@@ -119,9 +127,9 @@ class createTextFile:
             "{{Currency}}": f"{currency[0]}",
             "{{Total_diff}}": f"{Tools.num2text(_round_money(sum2 - sum1))}",
 
-            "{{Total_wo_text}}": f"({tool.decimal2text(_round_money(sum1),int_units=currency[1],exp_units=currency[2])})",
+            "{{Total_wo_text}}": f"{tool.decimal2text(_round_money(sum2),int_units=currency[1],exp_units=currency[2])}",
 
-            "{{Total_diff_text}}": f"({tool.decimal2text(_round_money(sum2 - sum1),int_units=currency[1],exp_units=currency[2])})",
+            "{{Total_diff_text}}": f"{tool.decimal2text(_round_money(sum2 - sum1),int_units=currency[1],exp_units=currency[2])}",
 
             "{{NDS}}": f"{Tools.load_json(Config.vars_path)['parameters']['1'][1]}",
 
@@ -131,7 +139,9 @@ class createTextFile:
             "{{Producer}}": f"{extraData[3]}",
             "{{Pay_period}}": f"{extraData[2]}",
             "{{Pay_cond}}": f"{docxData[5]}",
-            "{{date_20days}}": f"{(datetime.now() + timedelta(days=10)).strftime('%d.%m.%Y')}"
+            "{{Delivery_order}}": f"{extraData[5] if len(extraData) > 5 else ''}",
+            "<<DELIVERY_ORDER>>": f"{extraData[5] if len(extraData) > 5 else ''}",
+            "{{date_20days}}": f"{(datetime.now() + timedelta(days=Config.get_offer_validity_days())).strftime('%d.%m.%Y')}"
         }
 
         ITEMS = [
@@ -469,6 +479,14 @@ class createTextFile:
 
         try:
             main()
+            if output_format == "pdf":
+                self.output_path = self._convert_docx_to_pdf(OUTPUT_PATH)
+                try:
+                    Path(OUTPUT_PATH).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            else:
+                self.output_path = OUTPUT_PATH
             Tools.write_log("creating docx File...")
             Tools.write_log(f"saving docx to: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
             self.success = True
@@ -476,6 +494,53 @@ class createTextFile:
         except Exception as e:
             Tools.write_log(f"Unnable to save Docx: {e}")
             self.error_message = str(e)
+
+    @staticmethod
+    def _normalize_output_format(value):
+        normalized = str(value or "docx").strip().lower()
+        return "pdf" if normalized == "pdf" else "docx"
+
+    @staticmethod
+    def _convert_docx_to_pdf(docx_path: str) -> str:
+        source_path = Path(docx_path).expanduser().resolve()
+        target_path = source_path.with_suffix(".pdf")
+
+        for executable in ("soffice", "libreoffice"):
+            command = shutil.which(executable)
+            if not command:
+                continue
+            completed = subprocess.run(
+                [
+                    command,
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(source_path.parent),
+                    str(source_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+            if completed.returncode == 0 and target_path.exists():
+                return str(target_path)
+            details = (completed.stderr or completed.stdout or "").strip()
+            raise RuntimeError(f"Не удалось сохранить PDF через LibreOffice: {details}")
+
+        try:
+            from docx2pdf import convert
+        except Exception as exc:
+            raise RuntimeError(
+                "Для сохранения КП в PDF нужен установленный LibreOffice "
+                "или пакет docx2pdf с Microsoft Word."
+            ) from exc
+
+        convert(str(source_path), str(target_path))
+        if not target_path.exists():
+            raise RuntimeError("PDF не был создан после конвертации DOCX")
+        return str(target_path)
 
 class createExcelFile:
     FORMULA_EDITABLE_COLUMNS = (8, 9, 10, 11, 13)
@@ -839,7 +904,7 @@ class createExcelFile:
             work_sheet[f"E{excel_row}"] = amount
             work_sheet[f"F{excel_row}"] = unit_price
             work_sheet[f"F{excel_row}"].number_format = self._currency_format(row_currency or currency)
-            work_sheet[f"G{excel_row}"] = f"=F{excel_row}*E{excel_row}"
+            work_sheet[f"G{excel_row}"] = self._wrap_round(f"=F{excel_row}*E{excel_row}", 2)
             work_sheet[f"G{excel_row}"].number_format = self._currency_format(row_currency or currency)
 
             logistic_formula_source = ""
@@ -935,7 +1000,17 @@ class createExcelFile:
         Tools.write_log("creating Excel File...")
         Tools.write_log(f"Excel path to save: {new_file_path}")
         Tools.write_log(f"Final path to save: {new_file_path}")
+        wb.calculation.calcMode = "auto"
+        wb.calculation.fullCalcOnLoad = True
+        wb.calculation.forceFullCalc = True
         wb.save(new_file_path)
+        try:
+            if not force_excel_recalc(new_file_path):
+                Tools.write_log(
+                    "Excel formulas saved; automatic recalculation skipped."
+                )
+        except Exception as exc:
+            Tools.write_log(f"Excel formulas saved but recalculation failed: {exc}")
 
     def cell_has_data(self, cell):
         if cell.value is not None and cell.value != "":

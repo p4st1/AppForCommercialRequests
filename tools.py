@@ -68,14 +68,76 @@ class DatabaseTools:
         return default
 
     @staticmethod
+    def _coerce_setting_value(value, default):
+        if isinstance(default, bool):
+            return DatabaseTools._to_bool(value, default)
+
+        if isinstance(default, int):
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                text = value.strip().replace(",", ".")
+                if not text:
+                    return default
+                try:
+                    return int(float(text))
+                except ValueError:
+                    return default
+            return default
+
+        if isinstance(default, float):
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+            if isinstance(value, str):
+                text = value.strip().replace(",", ".")
+                if not text:
+                    return default
+                try:
+                    return float(text)
+                except ValueError:
+                    return default
+            return default
+
+        if isinstance(default, str):
+            if value is None:
+                return default
+            return str(value)
+
+        return value if value is not None else default
+
+    @staticmethod
+    def _normalize_cookies_dict(raw_value) -> dict[str, str]:
+        if not isinstance(raw_value, dict):
+            return {}
+        normalized: dict[str, str] = {}
+        for key, value in raw_value.items():
+            key_text = str(key).strip()
+            value_text = str(value).strip()
+            if not key_text or not value_text:
+                continue
+            normalized[key_text] = value_text
+        return normalized
+
+    @staticmethod
     def merge_config_with_defaults(raw_data: dict | None) -> dict:
         data = raw_data if isinstance(raw_data, dict) else {}
         raw_config = data.get("config", {})
         raw_settings = data.get("settings", {})
+        raw_root_cookies = data.get("cookies")
 
         config = Config.DEFAULT_CONFIG.copy()
         if isinstance(raw_config, dict):
             config.update(raw_config)
+
+        cookies_from_config = DatabaseTools._normalize_cookies_dict(config.get("cookies"))
+        cookies_from_root = DatabaseTools._normalize_cookies_dict(raw_root_cookies)
+        normalized_cookies = cookies_from_config or cookies_from_root
+        if normalized_cookies:
+            config["cookies"] = normalized_cookies
 
         # Backward compatibility for older key name.
         if "customLine" in config and "customNum" not in raw_config:
@@ -94,21 +156,46 @@ class DatabaseTools:
         config["lastTable"] = str(config.get("lastTable", "")).strip()
         config["pathToSaveCP"] = str(config.get("pathToSaveCP", "")).strip()
         config["pathToSaveExcel"] = str(config.get("pathToSaveExcel", "")).strip()
-        config["webAuthLogin"] = str(config.get("webAuthLogin", "") or "").strip()
-        config["webAuthPassword"] = str(config.get("webAuthPassword", "") or "")
-        try:
-            web_auth_attempts = int(str(config.get("webAuthMaxAttempts", "25")).strip())
-        except (TypeError, ValueError):
-            web_auth_attempts = 25
-        web_auth_attempts = max(5, min(120, web_auth_attempts))
-        config["webAuthMaxAttempts"] = str(web_auth_attempts)
+        config["offerValidityDays"] = str(
+            Config.normalize_offer_validity_days(config.get("offerValidityDays"))
+        )
+        if not isinstance(config.get("lastCreateDocFields"), dict):
+            config["lastCreateDocFields"] = {}
+
+        payment_templates_raw = config.get("paymentTemplates")
+        if isinstance(payment_templates_raw, str):
+            payment_templates_values = [payment_templates_raw]
+        elif isinstance(payment_templates_raw, (list, tuple)):
+            payment_templates_values = list(payment_templates_raw)
+        else:
+            payment_templates_values = []
+
+        normalized_payment_templates = []
+        for template in payment_templates_values:
+            text = str(template or "").strip()
+            if not text or text in normalized_payment_templates:
+                continue
+            normalized_payment_templates.append(text)
+
+        if not normalized_payment_templates and (
+            not isinstance(raw_config, dict) or "paymentTemplates" not in raw_config
+        ):
+            normalized_payment_templates = Config.DEFAULT_PAYMENT_TEMPLATES.copy()
+
+        config["paymentTemplates"] = normalized_payment_templates
 
         settings = Config.DEFAULT_SETTINGS.copy()
         if isinstance(raw_settings, dict):
-            for key in settings:
-                settings[key] = DatabaseTools._to_bool(raw_settings.get(key), settings[key])
+            for key, default_value in settings.items():
+                settings[key] = DatabaseTools._coerce_setting_value(
+                    raw_settings.get(key),
+                    default_value,
+                )
 
-        return {"config": config, "settings": settings}
+        result = {"config": config, "settings": settings}
+        if normalized_cookies:
+            result["cookies"] = normalized_cookies
+        return result
 
     @staticmethod
     def evalWithVars(line):
@@ -162,16 +249,70 @@ class DatabaseTools:
 
     @staticmethod
     def validNum(value):
+        normalized = DatabaseTools._normalize_number_text(value, prefer_thousands=False)
+        if not normalized:
+            return None
         try:
-            float(str(value).replace(",", ".").replace(" ", ""))
+            float(normalized)
         except ValueError:
             return None
         else:
-            return float(str(value).replace(",", ".").replace(" ", ""))
+            return float(normalized)
+
+    @staticmethod
+    def _normalize_number_text(value, *, prefer_thousands=True) -> str:
+        text = str(value or "").strip().replace("\u00A0", "").replace(" ", "")
+        if not text:
+            return ""
+
+        sign = ""
+        if text[0] in "+-":
+            sign = text[0]
+            text = text[1:]
+        if not text:
+            return sign
+
+        if "," in text and "." in text:
+            # If both separators are present, the rightmost one is decimal,
+            # the other is used as thousands separator.
+            last_comma = text.rfind(",")
+            last_dot = text.rfind(".")
+            decimal_sep = "," if last_comma > last_dot else "."
+            thousands_sep = "." if decimal_sep == "," else ","
+            text = text.replace(thousands_sep, "")
+            if decimal_sep == ",":
+                text = text.replace(",", ".")
+            return sign + text
+
+        sep = "," if "," in text else "." if "." in text else ""
+        if not sep:
+            return sign + text
+
+        parts = text.split(sep)
+        if len(parts) > 2:
+            if all(part.isdigit() for part in parts) and all(len(part) == 3 for part in parts[1:]):
+                return sign + "".join(parts)
+            integer_part = "".join(parts[:-1])
+            fraction_part = parts[-1]
+            if integer_part.isdigit() and fraction_part.isdigit():
+                return sign + f"{integer_part}.{fraction_part}"
+            if sep == ",":
+                return sign + text.replace(",", ".")
+            return sign + text
+
+        left, right = parts
+        if left.isdigit() and right.isdigit():
+            if len(right) == 3 and prefer_thousands:
+                return sign + left + right
+            return sign + f"{left}.{right}"
+
+        if sep == ",":
+            return sign + text.replace(",", ".")
+        return sign + text
 
     @staticmethod
     def parse_int(value, field_name: str, allow_zero=True) -> int:
-        normalized = str(value).strip().replace(" ", "").replace(",", ".")
+        normalized = DatabaseTools._normalize_number_text(value, prefer_thousands=True)
         if not normalized:
             raise ValueError(f'Поле "{field_name}" не заполнено')
         try:
@@ -188,7 +329,7 @@ class DatabaseTools:
 
     @staticmethod
     def parse_float(value, field_name: str, allow_zero=True) -> float:
-        normalized = str(value).strip().replace(" ", "").replace(",", ".")
+        normalized = DatabaseTools._normalize_number_text(value, prefer_thousands=False)
         if not normalized:
             raise ValueError(f'Поле "{field_name}" не заполнено')
         try:
@@ -448,12 +589,14 @@ class DatabaseTools:
         if "." not in normalized:
             normalized = f"{normalized}.00"
         num, mantissa = normalized.split('.', 1)
+        if len(mantissa) < 2:
+            mantissa = mantissa.ljust(2, "0")
         num = num[::-1]
         num = [num[i : i + 3] for i in range(0, len(num), 3)]
         res = ''
         for i in num[::-1]:
             res += f'{i[::-1]} '
-        return f'{res.strip()},{mantissa.zfill(2)}'
+        return f'{res.strip()},{mantissa}'
 
     @staticmethod
     def parsePrice(line):

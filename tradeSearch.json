@@ -1,0 +1,46 @@
+{operationName: "tradeSearch", variables: {limit: 20, skip: 0, tradeQueryDto: {,…}},…}
+operationName
+: 
+"tradeSearch"
+query
+: 
+"query tradeSearch($tradeQueryDto: TradeQueryDtoIn
+variables
+: 
+{limit: 20, skip: 0, tradeQueryDto: {,…}}
+limit
+: 
+20
+skip
+: 
+0
+tradeQueryDto
+: 
+{,…}
+order
+: 
+{expressions: [{ascending: false, property: "REGISTERED_DATE"}, {property: "ID", ascending: false}]}
+expressions
+: 
+[{ascending: false, property: "REGISTERED_DATE"}, {property: "ID", ascending: false}]
+0
+: 
+{ascending: false, property: "REGISTERED_DATE"}
+ascending
+: 
+false
+property
+: 
+"REGISTERED_DATE"
+1
+: 
+{property: "ID", ascending: false}
+ascending
+: 
+false
+property
+: 
+"ID"
+sitemapPage
+: 
+"purchases.trades.filters.BID_SUBMISSION"
