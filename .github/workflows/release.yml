@@ -109,7 +109,7 @@ jobs:
             zstandard
 
       # =====================================================
-      # SANITY CHECK
+      # VERIFY
       # =====================================================
 
       - name: Verify project structure
@@ -144,10 +144,9 @@ jobs:
             --windows-console-mode=disable `
             --enable-plugin=pyside6 `
             --msvc=latest `
-            --lto=yes `
-            --clang `
-            --output-filename="$env:APP_NAME.exe" `
+            --output-dir=build `
             --windows-icon-from-ico=assets/app.ico `
+            --output-filename="$env:APP_NAME.exe" `
             --include-data-dir=utilities=utilities `
             --include-data-dir=database=database `
             --include-data-dir=templates=templates `
@@ -161,10 +160,21 @@ jobs:
         shell: pwsh
         run: |
 
+          Get-ChildItem -Recurse
+
           mkdir release
 
+          $exe = Get-ChildItem -Recurse -Filter "*.exe" |
+            Where-Object {
+              $_.FullName -match "build"
+            } |
+            Select-Object -First 1
+
+          Write-Host "FOUND EXE:"
+          Write-Host $exe.FullName
+
           Copy-Item `
-            ".\run.dist\$env:APP_NAME.exe" `
+            $exe.FullName `
             ".\release\$env:APP_NAME.exe"
 
           Compress-Archive `
@@ -202,9 +212,8 @@ jobs:
             --assume-yes-for-downloads \
             --enable-plugin=pyside6 \
             --macos-create-app-bundle \
+            --output-dir=build \
             --macos-app-icon=assets/app.icns \
-            --lto=yes \
-            --clang \
             --include-data-dir=utilities=utilities \
             --include-data-dir=database=database \
             --include-data-dir=templates=templates \
@@ -213,7 +222,7 @@ jobs:
             --include-package-data=docx \
             run.py
 
-          APP_PATH="$(find . -name '*.app' | head -n 1)"
+          APP_PATH="$(find build -name '*.app' | head -n 1)"
 
           test -n "$APP_PATH"
 
