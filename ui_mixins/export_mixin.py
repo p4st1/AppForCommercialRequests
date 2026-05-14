@@ -53,6 +53,7 @@ class ExportTradeWorker(QThread):
         bid_id: int | None = None,
         is_retrade: bool = False,
         is_submission_acceptance: bool = False,
+        submission_search_text: str = "",
         download_path: str,
         parent: Any = None,
     ) -> None:
@@ -62,6 +63,7 @@ class ExportTradeWorker(QThread):
         self._bid_id = int(bid_id) if bid_id is not None else None
         self._is_retrade = bool(is_retrade)
         self._is_submission_acceptance = bool(is_submission_acceptance)
+        self._submission_search_text = str(submission_search_text or "")
         if self._trade_id is None and self._lot_id is None:
             raise ValueError("Не указан trade_id или lot_id для экспорта")
         self._download_path = str(download_path)
@@ -80,6 +82,8 @@ class ExportTradeWorker(QThread):
                 saved_path = exporter.export_submission_lot_data(
                     lot_id=self._lot_id,
                     download_path=self._download_path,
+                    trade_id=self._trade_id,
+                    trade_search_text=self._submission_search_text,
                 )
             elif self._lot_id is not None:
                 saved_path = exporter.export_lot_data(
@@ -3825,19 +3829,30 @@ QTableWidget::indicator {{
             trade = self._get_selected_trade_for_submission_export()
             self._set_pending_submission_export_metadata(trade)
             lot_id = self._submission_lot_id_from_trade(trade)
+            trade_id = self._submission_trade_id_from_trade(trade)
             self._start_export_worker(
+                trade_id=trade_id,
                 lot_id=lot_id,
                 is_submission_acceptance=True,
+                submission_search_text=self._submission_search_text_from_trade(trade),
             )
         except Exception as exc:
             self._on_export_error(str(exc))
 
     def export_trade(self, lot_id: int, trade: dict[str, Any] | None = None) -> None:
+        trade_id: int | None = None
         if isinstance(trade, dict):
             self._set_pending_submission_export_metadata(trade)
+            trade_id = self._submission_trade_id_from_trade(trade)
         self._start_export_worker(
+            trade_id=trade_id,
             lot_id=lot_id,
             is_submission_acceptance=True,
+            submission_search_text=(
+                self._submission_search_text_from_trade(trade)
+                if isinstance(trade, dict)
+                else ""
+            ),
         )
 
     def export_selected_retrade(self) -> None:
@@ -3965,6 +3980,22 @@ QTableWidget::indicator {{
                 return self._parse_positive_lot_id(first_lot.get("id"))
         raise ValueError("У выбранной заявки отсутствует lot_id")
 
+    def _submission_trade_id_from_trade(self, trade: dict[str, Any]) -> int | None:
+        try:
+            return self._parse_positive_trade_id(trade.get("id"))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _submission_search_text_from_trade(trade: dict[str, Any]) -> str:
+        number = str(
+            trade.get("registeredNumber")
+            or trade.get("number")
+            or ""
+        ).strip()
+        title = str(trade.get("title") or "").strip()
+        return " ".join(part for part in (number, title) if part).strip()
+
     def _get_selected_submission_lot_id_for_export(self) -> int:
         return self._submission_lot_id_from_trade(
             self._get_selected_trade_for_submission_export()
@@ -4065,6 +4096,7 @@ QTableWidget::indicator {{
         bid_id: int | None = None,
         is_retrade: bool = False,
         is_submission_acceptance: bool = False,
+        submission_search_text: str = "",
     ) -> None:
         if self._export_trade_worker is not None and self._export_trade_worker.isRunning():
             raise RuntimeError("Экспорт заявки уже выполняется")
@@ -4114,6 +4146,7 @@ QTableWidget::indicator {{
             bid_id=bid_id,
             is_retrade=is_retrade,
             is_submission_acceptance=is_submission_acceptance,
+            submission_search_text=submission_search_text,
             download_path=download_path,
             parent=self,
         )

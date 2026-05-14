@@ -65,6 +65,34 @@ class _FakePage:
         self.url = url
 
 
+class _FakeLocator:
+    def __init__(self, *, count=0, visible=True, enabled=True):
+        self._count = count
+        self._visible = visible
+        self._enabled = enabled
+
+    def count(self):
+        return self._count
+
+    def nth(self, _index):
+        return self
+
+    def wait_for(self, **_kwargs):
+        if not self._visible:
+            raise TimeoutError("not visible")
+
+    def is_enabled(self, **_kwargs):
+        return self._enabled
+
+
+class _FakeLocatorPage:
+    def __init__(self, selector_counts):
+        self.selector_counts = dict(selector_counts)
+
+    def locator(self, selector):
+        return _FakeLocator(count=self.selector_counts.get(selector, 0))
+
+
 class TradeExporterTests(unittest.TestCase):
     def setUp(self):
         self.exporter = TradeExporter()
@@ -251,6 +279,23 @@ class TradeExporterTests(unittest.TestCase):
             "https://etp.metal-it.ru/bids/new?lot=556675785",
         )
 
+    def test_trade_page_url_uses_trade_id(self):
+        self.assertEqual(
+            TradeExporter._build_trade_page_url(12345),
+            "https://etp.metal-it.ru/trades/12345",
+        )
+
+    def test_submission_export_button_ignores_trade_search_export(self):
+        page = _FakeLocatorPage(
+            {
+                "um-trade-search-panel": 1,
+                "button:has-text('Экспорт')": 1,
+            }
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Кнопка 'Экспорт' не найдена"):
+            self.exporter._find_submission_export_button(page)
+
     def test_validate_submission_export_page_rejects_wrong_route(self):
         TradeExporter._validate_submission_export_page(
             _FakePage("https://etp.metal-it.ru/bids/new?lot=556675785")
@@ -272,6 +317,24 @@ class TradeExporterTests(unittest.TestCase):
             TradeExporter._target_path_for_download(target_path, "export.csv"),
             Path("/tmp/export.csv"),
         )
+
+    def test_validate_saved_export_file_rejects_html_access_denied(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_path = Path(tmpdir) / "export.xlsx"
+            target_path.write_text(
+                "<html><body>Доступ запрещен</body></html>",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "страницу отказа"):
+                TradeExporter._validate_saved_export_file(target_path)
+
+    def test_validate_saved_export_file_accepts_xlsx_signature(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_path = Path(tmpdir) / "export.xlsx"
+            target_path.write_bytes(b"PK\x03\x04")
+
+            TradeExporter._validate_saved_export_file(target_path)
 
     def test_export_retrade_lot_data_delegates_to_bid_export_when_bid_id_provided(self):
         with tempfile.TemporaryDirectory() as tmpdir:

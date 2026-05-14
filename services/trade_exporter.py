@@ -22,12 +22,14 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - dependency may 
 class TradeExporter:
     BASE_URL = "https://etp.metal-it.ru"
     TRADE_DETAILS_ENDPOINT_PATTERN = "{base_url}/trades/{trade_id}"
+    TRADE_PAGE_URL_TEMPLATE = "{base_url}/trades/{trade_id}"
     SUBMISSION_EXPORT_URL_TEMPLATE = "{base_url}/bids/new?lot={lot_id}"
     TRADE_SEARCH_ENDPOINT = "https://etp.metal-it.ru/graphql/tradeSearch"
     TRADE_WITH_CURRENT_STAGE_ENDPOINT = "https://etp.metal-it.ru/graphql/tradeWithCurrentStage"
     GRAPHQL_FALLBACK_ENDPOINT = "https://etp.metal-it.ru/graphql"
     DEFAULT_SITEMAP_PAGE = "purchases.trades.filters.BID_SUBMISSION"
     RETRADING_SITEMAP_PAGE = "purchases.trades.filters.RETRADING"
+    MANUAL_SUBMISSION_EXPORT_TIMEOUT_MS = 10 * 60 * 1000
 
     TRADE_SEARCH_QUERY = """
 query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
@@ -383,6 +385,13 @@ query tradeWithCurrentStage($id: Int) {
             lot_id=lot_id,
         )
 
+    @classmethod
+    def _build_trade_page_url(cls, trade_id: int) -> str:
+        return cls.TRADE_PAGE_URL_TEMPLATE.format(
+            base_url=cls.BASE_URL.rstrip("/"),
+            trade_id=trade_id,
+        )
+
     @staticmethod
     def _log_submission_export(message: str) -> None:
         text = f"[SUBMISSION EXPORT] {message}"
@@ -412,6 +421,36 @@ query tradeWithCurrentStage($id: Int) {
             )
 
     @staticmethod
+    def _page_has_submission_bid_context(page: Page) -> bool:
+        selectors = (
+            "um-bid-write-page",
+            "um-bid-document-wrapper",
+            "um-bid-new-page",
+            "um-bid-submission-page",
+        )
+        for selector in selectors:
+            try:
+                if page.locator(selector).count() > 0:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    @staticmethod
+    def _page_has_trade_search_context(page: Page) -> bool:
+        selectors = (
+            "um-trade-search-panel",
+            "um-search-panel-content",
+        )
+        for selector in selectors:
+            try:
+                if page.locator(selector).count() > 0:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    @staticmethod
     def _locator_is_enabled(locator: Locator) -> bool:
         try:
             return bool(locator.is_enabled(timeout=1_000))
@@ -419,13 +458,26 @@ query tradeWithCurrentStage($id: Int) {
             return False
 
     def _find_submission_export_button(self, page: Page) -> Locator:
-        selectors = (
+        scoped_selectors = (
+            "um-bid-write-page kendo-grid-toolbar button:has-text('Экспорт')",
+            "um-bid-write-page kendo-grid-toolbar [role='button']:has-text('Экспорт')",
+            "um-bid-document-wrapper kendo-grid-toolbar button:has-text('Экспорт')",
+            "um-bid-document-wrapper kendo-grid-toolbar [role='button']:has-text('Экспорт')",
+            "um-bid-write-page button:has-text('Экспорт')",
+            "um-bid-document-wrapper button:has-text('Экспорт')",
+        )
+        fallback_selectors = (
             "kendo-grid-toolbar button:has-text('Экспорт')",
             "kendo-grid-toolbar [role='button']:has-text('Экспорт')",
             "button.mat-stroked-button:has-text('Экспорт')",
             "button:has-text('Экспорт')",
             "[role='button']:has-text('Экспорт')",
         )
+
+        selectors = scoped_selectors
+        if not self._page_has_trade_search_context(page):
+            selectors = scoped_selectors + fallback_selectors
+
         for selector in selectors:
             locator = page.locator(selector)
             try:
@@ -444,6 +496,271 @@ query tradeWithCurrentStage($id: Int) {
                 self._log_submission_export("export button found")
                 return candidate
         raise RuntimeError("Кнопка 'Экспорт' не найдена на странице приема заявок")
+
+    def _wait_for_submission_bid_context(
+        self,
+        page: Page,
+        *,
+        timeout_ms: int = 15_000,
+    ) -> bool:
+        selector = (
+            "um-bid-write-page, um-bid-document-wrapper, "
+            "um-bid-new-page, um-bid-submission-page, um-trade-search-panel"
+        )
+        try:
+            page.wait_for_selector(selector, timeout=timeout_ms)
+        except Exception:
+            pass
+        return self._page_has_submission_bid_context(page)
+
+    def _click_submission_entry_from_trade_page(
+        self,
+        page: Page,
+        *,
+        lot_id: int,
+    ) -> bool:
+        lot_id_text = str(lot_id)
+        selectors = (
+            f"a[href*='/bids/new'][href*='lot={lot_id_text}']",
+            f"[role='link'][href*='/bids/new'][href*='lot={lot_id_text}']",
+            "a[href*='/bids/new']",
+            "button:has-text('Подать заявку')",
+            "button:has-text('Подать предложение')",
+            "button:has-text('Создать заявку')",
+            "button:has-text('Редактировать заявку')",
+            "button:has-text('Изменить')",
+            "button:has-text('Моя заявка')",
+            "a:has-text('Подать заявку')",
+            "a:has-text('Подать предложение')",
+            "a:has-text('Создать заявку')",
+            "a:has-text('Редактировать заявку')",
+            "a:has-text('Изменить')",
+            "a:has-text('Моя заявка')",
+            "[role='button']:has-text('Подать заявку')",
+            "[role='button']:has-text('Подать предложение')",
+            "[role='button']:has-text('Создать заявку')",
+            "[role='button']:has-text('Редактировать заявку')",
+            "[role='button']:has-text('Изменить')",
+            "[role='button']:has-text('Моя заявка')",
+        )
+        for selector in selectors:
+            locator = page.locator(selector)
+            try:
+                count = locator.count()
+            except Exception:
+                continue
+            for index in range(count):
+                candidate = locator.nth(index)
+                try:
+                    if not candidate.is_visible(timeout=1_000):
+                        continue
+                    if not self._locator_is_enabled(candidate):
+                        continue
+                    self._log_submission_export(
+                        f"opening submission from trade page: {selector}"
+                    )
+                    self._click_locator_with_fallback(
+                        page,
+                        candidate,
+                        label="Подача заявки",
+                        timeout_ms=5_000,
+                    )
+                    try:
+                        page.wait_for_load_state("domcontentloaded", timeout=10_000)
+                    except Exception:
+                        pass
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=10_000)
+                    except Exception:
+                        pass
+                    if self._wait_for_submission_bid_context(page, timeout_ms=10_000):
+                        return True
+                except Exception as exc:
+                    self._log_submission_export(
+                        f"submission entry click skipped: {str(exc).splitlines()[0]}"
+                    )
+                    continue
+        return False
+
+    def _open_submission_export_page_via_trade(
+        self,
+        page: Page,
+        *,
+        trade_id: int,
+        lot_id: int,
+    ) -> None:
+        trade_url = self._build_trade_page_url(trade_id)
+        self._log_submission_export(f"fallback opening trade page: trade_id={trade_id}")
+        page.goto(
+            trade_url,
+            wait_until="domcontentloaded",
+            timeout=max(60_000, self._timeout_ms),
+        )
+        try:
+            page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception as exc:
+            self._log_submission_export(
+                f"trade page networkidle timeout ignored: {str(exc).splitlines()[0]}"
+            )
+
+        if self._page_has_submission_bid_context(page):
+            return
+        if self._click_submission_entry_from_trade_page(page, lot_id=lot_id):
+            return
+
+        raise RuntimeError(
+            "Не удалось открыть форму заявки через страницу торгов. "
+            "Откройте заявку на сайте вручную и проверьте, какая кнопка ведет к подаче."
+        )
+
+    @staticmethod
+    def _submission_search_text_candidates(raw_text: Any) -> tuple[str, ...]:
+        text = " ".join(str(raw_text or "").split())
+        if not text:
+            return ()
+
+        candidates: list[str] = [text]
+        first_token = text.split()[0].strip()
+        if first_token and first_token not in candidates:
+            candidates.append(first_token)
+
+        return tuple(candidates)
+
+    def _click_trade_link_from_search_page(
+        self,
+        page: Page,
+        *,
+        search_texts: tuple[str, ...],
+    ) -> bool:
+        for search_text in search_texts:
+            pattern = re.compile(re.escape(search_text), re.IGNORECASE)
+            locators = (
+                page.get_by_role("link", name=pattern),
+                page.locator("a").filter(has_text=pattern),
+                page.locator("[role='link']").filter(has_text=pattern),
+            )
+            for locator in locators:
+                try:
+                    count = locator.count()
+                except Exception:
+                    continue
+                for index in range(count):
+                    candidate = locator.nth(index)
+                    try:
+                        if not candidate.is_visible(timeout=1_000):
+                            continue
+                        self._log_submission_export(
+                            f"opening trade from search by text: {search_text}"
+                        )
+                        self._click_locator_with_fallback(
+                            page,
+                            candidate,
+                            label="Заявка в поиске",
+                            timeout_ms=5_000,
+                        )
+                        try:
+                            page.wait_for_load_state("domcontentloaded", timeout=10_000)
+                        except Exception:
+                            pass
+                        try:
+                            page.wait_for_load_state("networkidle", timeout=10_000)
+                        except Exception:
+                            pass
+                        return True
+                    except Exception as exc:
+                        self._log_submission_export(
+                            f"search result click skipped: {str(exc).splitlines()[0]}"
+                        )
+                        continue
+        return False
+
+    def _open_submission_export_page_via_search(
+        self,
+        page: Page,
+        *,
+        lot_id: int,
+        trade_search_text: str,
+    ) -> None:
+        search_texts = self._submission_search_text_candidates(trade_search_text)
+        if not search_texts:
+            raise RuntimeError("Нет номера или названия заявки для поиска на площадке")
+
+        search_url = f"{self.BASE_URL}/trades?page=purchases.trades.search"
+        self._log_submission_export("fallback opening trade search page")
+        page.goto(
+            search_url,
+            wait_until="domcontentloaded",
+            timeout=max(60_000, self._timeout_ms),
+        )
+        try:
+            page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception as exc:
+            self._log_submission_export(
+                f"search page networkidle timeout ignored: {str(exc).splitlines()[0]}"
+            )
+
+        if not self._click_trade_link_from_search_page(
+            page,
+            search_texts=search_texts,
+        ):
+            raise RuntimeError(
+                "Не удалось найти проблемную заявку на странице поиска площадки"
+            )
+
+        if self._page_has_submission_bid_context(page):
+            return
+        if self._click_submission_entry_from_trade_page(page, lot_id=lot_id):
+            return
+
+        raise RuntimeError(
+            "Заявка открылась через поиск, но перейти к форме заявки не удалось"
+        )
+
+    def _ensure_submission_export_page(
+        self,
+        page: Page,
+        *,
+        lot_id: int,
+        trade_id: int | None,
+        trade_search_text: str = "",
+    ) -> None:
+        if self._wait_for_submission_bid_context(page):
+            return
+
+        if trade_id is not None:
+            self._log_submission_export(
+                "direct bids/new did not open bid form; using trade page fallback"
+            )
+            try:
+                self._open_submission_export_page_via_trade(
+                    page,
+                    trade_id=trade_id,
+                    lot_id=lot_id,
+                )
+                return
+            except Exception as exc:
+                self._log_submission_export(
+                    f"trade page fallback failed: {str(exc).splitlines()[0]}"
+                )
+
+        if trade_search_text:
+            self._log_submission_export(
+                "using recorded search-page fallback for submission export"
+            )
+            self._open_submission_export_page_via_search(
+                page,
+                lot_id=lot_id,
+                trade_search_text=trade_search_text,
+            )
+            return
+
+        if self._page_has_trade_search_context(page):
+            raise RuntimeError(
+                "Площадка открыла общий поиск вместо формы заявки. "
+                "Для fallback нужен trade_id или номер выбранной заявки."
+            )
+
+        raise RuntimeError("Не удалось открыть форму заявки для экспорта")
 
     @staticmethod
     def _target_path_for_download(target_path: Path, suggested_filename: str) -> Path:
@@ -472,6 +789,204 @@ query tradeWithCurrentStage($id: Int) {
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_bytes(body)
         return str(target_path)
+
+    @staticmethod
+    def _validate_saved_export_file(path: Path) -> None:
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"Скачанный файл не найден: {path}")
+
+        head = path.read_bytes()[:2048]
+        lowered_head = head.lower()
+        if (
+            b"<!doctype html" in lowered_head
+            or b"<html" in lowered_head
+            or "доступ запрещ".encode("utf-8") in lowered_head
+            or b"access denied" in lowered_head
+            or b"forbidden" in lowered_head
+        ):
+            raise RuntimeError("Площадка вернула HTML/страницу отказа вместо Excel")
+
+        suffix = path.suffix.lower()
+        if suffix in {".xlsx", ".xlsm", ".xltx", ".xltm"} and not head.startswith(b"PK"):
+            raise RuntimeError("Скачанный файл не похож на XLSX")
+        if suffix == ".xls" and not head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+            raise RuntimeError("Скачанный файл не похож на XLS")
+        if suffix == ".csv" and b"\x00" in head:
+            raise RuntimeError("Скачанный файл не похож на CSV")
+
+    def _save_export_download_or_response(self, download_or_response: Any, target_path: Path) -> str:
+        target_path_resolved = target_path.expanduser().resolve()
+        if hasattr(download_or_response, "save_as"):
+            final_path = self._target_path_for_download(
+                target_path_resolved,
+                str(download_or_response.suggested_filename or ""),
+            )
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            download_or_response.save_as(str(final_path))
+            self._validate_saved_export_file(final_path)
+            return str(final_path)
+
+        saved_path = Path(self._save_response_body(download_or_response, target_path_resolved))
+        self._validate_saved_export_file(saved_path)
+        return str(saved_path)
+
+    @staticmethod
+    def _attach_submission_download_watchers(
+        context: BrowserContext,
+        downloads: list[Any],
+        responses: list[Any],
+    ) -> Any:
+        watched_pages: set[int] = set()
+
+        def _attach_page(page: Page) -> None:
+            page_id = id(page)
+            if page_id in watched_pages:
+                return
+            watched_pages.add(page_id)
+
+            def _on_download(download: Any) -> None:
+                downloads.append(download)
+
+            def _on_response(response: Any) -> None:
+                try:
+                    if TradeExporter._is_export_response(response):
+                        responses.append(response)
+                except Exception:
+                    pass
+
+            try:
+                page.on("download", _on_download)
+            except Exception:
+                pass
+            try:
+                page.on("response", _on_response)
+            except Exception:
+                pass
+
+        for page in list(getattr(context, "pages", []) or []):
+            _attach_page(page)
+
+        def _on_page(page: Page) -> None:
+            _attach_page(page)
+
+        try:
+            context.on("page", _on_page)
+        except Exception:
+            pass
+        return _on_page
+
+    @staticmethod
+    def _detach_submission_page_watcher(context: BrowserContext, on_page: Any) -> None:
+        try:
+            context.remove_listener("page", on_page)
+        except Exception:
+            pass
+
+    def _show_manual_submission_export_instructions(
+        self,
+        page: Page,
+        *,
+        reason: Exception | str,
+    ) -> None:
+        reason_text = str(reason or "").splitlines()[0]
+        self._log_submission_export(
+            "manual export mode: waiting for user download"
+        )
+        try:
+            page.evaluate(
+                """
+(message) => {
+  const id = "myapp-manual-export-banner";
+  document.getElementById(id)?.remove();
+  const banner = document.createElement("div");
+  banner.id = id;
+  banner.style.position = "fixed";
+  banner.style.left = "16px";
+  banner.style.right = "16px";
+  banner.style.top = "16px";
+  banner.style.zIndex = "2147483647";
+  banner.style.padding = "14px 18px";
+  banner.style.borderRadius = "6px";
+  banner.style.background = "#111827";
+  banner.style.color = "white";
+  banner.style.font = "14px/1.45 Arial, sans-serif";
+  banner.style.boxShadow = "0 10px 30px rgba(0, 0, 0, .35)";
+  banner.textContent = message;
+  document.body.appendChild(banner);
+}
+""",
+                (
+                    "Автоматический экспорт заблокирован площадкой. "
+                    "Зайдите в нужную заявку вручную и нажмите 'Экспорт'. "
+                    "Приложение поймает скачанный файл и продолжит. "
+                    f"Причина: {reason_text}"
+                ),
+            )
+        except Exception:
+            pass
+
+    def _wait_for_manual_submission_export(
+        self,
+        *,
+        context: BrowserContext,
+        page: Page,
+        target_path: Path,
+        reason: Exception | str,
+    ) -> str:
+        downloads: list[Any] = []
+        responses: list[Any] = []
+        on_page = self._attach_submission_download_watchers(
+            context,
+            downloads,
+            responses,
+        )
+        try:
+            self._show_manual_submission_export_instructions(page, reason=reason)
+            deadline_ms = self.MANUAL_SUBMISSION_EXPORT_TIMEOUT_MS
+            step_ms = 500
+            waited_ms = 0
+            while waited_ms < deadline_ms:
+                while downloads:
+                    download = downloads.pop(0)
+                    try:
+                        saved_path = self._save_export_download_or_response(
+                            download,
+                            target_path,
+                        )
+                    except Exception as exc:
+                        self._log_submission_export(
+                            "manual download skipped: "
+                            f"{str(exc).splitlines()[0]}"
+                        )
+                        continue
+                    self._log_submission_export("manual download completed")
+                    return saved_path
+                while responses:
+                    response = responses.pop(0)
+                    try:
+                        saved_path = self._save_export_download_or_response(
+                            response,
+                            target_path,
+                        )
+                    except Exception as exc:
+                        self._log_submission_export(
+                            "manual export response skipped: "
+                            f"{str(exc).splitlines()[0]}"
+                        )
+                        continue
+                    self._log_submission_export("manual export response completed")
+                    return saved_path
+                try:
+                    page.wait_for_timeout(step_ms)
+                except Exception:
+                    pass
+                waited_ms += step_ms
+        finally:
+            self._detach_submission_page_watcher(context, on_page)
+
+        raise RuntimeError(
+            "Ручной экспорт не был завершен: за 10 минут не найдено скачивание"
+        )
 
     def _click_submission_export_button(self, page: Page, export_button: Locator) -> Any:
         export_responses: list[Any] = []
@@ -534,8 +1049,15 @@ query tradeWithCurrentStage($id: Int) {
         context: BrowserContext,
         lot_id: int,
         target_path: Path,
+        trade_id: int | None = None,
+        trade_search_text: str = "",
     ) -> str:
         lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
+        trade_id_int = (
+            self._parse_positive_int(trade_id, name="trade_id")
+            if trade_id is not None
+            else None
+        )
         page = context.new_page()
         target_path_resolved = target_path.expanduser().resolve()
 
@@ -554,7 +1076,12 @@ query tradeWithCurrentStage($id: Int) {
                 self._log_submission_export(
                     f"networkidle timeout ignored: {str(exc).splitlines()[0]}"
                 )
-            self._validate_submission_export_page(page)
+            self._ensure_submission_export_page(
+                page,
+                lot_id=lot_id_int,
+                trade_id=trade_id_int,
+                trade_search_text=trade_search_text,
+            )
 
             self._wait_for_any_selector(
                 page,
@@ -586,25 +1113,29 @@ query tradeWithCurrentStage($id: Int) {
             export_button = self._find_submission_export_button(page)
             download = self._click_submission_export_button(page, export_button)
 
-            if hasattr(download, "save_as"):
-                final_path = self._target_path_for_download(
-                    target_path_resolved,
-                    str(download.suggested_filename or ""),
-                )
-                final_path.parent.mkdir(parents=True, exist_ok=True)
-                download.save_as(str(final_path))
-            else:
-                final_path = target_path_resolved
-                self._save_response_body(download, final_path)
+            final_path = Path(
+                self._save_export_download_or_response(download, target_path_resolved)
+            )
             self._log_submission_export("download completed")
             return str(final_path)
-        except Exception:
+        except Exception as exc:
             self._write_page_debug_dump(
                 page,
                 screenshot_path="submission_export_error.png",
                 html_path="submission_export_error.html",
             )
-            raise
+            try:
+                return self._wait_for_manual_submission_export(
+                    context=context,
+                    page=page,
+                    target_path=target_path_resolved,
+                    reason=exc,
+                )
+            except Exception as manual_exc:
+                raise RuntimeError(
+                    f"Автоматический экспорт не выполнен: {exc}. "
+                    f"Ручной fallback тоже не завершился: {manual_exc}"
+                ) from manual_exc
         finally:
             try:
                 page.close()
@@ -1461,7 +1992,14 @@ query tradeWithCurrentStage($id: Int) {
         finally:
             session.close()
 
-    def export_submission_lot_data(self, lot_id: int, download_path: str) -> str:
+    def export_submission_lot_data(
+        self,
+        lot_id: int,
+        download_path: str,
+        *,
+        trade_id: int | None = None,
+        trade_search_text: str = "",
+    ) -> str:
         if sync_playwright is None:
             raise RuntimeError(
                 "Playwright не установлен. Установите зависимость и выполните "
@@ -1469,6 +2007,11 @@ query tradeWithCurrentStage($id: Int) {
             )
 
         lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
+        trade_id_int = (
+            self._parse_positive_int(trade_id, name="trade_id")
+            if trade_id is not None
+            else None
+        )
         target_path = self._validate_target_path(download_path)
         cookies = self._load_cookies_for_export()
         playwright_cookies = self._build_playwright_cookies(cookies)
@@ -1483,6 +2026,8 @@ query tradeWithCurrentStage($id: Int) {
                     context=context,
                     lot_id=lot_id_int,
                     target_path=target_path,
+                    trade_id=trade_id_int,
+                    trade_search_text=trade_search_text,
                 )
             finally:
                 context.close()
