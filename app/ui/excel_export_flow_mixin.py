@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QMessageBox
 
 from config import Config
 from create import createExcelFile as exportExcelFile
@@ -68,3 +69,8 @@ class ExcelExportFlowMixin:
         )
         self.history_service.save()
         self.updateHistoryTable()
+        output_path = str(getattr(export_result, "output_path", "") or "").strip()
+        message = "Расчеты успешно сохранены."
+        if output_path:
+            message = f"{message}\n{output_path}"
+        QMessageBox.information(self, "Сохранение расчетов", message)

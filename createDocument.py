@@ -506,7 +506,6 @@ QCheckBox::indicator, QRadioButton::indicator {
                     customer = matches[0] if matches else None
                 if customer is not None:
                     confirmedSuppliers.append(customer)
-        extraData = self.getExtraData()
         if self._selected_output_format() == self.FORMAT_GOOGLE_DOCX:
             QMessageBox.warning(self, "Ошибка", "Google Docx пока не подключен")
             return
@@ -514,6 +513,11 @@ QCheckBox::indicator, QRadioButton::indicator {
             QMessageBox.warning(self, "Ошибка", "Выберите хотя бы одного заказчика")
             return
 
+        delivery_order = self._customer_delivery_order(confirmedSuppliers[0])
+        if hasattr(self, "deliveryOrderLine"):
+            self.deliveryOrderLine.setText(delivery_order)
+
+        extraData = self.getExtraData()
         self._save_last_create_doc_fields()
 
         parent_window = self.parent()
@@ -617,6 +621,12 @@ QCheckBox::indicator, QRadioButton::indicator {
                 if value:
                     parts.append(value)
         return " ".join(parts)
+
+    @staticmethod
+    def _customer_delivery_order(customer_data) -> str:
+        if isinstance(customer_data, (list, tuple)) and len(customer_data) > 9:
+            return str(customer_data[9] or "").strip()
+        return ""
 
     def _submission_context(self, confirmed_suppliers, extra_data):
         first_supplier = confirmed_suppliers[0] if confirmed_suppliers else None

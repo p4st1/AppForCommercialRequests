@@ -23,6 +23,23 @@ if "PySide6.QtCore" not in sys.modules:
         sys.modules["PySide6"] = pyside6
     pyside6.QtCore = qtcore
 
+pyside6 = sys.modules.get("PySide6")
+if pyside6 is None:
+    pyside6 = ModuleType("PySide6")
+    sys.modules["PySide6"] = pyside6
+
+if "PySide6.QtWidgets" not in sys.modules:
+    qtwidgets = ModuleType("PySide6.QtWidgets")
+
+    class _QMessageBox:
+        @staticmethod
+        def information(*args, **kwargs):
+            return 0
+
+    qtwidgets.QMessageBox = _QMessageBox
+    sys.modules["PySide6.QtWidgets"] = qtwidgets
+    pyside6.QtWidgets = qtwidgets
+
 if "create" not in sys.modules:
     create_module = ModuleType("create")
     create_module.createExcelFile = lambda payload: SimpleNamespace(success=False, error_message="", output_path="")
@@ -225,8 +242,9 @@ class ExcelExportFlowMixinTests(unittest.TestCase):
         self.assertFalse(window.history_service.saved)
         self.assertEqual(window.updated_history, 0)
 
+    @patch("app.ui.excel_export_flow_mixin.QMessageBox.information")
     @patch("app.ui.excel_export_flow_mixin.exportExcelFile")
-    def test_export_excel_happy_path_records_history(self, export_excel_file):
+    def test_export_excel_happy_path_records_history(self, export_excel_file, information):
         Config.isTableOpened = True
         window = self._build_window()
         export_excel_file.return_value = SimpleNamespace(success=True, output_path="/tmp/out.xlsx")
@@ -261,6 +279,11 @@ class ExcelExportFlowMixinTests(unittest.TestCase):
         self.assertTrue(window.history_service.saved)
         self.assertEqual(window.updated_history, 1)
         self.assertEqual(window.error_calls, [])
+        information.assert_called_once_with(
+            window,
+            "Сохранение расчетов",
+            "Расчеты успешно сохранены.\n/tmp/out.xlsx",
+        )
 
 
 if __name__ == "__main__":
