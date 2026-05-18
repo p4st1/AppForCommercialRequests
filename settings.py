@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QInputDialog,
     QSpinBox,
+    QLineEdit,
 )
 from tools import DatabaseTools as Tool
 from ui_settingsAppGui import Ui_MainWindow
@@ -61,6 +62,7 @@ class mainWindow(QMainWindow):
         self._setup_auto_trade_settings_block()
         self._setup_table_settings_block()
         self._setup_offer_validity_settings_block()
+        self._setup_google_drive_settings_block()
         self._setup_tab_visibility_settings_block()
         self.developer_skip_table_fill_errors_checkbox.setChecked(
             bool(Config.settings.get('developer_skip_table_fill_errors', False))
@@ -546,6 +548,97 @@ class mainWindow(QMainWindow):
         self.offer_validity_days_spinbox = spinbox
         self.ui.offer_validity_settings_label = section_label
         self.ui.offer_validity_days_spinbox = spinbox
+
+    def _setup_google_drive_settings_block(self):
+        section_label = QLabel("Google Drive", self.ui.scrollAreaWidgetContents)
+        section_label.setStyleSheet(
+            "color: #2c3e50;\n"
+            "font-size: 16px;\n"
+            "font-weight: 600;\n"
+            "padding: 2px;"
+        )
+
+        controls = QVBoxLayout()
+        controls.setSpacing(8)
+        controls.setContentsMargins(0, 0, 0, 0)
+
+        credentials_row = QHBoxLayout()
+        credentials_row.setSpacing(10)
+        credentials_row.setContentsMargins(7, 0, -1, -1)
+        credentials_label = QLabel("OAuth JSON:", self.ui.scrollAreaWidgetContents)
+        self.googleDriveCredentialsLine = QLineEdit(self.ui.scrollAreaWidgetContents)
+        self.googleDriveCredentialsLine.setObjectName("googleDriveCredentialsLine")
+        self.googleDriveCredentialsLine.setText(
+            str(Config.config.get("googleDriveCredentialsPath", "") or "")
+        )
+        self.googleDriveCredentialsLine.setPlaceholderText("Путь к OAuth client JSON")
+        self.googleDriveCredentialsBrowseButton = QPushButton(
+            "Выбрать",
+            self.ui.scrollAreaWidgetContents,
+        )
+        self.googleDriveCredentialsBrowseButton.setMinimumSize(108, 32)
+        self.googleDriveCredentialsBrowseButton.setStyleSheet(
+            self.ui.dirOpenButton.styleSheet()
+        )
+        credentials_row.addWidget(credentials_label)
+        credentials_row.addWidget(self.googleDriveCredentialsLine, 1)
+        credentials_row.addWidget(self.googleDriveCredentialsBrowseButton)
+        controls.addLayout(credentials_row)
+
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(10)
+        folder_row.setContentsMargins(7, 0, -1, -1)
+        folder_label = QLabel("ID папки:", self.ui.scrollAreaWidgetContents)
+        self.googleDriveFolderIdLine = QLineEdit(self.ui.scrollAreaWidgetContents)
+        self.googleDriveFolderIdLine.setObjectName("googleDriveFolderIdLine")
+        self.googleDriveFolderIdLine.setText(
+            str(Config.config.get("googleDriveFolderId", "") or "")
+        )
+        self.googleDriveFolderIdLine.setPlaceholderText(
+            "Необязательно: оставить пустым для корня My Drive"
+        )
+        folder_row.addWidget(folder_label)
+        folder_row.addWidget(self.googleDriveFolderIdLine, 1)
+        controls.addLayout(folder_row)
+
+        self.googleDriveCredentialsLine.textChanged.connect(
+            self.googleDriveCredentialsPathChange
+        )
+        self.googleDriveFolderIdLine.textChanged.connect(self.googleDriveFolderIdChange)
+        self.googleDriveCredentialsBrowseButton.clicked.connect(
+            self.selectGoogleDriveCredentialsFile
+        )
+
+        insert_index = self.ui.verticalLayout.indexOf(self.ui.line_2)
+        if insert_index < 0:
+            insert_index = self.ui.verticalLayout.count()
+        self.ui.verticalLayout.insertLayout(insert_index, controls)
+        self.ui.verticalLayout.insertWidget(insert_index, section_label)
+
+        self.google_drive_settings_label = section_label
+        self.ui.google_drive_settings_label = section_label
+        self.ui.googleDriveCredentialsLine = self.googleDriveCredentialsLine
+        self.ui.googleDriveFolderIdLine = self.googleDriveFolderIdLine
+        self.ui.googleDriveCredentialsBrowseButton = self.googleDriveCredentialsBrowseButton
+
+    def googleDriveCredentialsPathChange(self, value):
+        Config.config["googleDriveCredentialsPath"] = str(value or "").strip()
+
+    def googleDriveFolderIdChange(self, value):
+        Config.config["googleDriveFolderId"] = str(value or "").strip()
+
+    def selectGoogleDriveCredentialsFile(self):
+        current_path = str(Config.config.get("googleDriveCredentialsPath", "") or "").strip()
+        start_dir = str(Path(current_path).expanduser().parent) if current_path else str(Path.home())
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите OAuth JSON Google Drive",
+            start_dir,
+            "JSON (*.json)",
+        )
+        if not file_path:
+            return
+        self.googleDriveCredentialsLine.setText(file_path)
 
     def _setup_tab_visibility_settings_block(self):
         section_label = QLabel("Видимость вкладок", self.ui.scrollAreaWidgetContents)

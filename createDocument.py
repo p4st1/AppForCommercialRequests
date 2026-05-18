@@ -21,6 +21,7 @@ from app.repositories.offer_repository import OfferRepository
 from app.repositories.customer_repository import CustomerRepository
 from app.services.customer_service import CustomerService
 from app.services.history_service import HistoryService
+from services.google_drive_service import GoogleDriveService
 from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from database import Database
 from config import Config
@@ -196,8 +197,9 @@ QListWidget::item {
         self.docxFormatRadio = QRadioButton("Docx", self)
         self.pdfFormatRadio = QRadioButton("PDF", self)
         self.googleDocxFormatRadio = QRadioButton("Google Docx", self)
-        self.googleDocxFormatRadio.setEnabled(False)
-        self.googleDocxFormatRadio.setToolTip("Формат зарезервирован, пока не подключен")
+        self.googleDocxFormatRadio.setToolTip(
+            "Сохранить DOCX локально и загрузить копию на Google Drive"
+        )
 
         self.outputFormatGroup = QButtonGroup(self)
         self.outputFormatGroup.addButton(self.docxFormatRadio)
@@ -506,9 +508,6 @@ QCheckBox::indicator, QRadioButton::indicator {
                     customer = matches[0] if matches else None
                 if customer is not None:
                     confirmedSuppliers.append(customer)
-        if self._selected_output_format() == self.FORMAT_GOOGLE_DOCX:
-            QMessageBox.warning(self, "Ошибка", "Google Docx пока не подключен")
-            return
         if not confirmedSuppliers:
             QMessageBox.warning(self, "Ошибка", "Выберите хотя бы одного заказчика")
             return
@@ -549,12 +548,35 @@ QCheckBox::indicator, QRadioButton::indicator {
             QMessageBox.critical(self, "Ошибка", error_text)
             return
 
+        remote_url = ""
+        if self._selected_output_format() == self.FORMAT_GOOGLE_DOCX:
+            if callable(set_pipeline_status):
+                set_pipeline_status("☁ Загрузка КП на Google Drive...")
+            try:
+                upload_result = GoogleDriveService().upload_docx(
+                    getattr(export_result, "output_path", "")
+                )
+                remote_url = upload_result.web_view_link
+            except Exception as exc:
+                if callable(set_pipeline_error_status):
+                    set_pipeline_error_status()
+                elif callable(set_pipeline_status):
+                    set_pipeline_status("❌ Ошибка")
+                QMessageBox.critical(
+                    self,
+                    "Ошибка",
+                    "Локальный DOCX сохранен, но не удалось загрузить его на Google Drive:\n"
+                    f"{exc}",
+                )
+                return
+
         self.history_service.record_docx_offer(
             customer_data=confirmedSuppliers[0],
             table_rows=self.tableData[1] if self.tableData and len(self.tableData) > 1 else [],
             output_path=getattr(export_result, "output_path", ""),
             selected_suppliers_count=len(confirmedSuppliers),
             summary_columns=self.SUMMARY_COLUMNS,
+            remote_url=remote_url,
         )
         self.history_service.save()
 

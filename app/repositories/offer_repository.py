@@ -19,6 +19,7 @@ class OfferRepository:
         total_amount: float | None = None,
         currency: str = "",
         file_path: str = "",
+        remote_url: str = "",
         notes: str = "",
         payload_json: str = "",
     ) -> int:
@@ -29,6 +30,7 @@ class OfferRepository:
             total_amount=total_amount,
             currency=currency,
             file_path=file_path,
+            remote_url=remote_url,
             notes=notes,
             payload_json=payload_json,
         )
@@ -43,6 +45,7 @@ class OfferRepository:
         total_amount: float | None = None,
         currency: str = "",
         file_path: str = "",
+        remote_url: str = "",
         notes: str = "",
         payload_json: str = "",
     ) -> int:
@@ -54,6 +57,7 @@ class OfferRepository:
             total_amount=total_amount,
             currency=currency,
             file_path=file_path,
+            remote_url=remote_url,
             notes=notes,
             payload_json=payload_json,
         )

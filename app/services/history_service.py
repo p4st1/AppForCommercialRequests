@@ -63,6 +63,7 @@ class HistoryService:
         output_path: str,
         selected_suppliers_count: int,
         summary_columns: int,
+        remote_url: str = "",
     ) -> int:
         total_amount, currency, items_count = self.summarize_table_for_history(table_rows, total_col_index=7)
         customer_name = " ".join(
@@ -80,6 +81,7 @@ class HistoryService:
             total_amount=total_amount,
             currency=currency,
             file_path=str(output_path or ""),
+            remote_url=str(remote_url or ""),
             notes=notes,
             payload_json=payload_json,
         )

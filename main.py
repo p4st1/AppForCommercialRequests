@@ -185,9 +185,11 @@ class mainWindow(
         "Позиций",
         "Сумма",
         "Файл",
+        "Ссылка",
     )
     HISTORY_META_COLUMN = 0
     HISTORY_FILE_COLUMN = 7
+    HISTORY_LINK_COLUMN = 8
 
     def __init__(self):
         super().__init__()

@@ -61,6 +61,7 @@ class Database:
                 total_amount REAL,
                 currency TEXT NOT NULL DEFAULT '',
                 file_path TEXT NOT NULL DEFAULT '',
+                remote_url TEXT NOT NULL DEFAULT '',
                 notes TEXT NOT NULL DEFAULT '',
                 payload_json TEXT NOT NULL DEFAULT ''
             )
@@ -132,6 +133,7 @@ class Database:
             "total_amount": "REAL",
             "currency": "TEXT NOT NULL DEFAULT ''",
             "file_path": "TEXT NOT NULL DEFAULT ''",
+            "remote_url": "TEXT NOT NULL DEFAULT ''",
             "notes": "TEXT NOT NULL DEFAULT ''",
             "payload_json": "TEXT NOT NULL DEFAULT ''",
         }
@@ -233,6 +235,7 @@ class Database:
         total_amount: float | None = None,
         currency: str = "",
         file_path: str = "",
+        remote_url: str = "",
         notes: str = "",
         payload_json: str = "",
     ) -> int:
@@ -258,9 +261,10 @@ class Database:
                 total_amount,
                 currency,
                 file_path,
+                remote_url,
                 notes,
                 payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 offer_number,
@@ -273,6 +277,7 @@ class Database:
                 total_value,
                 str(currency or "").strip(),
                 str(file_path or "").strip(),
+                str(remote_url or "").strip(),
                 str(notes or "").strip(),
                 str(payload_json or ""),
             ),
@@ -287,6 +292,7 @@ class Database:
         total_amount: float | None = None,
         currency: str = "",
         file_path: str = "",
+        remote_url: str = "",
         notes: str = "",
         payload_json: str = "",
     ) -> int:
@@ -298,6 +304,7 @@ class Database:
             total_amount=total_amount,
             currency=currency,
             file_path=file_path,
+            remote_url=remote_url,
             notes=notes,
             payload_json=payload_json,
         )
@@ -319,6 +326,7 @@ class Database:
                 total_amount,
                 currency,
                 file_path,
+                remote_url,
                 notes,
                 payload_json
             FROM offers

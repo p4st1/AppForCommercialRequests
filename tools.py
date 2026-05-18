@@ -165,6 +165,10 @@ class DatabaseTools:
         config["lastTable"] = str(config.get("lastTable", "")).strip()
         config["pathToSaveCP"] = str(config.get("pathToSaveCP", "")).strip()
         config["pathToSaveExcel"] = str(config.get("pathToSaveExcel", "")).strip()
+        config["googleDriveCredentialsPath"] = str(
+            config.get("googleDriveCredentialsPath", "")
+        ).strip()
+        config["googleDriveFolderId"] = str(config.get("googleDriveFolderId", "")).strip()
         config["offerValidityDays"] = str(
             Config.normalize_offer_validity_days(config.get("offerValidityDays"))
         )

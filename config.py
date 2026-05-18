@@ -43,6 +43,8 @@ class Config:
         "paymentTemplates": DEFAULT_PAYMENT_TEMPLATES.copy(),
         "platformLogin": "",
         "platformPassword": "",
+        "googleDriveCredentialsPath": "",
+        "googleDriveFolderId": "",
     }
 
     types = {

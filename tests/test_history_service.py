@@ -81,6 +81,7 @@ class HistoryServiceTests(unittest.TestCase):
             output_path="/tmp/out.docx",
             selected_suppliers_count=2,
             summary_columns=9,
+            remote_url="https://drive.google.com/file/d/123/view",
         )
 
         self.assertEqual(offer_number, 7)
@@ -93,6 +94,10 @@ class HistoryServiceTests(unittest.TestCase):
         self.assertEqual(offer["currency"], "¥")
         self.assertEqual(offer["notes"], "Выбрано заказчиков: 2")
         self.assertEqual(offer["file_path"], "/tmp/out.docx")
+        self.assertEqual(
+            offer["remote_url"],
+            "https://drive.google.com/file/d/123/view",
+        )
 
     def test_record_excel_export_creates_excel_history_event(self):
         self.service.record_excel_export(
