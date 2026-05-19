@@ -14,11 +14,6 @@ env:
   PYTHON_VERSION: "3.11"
 
 jobs:
-
-  # =========================================================
-  # TESTS
-  # =========================================================
-
   verify:
     name: Verify (tests)
     runs-on: ubuntu-latest
@@ -33,12 +28,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install test deps
         shell: bash
         run: |
           set -eux
-
-          python -m pip install --upgrade pip
+          python -m pip install -U pip
           pip install -r requirements.txt
 
       - name: Run tests
@@ -47,42 +41,27 @@ jobs:
           set -eux
           python -m unittest discover -s tests -v
 
-  # =========================================================
-  # BUILD
-  # =========================================================
-
   build:
     name: Build (${{ matrix.name }})
     needs: verify
-
     strategy:
       fail-fast: false
-
       matrix:
         include:
           - name: windows
             os: windows-latest
-
           - name: macos-arm64
             os: macos-15
-
           - name: macos-x86_64
             os: macos-15-intel
 
     runs-on: ${{ matrix.os }}
 
     steps:
-
-      # =====================================================
-      # CHECKOUT
-      # =====================================================
-
       - name: Checkout
         uses: actions/checkout@v4
-
-      # =====================================================
-      # PYTHON
-      # =====================================================
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -90,187 +69,199 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
-      # =====================================================
-      # INSTALL
-      # =====================================================
-
-      - name: Install dependencies
+      - name: Sanity check files
         shell: bash
         run: |
           set -eux
-
-          python -m pip install --upgrade pip
-
-          pip install -r requirements.txt
-
-          pip install \
-            nuitka \
-            ordered-set \
-            zstandard
-
-      # =====================================================
-      # VERIFY
-      # =====================================================
-
-      - name: Verify project structure
-        shell: bash
-        run: |
-          set -eux
-
           test -f run.py
           test -f main.py
           test -f requirements.txt
-
+          test -f retrade.ui
           test -d utilities
           test -d database
           test -d templates
+          test -f templates/template.xlsx
+          test -f templates/template.docx
+          test -f templates/template_short.docx
+          test -f templates/logs.log
           test -d assets
+          test -f assets/app.ico
+          test -f assets/app.icns
+          test -f assets/app.jpg
+          test -f assets/print.png
+          test -f assets/sign.png
+          test -f assets/updates.txt
 
-          test -f retrade.ui
+      - name: Install deps
+        shell: bash
+        run: |
+          set -eux
+          python -m pip install -U pip
+          pip install -r requirements.txt
+          pip install -U pyinstaller PySide6 python-docx
 
-      # =====================================================
-      # WINDOWS BUILD
-      # =====================================================
+      - name: Verify import main
+        shell: bash
+        run: |
+          set -eux
+          python -c "import main; print('main:', getattr(main, '__file__', None))"
 
-      - name: Build Windows
+      - name: Resolve python-docx templates path (site-packages)
+        shell: bash
+        run: |
+          set -eux
+          DOCX_TPL="$(python -c "import docx, os; print(os.path.join(os.path.dirname(docx.__file__), 'templates'))")"
+          echo "DOCX_TPL=$DOCX_TPL" >> $GITHUB_ENV
+          test -d "$DOCX_TPL"
+          ls -la "$DOCX_TPL" | head -n 20
+
+      # ---------------- WINDOWS ----------------
+
+      - name: Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-
-          python -m nuitka `
-            --standalone `
-            --onefile `
-            --assume-yes-for-downloads `
-            --windows-console-mode=disable `
-            --enable-plugin=pyside6 `
-            --msvc=latest `
-            --output-dir=build `
-            --windows-icon-from-ico=assets/app.ico `
-            --output-filename="$env:APP_NAME.exe" `
-            --include-data-dir=utilities=utilities `
-            --include-data-dir=database=database `
-            --include-data-dir=templates=templates `
-            --include-data-dir=assets=assets `
-            --include-data-file=retrade.ui=retrade.ui `
-            --include-package-data=docx `
+          pyinstaller --noconfirm --clean --windowed --name $env:APP_NAME `
+            --paths . `
+            --hidden-import=main `
+            --icon assets/app.ico `
+            --add-data=utilities:utilities `
+            --add-data=database:database `
+            --add-data=retrade.ui:. `
+            --add-data=assets/app.ico:assets `
+            --add-data=assets/app.jpg:assets `
+            --add-data=assets/print.png:assets `
+            --add-data=assets/sign.png:assets `
+            --add-data=assets/updates.txt:assets `
+            --add-data=templates/template.xlsx:templates `
+            --add-data=templates/template.docx:templates `
+            --add-data=templates/template_short.docx:templates `
+            --add-data=templates/logs.log:templates `
             run.py
 
-      - name: Package Windows
+      - name: Fix python-docx templates (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $root = "dist\$env:APP_NAME"
 
-          Get-ChildItem -Recurse
+          $dstTpl1 = Join-Path $root "docx\templates"
+          Remove-Item -Recurse -Force $dstTpl1 -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $dstTpl1 | Out-Null
+          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dstTpl1
 
-          mkdir release
+          New-Item -ItemType Directory -Force -Path (Join-Path $root "docx\parts") | Out-Null
 
-          $exe = Get-ChildItem -Recurse -Filter "*.exe" |
-            Where-Object {
-              $_.FullName -match "build"
-            } |
-            Select-Object -First 1
+          $dstTpl2 = Join-Path $root "_internal\docx\templates"
+          Remove-Item -Recurse -Force $dstTpl2 -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $dstTpl2 | Out-Null
+          Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dstTpl2
 
-          Write-Host "FOUND EXE:"
-          Write-Host $exe.FullName
+          New-Item -ItemType Directory -Force -Path (Join-Path $root "_internal\docx\parts") | Out-Null
 
-          Copy-Item `
-            $exe.FullName `
-            ".\release\$env:APP_NAME.exe"
+          Write-Host "Docx templates copied:"
+          Write-Host $dstTpl1
+          Write-Host $dstTpl2
 
-          Compress-Archive `
-            -Path ".\release\*" `
-            -DestinationPath "$env:APP_NAME-windows.zip"
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\$env:APP_NAME\*" -DestinationPath "$env:APP_NAME-windows.zip"
 
-      - name: Upload Windows artifact
+      - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: build-windows
           path: MyApp-windows.zip
 
-      # =====================================================
-      # MACOS BUILD
-      # =====================================================
+      # ---------------- macOS ----------------
 
-      - name: Build macOS
+      - name: Build + Fix python-docx templates + Package (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           set -eux
-
           ARCH="$(uname -m)"
-
           if [ "$ARCH" = "arm64" ]; then
             OUT="${APP_NAME}-macos-arm64.zip"
+            TARCH="arm64"
           else
             OUT="${APP_NAME}-macos-x86_64.zip"
+            TARCH="x86_64"
           fi
 
-          python -m nuitka \
-            --standalone \
-            --onefile \
-            --assume-yes-for-downloads \
-            --enable-plugin=pyside6 \
-            --macos-create-app-bundle \
-            --output-dir=build \
-            --macos-app-icon=assets/app.icns \
-            --include-data-dir=utilities=utilities \
-            --include-data-dir=database=database \
-            --include-data-dir=templates=templates \
-            --include-data-dir=assets=assets \
-            --include-data-file=retrade.ui=retrade.ui \
-            --include-package-data=docx \
+          pyinstaller --noconfirm --clean --windowed --name "${APP_NAME}" \
+            --paths . \
+            --hidden-import=main \
+            --target-arch "${TARCH}" \
+            --icon assets/app.icns \
+            --add-data=assets/app.ico:assets \
+            --add-data=assets/app.icns:assets \
+            --add-data=assets/app.jpg:assets \
+            --add-data=assets/sign.png:assets \
+            --add-data=assets/print.png:assets \
+            --add-data=assets/updates.txt:assets \
+            --add-data=utilities:utilities \
+            --add-data=database:database \
+            --add-data=retrade.ui:. \
+            --add-data=templates/template.xlsx:templates \
+            --add-data=templates/template.docx:templates \
+            --add-data=templates/template_short.docx:templates \
+            --add-data=templates/logs.log:templates \
             run.py
 
-          APP_PATH="$(find build -name '*.app' | head -n 1)"
-
+          APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
 
-          ditto -c -k --sequesterRsrc --keepParent \
-            "$APP_PATH" \
-            "$OUT"
+          DOCX_BASE="$APP_PATH/Contents/Frameworks/docx"
+          mkdir -p "$DOCX_BASE/templates"
+          mkdir -p "$DOCX_BASE/parts"
 
-      - name: Upload macOS artifact
+          cp -R "$DOCX_TPL/"* "$DOCX_BASE/templates/"
+
+          test -d "$DOCX_BASE/parts"
+          test -f "$DOCX_BASE/templates/default-header.xml"
+          ls -la "$DOCX_BASE/templates" | head -n 20
+
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
+
+      - name: Upload artifact (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
+          name: build-${{ matrix.name }}
           path: MyApp-macos-*.zip
 
-  # =========================================================
-  # RELEASE
-  # =========================================================
-
   release:
-    name: Create Release
+    name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Collect archives
+      - name: Collect zips
         shell: bash
         run: |
-          set -eux
+          set -euo pipefail
+          mapfile -t ZIP_FILES < <(find artifacts -type f -name "*.zip" | sort)
+          printf '%s\n' "${ZIP_FILES[@]}"
+          test "${#ZIP_FILES[@]}" -ge 3
+          cp "${ZIP_FILES[@]}" .
+          ls -la *.zip
+          test -f "MyApp-windows.zip"
+          test -f "MyApp-macos-arm64.zip"
+          test -f "MyApp-macos-x86_64.zip"
 
-          find artifacts -type f
-
-          cp artifacts/windows/*.zip .
-          cp artifacts/macos-arm64/*.zip .
-          cp artifacts/macos-x86_64/*.zip .
-
-          ls -la
-
-      - name: Publish GitHub Release
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-
           files: |
             MyApp-windows.zip
             MyApp-macos-arm64.zip

@@ -137,6 +137,8 @@ class _FakeWindow(ExcelExportFlowMixin):
         self.error_calls = []
         self.updated_history = 0
         self.total_result = (321.5, "¥")
+        self.export_destination = self.EXPORT_DESTINATION_LOCAL
+        self.create_doc_calls = []
 
     def error(self, title, text):
         self.error_calls.append((title, text))
@@ -158,6 +160,15 @@ class _FakeWindow(ExcelExportFlowMixin):
 
     def updateHistoryTable(self):
         self.updated_history += 1
+
+    def _choose_excel_export_destination(self):
+        return self.export_destination
+
+    def getTableData(self):
+        return [["summary-row-1"], ["summary-row-2"]]
+
+    def openCreateDocWindow(self, table_data, **kwargs):
+        self.create_doc_calls.append((table_data, kwargs))
 
 
 class ExcelExportFlowMixinTests(unittest.TestCase):
@@ -274,6 +285,7 @@ class ExcelExportFlowMixinTests(unittest.TestCase):
                 "total_amount": 321.5,
                 "currency": "¥",
                 "file_path": "/tmp/out.xlsx",
+                "remote_url": "",
             },
         )
         self.assertTrue(window.history_service.saved)
@@ -283,6 +295,80 @@ class ExcelExportFlowMixinTests(unittest.TestCase):
             window,
             "Сохранение расчетов",
             "Расчеты успешно сохранены.\n/tmp/out.xlsx",
+        )
+
+    @patch("app.ui.excel_export_flow_mixin.QMessageBox.information")
+    @patch("app.ui.excel_export_flow_mixin.GoogleDriveService")
+    @patch("app.ui.excel_export_flow_mixin.exportExcelFile")
+    def test_export_excel_google_drive_creates_docx_then_uploads_excel(
+        self,
+        export_excel_file,
+        google_drive_service,
+        information,
+    ):
+        Config.isTableOpened = True
+        window = self._build_window()
+        window.export_destination = window.EXPORT_DESTINATION_GOOGLE_DRIVE
+        export_excel_file.return_value = SimpleNamespace(
+            success=True,
+            output_path="/tmp/out.xlsx",
+        )
+        google_drive_service.return_value.upload_excel.return_value = SimpleNamespace(
+            file_id="xlsx-id",
+            web_view_link="https://drive.google.com/file/d/xlsx/view",
+        )
+        google_drive_service.return_value.update_excel.return_value = SimpleNamespace(
+            file_id="xlsx-id",
+            web_view_link="https://drive.google.com/file/d/xlsx/view",
+        )
+
+        window.exportExcel()
+
+        self.assertEqual(len(window.create_doc_calls), 1)
+        table_data, kwargs = window.create_doc_calls[0]
+        self.assertEqual(table_data, (2, [["summary-row-1"], ["summary-row-2"]]))
+        self.assertTrue(kwargs["force_google_docx"])
+        export_excel_file.assert_not_called()
+
+        kwargs["on_document_created"](
+            {
+                "output_path": "/tmp/kp.docx",
+                "remote_url": "https://drive.google.com/file/d/docx/view",
+            }
+        )
+
+        payload = export_excel_file.call_args.args[0]
+        self.assertEqual(
+            payload["docx_remote_url"],
+            "https://drive.google.com/file/d/docx/view",
+        )
+        google_drive_service.return_value.upload_excel.assert_called_once_with(
+            "/tmp/out.xlsx"
+        )
+        export_excel_file.append_calculations_remote_link_to_file.assert_called_once_with(
+            "/tmp/out.xlsx",
+            "https://drive.google.com/file/d/xlsx/view",
+        )
+        google_drive_service.return_value.update_excel.assert_called_once_with(
+            "xlsx-id",
+            "/tmp/out.xlsx",
+        )
+        self.assertEqual(
+            window.history_service.record_calls[0],
+            {
+                "items_count": 2,
+                "total_amount": 321.5,
+                "currency": "¥",
+                "file_path": "/tmp/out.xlsx",
+                "remote_url": "https://drive.google.com/file/d/xlsx/view",
+            },
+        )
+        information.assert_called_once_with(
+            window,
+            "Сохранение расчетов",
+            "Расчеты успешно сохранены и загружены на Google Drive.\n"
+            "/tmp/out.xlsx\n"
+            "https://drive.google.com/file/d/xlsx/view",
         )
 
 

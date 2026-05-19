@@ -62,8 +62,24 @@ class OfferRepository:
             payload_json=payload_json,
         )
 
-    def get_history(self, limit: int = 500):
-        return self._db.getOffersHistory(limit=limit)
+    def get_history(
+        self,
+        limit: int = 500,
+        *,
+        customer_query: str = "",
+        event_type: str = "",
+        date_from: str = "",
+        date_to: str = "",
+        search_text: str = "",
+    ):
+        return self._db.getOffersHistory(
+            limit=limit,
+            customer_query=customer_query,
+            event_type=event_type,
+            date_from=date_from,
+            date_to=date_to,
+            search_text=search_text,
+        )
 
     def delete_history_event(self, event_id: int):
         self._db.deleteHistoryEvent(event_id=event_id)

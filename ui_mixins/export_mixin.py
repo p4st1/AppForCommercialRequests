@@ -3841,18 +3841,28 @@ QTableWidget::indicator {{
 
     def export_trade(self, lot_id: int, trade: dict[str, Any] | None = None) -> None:
         trade_id: int | None = None
+        submission_search_text = ""
         if isinstance(trade, dict):
             self._set_pending_submission_export_metadata(trade)
             trade_id = self._submission_trade_id_from_trade(trade)
+            submission_search_text = self._submission_search_text_from_trade(trade)
+        else:
+            metadata = getattr(self, "_pending_submission_export_metadata", {})
+            if isinstance(metadata, dict):
+                metadata_lot_id = str(metadata.get("lot_id", "") or "").strip()
+                if not metadata_lot_id or metadata_lot_id == str(lot_id).strip():
+                    try:
+                        trade_id = self._parse_positive_trade_id(
+                            metadata.get("trade_id") or metadata.get("id")
+                        )
+                    except Exception:
+                        trade_id = None
+                    submission_search_text = self._submission_search_text_from_trade(metadata)
         self._start_export_worker(
             trade_id=trade_id,
             lot_id=lot_id,
             is_submission_acceptance=True,
-            submission_search_text=(
-                self._submission_search_text_from_trade(trade)
-                if isinstance(trade, dict)
-                else ""
-            ),
+            submission_search_text=submission_search_text,
         )
 
     def export_selected_retrade(self) -> None:
@@ -4027,6 +4037,7 @@ QTableWidget::indicator {{
                 lot_id = str(first_lot.get("id") or "").strip()
 
         return {
+            "trade_id": str(trade.get("id") or "").strip(),
             "number": str(
                 trade.get("registeredNumber")
                 or trade.get("number")

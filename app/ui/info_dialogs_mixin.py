@@ -39,7 +39,8 @@ class InfoDialogsMixin:
             <li><span class="hotkey">Ctrl+Enter</span> - протянуть формулу по выделенным строкам</li>
             <li><span class="hotkey">Ctrl + выделение ячеек</span> - протянуть формулу из активной ячейки</li>
             <li><span class="hotkey">Ctrl+Z / Cmd+Z</span> - отменить последнее изменение таблицы</li>
-            <li><span class="hotkey">Delete</span> - удалить выбранные строки</li>
+            <li><span class="hotkey">Delete / Backspace</span> - очистить выделенные ячейки</li>
+            <li><span class="hotkey">Ctrl+Delete</span> - удалить выбранные строки</li>
             <li><span class="hotkey">Ctrl+Shift+E</span> - скачать КП</li>
         </ul>
 

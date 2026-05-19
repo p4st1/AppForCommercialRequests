@@ -20,9 +20,23 @@ class DocExportFlowMixin:
     SUBMISSION_OFFER_VALIDITY_DAYS = Config.DEFAULT_OFFER_VALIDITY_DAYS
     PIPELINE_TRADE_SEARCH_LIMIT = 1000
 
-    def openCreateDocWindow(self, tableData):
+    def openCreateDocWindow(
+        self,
+        tableData,
+        *,
+        force_google_docx: bool = False,
+        on_document_created=None,
+    ):
         window = createDocWindow(self, tableData=tableData)
         window.ui.numLine.setText(self.ui.requestNumberLine.text().strip())
+        if force_google_docx and hasattr(window, "googleDocxFormatRadio"):
+            window.googleDocxFormatRadio.setChecked(True)
+            if hasattr(window, "docxFormatRadio"):
+                window.docxFormatRadio.setEnabled(False)
+            if hasattr(window, "pdfFormatRadio"):
+                window.pdfFormatRadio.setEnabled(False)
+        if callable(on_document_created) and hasattr(window, "documentCreated"):
+            window.documentCreated.connect(on_document_created)
         window.show()
         window.windowClosed.connect(self.updateHistoryTable)
         if Config.settings["closeTable"]:

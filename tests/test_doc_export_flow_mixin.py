@@ -26,6 +26,10 @@ if not hasattr(qtwidgets, "QMessageBox"):
         def critical(*args, **kwargs):
             return 0
 
+        @staticmethod
+        def information(*args, **kwargs):
+            return 0
+
     qtwidgets.QMessageBox = _QMessageBox
 
 pyside6.QtWidgets = qtwidgets
@@ -47,6 +51,18 @@ class _FakeNumLine:
         self.value = text
 
 
+class _FakeRadio:
+    def __init__(self):
+        self.checked = False
+        self.enabled = True
+
+    def setChecked(self, value):
+        self.checked = bool(value)
+
+    def setEnabled(self, value):
+        self.enabled = bool(value)
+
+
 class _FakeCreateDocUi:
     def __init__(self):
         self.numLine = _FakeNumLine()
@@ -60,6 +76,10 @@ class _FakeCreateDocWindow:
         self.tableData = tableData
         self.ui = _FakeCreateDocUi()
         self.windowClosed = _FakeSignal()
+        self.documentCreated = _FakeSignal()
+        self.googleDocxFormatRadio = _FakeRadio()
+        self.docxFormatRadio = _FakeRadio()
+        self.pdfFormatRadio = _FakeRadio()
         self.shown = False
         self.__class__.instances.append(self)
 
@@ -200,6 +220,23 @@ class DocExportFlowMixinTests(unittest.TestCase):
         )
         self.assertTrue(_has_bound_callback(created_window.windowClosed.callbacks, window, "closeTable"))
         self.assertEqual(window.ui.KpTable.row_count_values, [0])
+
+    def test_open_create_doc_window_can_force_google_docx_and_connect_callback(self):
+        Config.settings["closeTable"] = False
+        window = _FakeMainWindow()
+        callback = lambda payload: payload
+
+        window.openCreateDocWindow(
+            (1, [["row"]]),
+            force_google_docx=True,
+            on_document_created=callback,
+        )
+
+        created_window = _FakeCreateDocWindow.instances[0]
+        self.assertTrue(created_window.googleDocxFormatRadio.checked)
+        self.assertFalse(created_window.docxFormatRadio.enabled)
+        self.assertFalse(created_window.pdfFormatRadio.enabled)
+        self.assertEqual(created_window.documentCreated.callbacks, [callback])
 
     @patch("app.ui.doc_export_flow_mixin.Tool.write_log")
     def test_export_docs_requires_loaded_table(self, write_log):

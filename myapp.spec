@@ -5,7 +5,12 @@ a = Analysis(
     ['run.py'],
     pathex=[],
     binaries=[],
-    datas=[('utilities', 'utilities'), ('database', 'database'), ('retrade.ui', '.')],
+    datas=[
+        ('utilities', 'utilities'),
+        ('database', 'database'),
+        ('retrade.ui', '.'),
+        ('ui/settingsAppGui.ui', 'ui'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSignalBlocker, Qt, QThread, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -181,6 +181,10 @@ class AuthStatusWorker(QThread):
 
 
 class PlatformMixin:
+    SEARCH_DEBOUNCE_MS = 250
+    MIN_SEARCH_CHARS = 3
+    TRADE_AUTOSIZE_ROW_LIMIT = 200
+
     TRADE_HEADERS = (
         "id",
         "title",
@@ -200,6 +204,10 @@ class PlatformMixin:
         self._auth_login_worker: AuthLoginWorker | None = None
         self._auth_status_worker: AuthStatusWorker | None = None
         self._ensure_platform_tab()
+        self._platform_search_timer = QTimer(self)
+        self._platform_search_timer.setSingleShot(True)
+        self._platform_search_timer.setInterval(self.SEARCH_DEBOUNCE_MS)
+        self._platform_search_timer.timeout.connect(self.apply_filters)
         self._apply_web_auth_autofill_if_enabled()
         self.btn_login.clicked.connect(self.login)
         self.btn_load_trades.clicked.connect(self.load_trades_clicked)
@@ -464,14 +472,39 @@ class PlatformMixin:
             pass
         table.itemDoubleClicked.connect(self.on_trade_double_click)
 
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         configure_table_autosize(table)
+        self._set_trades_table_fast_resize_mode(table)
+
+    @staticmethod
+    def _set_trades_table_fast_resize_mode(
+        table: QTableWidget,
+        *,
+        apply_default_widths: bool = True,
+    ) -> None:
+        header = table.horizontalHeader()
+        interactive = QHeaderView.ResizeMode.Interactive
+        header.setSectionResizeMode(0, interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, interactive)
+        header.setSectionResizeMode(3, interactive)
+        header.setSectionResizeMode(4, interactive)
+        header.setSectionResizeMode(5, interactive)
+
+        vertical_header = table.verticalHeader()
+        vertical_header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        vertical_header.setDefaultSectionSize(24)
+        vertical_header.setMinimumSectionSize(20)
+
+        if apply_default_widths:
+            for column, width in (
+                (0, 86),
+                (1, 420),
+                (2, 150),
+                (3, 170),
+                (4, 170),
+                (5, 100),
+            ):
+                table.setColumnWidth(column, width)
 
     @staticmethod
     def _normalize_cookies(raw: Any) -> dict[str, str]:
@@ -987,63 +1020,75 @@ class PlatformMixin:
         rows = trades if isinstance(trades, list) else []
         today = datetime.now()
         sorting_enabled = table.isSortingEnabled()
+        updates_enabled = table.updatesEnabled()
 
+        self._set_trades_table_fast_resize_mode(table)
         table.setSortingEnabled(False)
         blocker = QSignalBlocker(table)
-        table.clearContents()
-        table.setRowCount(len(rows))
+        table.setUpdatesEnabled(False)
+        try:
+            table.clearContents()
+            table.setRowCount(len(rows))
 
-        for row_idx, trade in enumerate(rows):
-            if not isinstance(trade, dict):
-                continue
+            for row_idx, trade in enumerate(rows):
+                if not isinstance(trade, dict):
+                    continue
 
-            currency = trade.get("currency")
-            currency_title = ""
-            if isinstance(currency, dict):
-                currency_title = str(currency.get("title", "") or "")
+                currency = trade.get("currency")
+                currency_title = ""
+                if isinstance(currency, dict):
+                    currency_title = str(currency.get("title", "") or "")
 
-            values = (
-                trade.get("id", ""),
-                trade.get("title", ""),
-                trade.get("registeredNumber", ""),
-                trade.get("bidSubmissionStartDate", ""),
-                trade.get("bidSubmissionEndDate", ""),
-                currency_title,
-            )
+                values = (
+                    trade.get("id", ""),
+                    trade.get("title", ""),
+                    trade.get("registeredNumber", ""),
+                    trade.get("bidSubmissionStartDate", ""),
+                    trade.get("bidSubmissionEndDate", ""),
+                    currency_title,
+                )
 
-            end_date = trade.get("bidSubmissionEndDate")
-            if end_date:
-                try:
-                    dt = datetime.fromisoformat(str(end_date).replace("Z", ""))
-                    diff = (dt - today).days
-                    if diff <= 1:
-                        color = QColor(255, 200, 200)
-                    elif diff <= 3:
-                        color = QColor(255, 255, 200)
-                    else:
-                        color = QColor(200, 255, 200)
-                except Exception:
-                    color = QColor(255, 255, 255)
-            else:
-                color = QColor(220, 220, 220)
+                end_date = trade.get("bidSubmissionEndDate")
+                if end_date:
+                    try:
+                        dt = datetime.fromisoformat(str(end_date).replace("Z", ""))
+                        diff = (dt - today).days
+                        if diff <= 1:
+                            color = QColor(255, 200, 200)
+                        elif diff <= 3:
+                            color = QColor(255, 255, 200)
+                        else:
+                            color = QColor(200, 255, 200)
+                    except Exception:
+                        color = QColor(255, 255, 255)
+                else:
+                    color = QColor(220, 220, 220)
 
-            for col_idx, value in enumerate(values):
-                item = QTableWidgetItem("" if value is None else str(value))
-                flags = item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
-                flags &= ~Qt.ItemFlag.ItemIsEditable
-                item.setFlags(flags)
-                if col_idx == 0:
-                    item.setData(Qt.ItemDataRole.UserRole, trade)
-                table.setItem(row_idx, col_idx, item)
-
-            for col_idx in range(table.columnCount()):
-                item = table.item(row_idx, col_idx)
-                if item:
+                for col_idx, value in enumerate(values):
+                    item = QTableWidgetItem("" if value is None else str(value))
+                    flags = (
+                        item.flags()
+                        | Qt.ItemFlag.ItemIsSelectable
+                        | Qt.ItemFlag.ItemIsEnabled
+                    )
+                    flags &= ~Qt.ItemFlag.ItemIsEditable
+                    item.setFlags(flags)
                     item.setBackground(color)
+                    if col_idx == 0:
+                        item.setData(Qt.ItemDataRole.UserRole, trade)
+                    table.setItem(row_idx, col_idx, item)
+        finally:
+            del blocker
+            table.setSortingEnabled(sorting_enabled)
+            table.setUpdatesEnabled(updates_enabled)
 
-        del blocker
-        table.setSortingEnabled(sorting_enabled)
-        resize_table_to_contents(table)
+        if len(rows) <= self.TRADE_AUTOSIZE_ROW_LIMIT:
+            resize_table_to_contents(table)
+            self._set_trades_table_fast_resize_mode(table, apply_default_widths=False)
+        else:
+            viewport = table.viewport()
+            if viewport is not None:
+                viewport.update()
 
     def on_trade_double_click(self, item: QTableWidgetItem) -> None:
         row = item.row()
@@ -1069,29 +1114,79 @@ class PlatformMixin:
         print("Открываем заявку:", trade_id)
 
     def apply_search(self, _: str = "") -> None:
+        timer = getattr(self, "_platform_search_timer", None)
+        if isinstance(timer, QTimer):
+            timer.start()
+            return
         self.apply_filters()
 
     def apply_filters(self, _: int = 0) -> None:
-        trades = list(self.all_trades) if isinstance(self.all_trades, list) else []
+        timer = getattr(self, "_platform_search_timer", None)
+        if isinstance(timer, QTimer) and timer.isActive():
+            timer.stop()
 
-        if self.checkbox_active.isChecked():
-            trades = [
-                trade
-                for trade in trades
-                if isinstance(trade, dict) and trade.get("bidSubmissionEndDate") is not None
-            ]
+        search_text = self._normalize_search_text(self.search_input.text())
+        if self._is_search_text_too_short(search_text):
+            self.filtered_trades = []
+            self.populate_trades_table([])
+            self._show_platform_status(
+                f"Введите минимум {self.MIN_SEARCH_CHARS} символа для поиска"
+            )
+            return
 
-        text = self.search_input.text().lower().strip()
-        if text:
-            trades = [
-                trade
-                for trade in trades
-                if isinstance(trade, dict)
-                and (
-                    text in (trade.get("title", "") or "").lower()
-                    or text in str(trade.get("registeredNumber", "")).lower()
-                )
-            ]
+        trades = self._filter_trades(
+            self.all_trades,
+            active_only=self.checkbox_active.isChecked(),
+            search_text=search_text,
+        )
 
         self.filtered_trades = trades
         self.populate_trades_table(self.filtered_trades)
+
+    @staticmethod
+    def _normalize_search_text(value: Any) -> str:
+        return " ".join(str(value or "").casefold().split())
+
+    @classmethod
+    def _is_search_text_too_short(cls, search_text: str) -> bool:
+        return bool(search_text) and len(search_text) < cls.MIN_SEARCH_CHARS
+
+    @classmethod
+    def _filter_trades(
+        cls,
+        trades: list[dict[str, Any]] | Any,
+        *,
+        active_only: bool,
+        search_text: str,
+    ) -> list[dict[str, Any]]:
+        rows = (
+            [trade for trade in trades if isinstance(trade, dict)]
+            if isinstance(trades, list)
+            else []
+        )
+
+        if active_only:
+            rows = [
+                trade
+                for trade in rows
+                if trade.get("bidSubmissionEndDate") is not None
+            ]
+
+        text = cls._normalize_search_text(search_text)
+        if not text:
+            return rows
+
+        return [
+            trade
+            for trade in rows
+            if (
+                text in cls._normalize_search_text(trade.get("title", ""))
+                or text in cls._normalize_search_text(trade.get("registeredNumber", ""))
+            )
+        ]
+
+    def _show_platform_status(self, message: str, timeout_ms: int = 3000) -> None:
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(message, timeout_ms)

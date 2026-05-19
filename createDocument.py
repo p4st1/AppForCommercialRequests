@@ -48,6 +48,7 @@ class Dialog:
 
 class mainWindow(QMainWindow):
     windowClosed = Signal()
+    documentCreated = Signal(dict)
     SUMMARY_COLUMNS = 9
     FORMAT_DOCX = "docx"
     FORMAT_PDF = "pdf"
@@ -579,6 +580,13 @@ QCheckBox::indicator, QRadioButton::indicator {
             remote_url=remote_url,
         )
         self.history_service.save()
+        self.documentCreated.emit(
+            {
+                "output_path": str(getattr(export_result, "output_path", "") or ""),
+                "remote_url": remote_url,
+                "customer_data": confirmedSuppliers[0],
+            }
+        )
 
         if self.checkbox_participate.isChecked():
             try:

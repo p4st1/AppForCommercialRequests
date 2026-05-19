@@ -19,6 +19,7 @@ class GoogleDriveUploadResult:
 class GoogleDriveService:
     SCOPES = ("https://www.googleapis.com/auth/drive.file",)
     DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     TOKEN_FILE_NAME = "google_drive_token.json"
 
     @classmethod
@@ -42,9 +43,41 @@ class GoogleDriveService:
         return credentials_path is not None and credentials_path.is_file()
 
     def upload_docx(self, file_path: str | Path) -> GoogleDriveUploadResult:
+        return self._upload_file(
+            file_path,
+            mimetype=self.DOCX_MIME_TYPE,
+            missing_label="DOCX",
+        )
+
+    def upload_excel(self, file_path: str | Path) -> GoogleDriveUploadResult:
+        return self._upload_file(
+            file_path,
+            mimetype=self.XLSX_MIME_TYPE,
+            missing_label="XLSX",
+        )
+
+    def update_excel(
+        self,
+        file_id: str,
+        file_path: str | Path,
+    ) -> GoogleDriveUploadResult:
+        return self._update_file(
+            file_id,
+            file_path,
+            mimetype=self.XLSX_MIME_TYPE,
+            missing_label="XLSX",
+        )
+
+    def _upload_file(
+        self,
+        file_path: str | Path,
+        *,
+        mimetype: str,
+        missing_label: str,
+    ) -> GoogleDriveUploadResult:
         source_path = Path(file_path).expanduser()
         if not source_path.is_file():
-            raise FileNotFoundError(f"Файл DOCX не найден: {source_path}")
+            raise FileNotFoundError(f"Файл {missing_label} не найден: {source_path}")
 
         credentials = self._load_credentials()
         build, media_file_upload = self._load_drive_client_symbols()
@@ -57,7 +90,7 @@ class GoogleDriveService:
         drive = build("drive", "v3", credentials=credentials, cache_discovery=False)
         media = media_file_upload(
             str(source_path),
-            mimetype=self.DOCX_MIME_TYPE,
+            mimetype=mimetype,
             resumable=True,
         )
         uploaded = (
@@ -81,6 +114,51 @@ class GoogleDriveService:
         return GoogleDriveUploadResult(
             file_id=file_id,
             name=str(uploaded.get("name", "") or source_path.name),
+            web_view_link=web_view_link,
+        )
+
+    def _update_file(
+        self,
+        file_id: str,
+        file_path: str | Path,
+        *,
+        mimetype: str,
+        missing_label: str,
+    ) -> GoogleDriveUploadResult:
+        normalized_file_id = str(file_id or "").strip()
+        if not normalized_file_id:
+            raise ValueError("Не указан id файла Google Drive для обновления")
+
+        source_path = Path(file_path).expanduser()
+        if not source_path.is_file():
+            raise FileNotFoundError(f"Файл {missing_label} не найден: {source_path}")
+
+        credentials = self._load_credentials()
+        build, media_file_upload = self._load_drive_client_symbols()
+        drive = build("drive", "v3", credentials=credentials, cache_discovery=False)
+        media = media_file_upload(
+            str(source_path),
+            mimetype=mimetype,
+            resumable=True,
+        )
+        updated = (
+            drive.files()
+            .update(
+                fileId=normalized_file_id,
+                media_body=media,
+                fields="id,name,webViewLink",
+            )
+            .execute()
+        )
+
+        updated_file_id = str(updated.get("id", "") or normalized_file_id).strip()
+        web_view_link = str(updated.get("webViewLink", "") or "").strip()
+        if not web_view_link:
+            web_view_link = f"https://drive.google.com/file/d/{updated_file_id}/view"
+
+        return GoogleDriveUploadResult(
+            file_id=updated_file_id,
+            name=str(updated.get("name", "") or source_path.name),
             web_view_link=web_view_link,
         )
 

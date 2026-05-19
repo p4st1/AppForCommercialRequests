@@ -1062,26 +1062,45 @@ query tradeWithCurrentStage($id: Int) {
         target_path_resolved = target_path.expanduser().resolve()
 
         try:
-            self._log_submission_export("opening bids/new page")
-            self._log_submission_export(f"lot_id={lot_id_int}")
-            submission_url = self._build_submission_export_url(lot_id_int)
-            page.goto(
-                submission_url,
-                wait_until="domcontentloaded",
-                timeout=max(60_000, self._timeout_ms),
-            )
-            try:
-                page.wait_for_load_state("networkidle", timeout=10_000)
-            except Exception as exc:
+            opened_via_trade_page = False
+            if trade_id_int is not None:
                 self._log_submission_export(
-                    f"networkidle timeout ignored: {str(exc).splitlines()[0]}"
+                    "opening trade page first for submission export"
                 )
-            self._ensure_submission_export_page(
-                page,
-                lot_id=lot_id_int,
-                trade_id=trade_id_int,
-                trade_search_text=trade_search_text,
-            )
+                try:
+                    self._open_submission_export_page_via_trade(
+                        page,
+                        trade_id=trade_id_int,
+                        lot_id=lot_id_int,
+                    )
+                    opened_via_trade_page = True
+                except Exception as exc:
+                    self._log_submission_export(
+                        "trade page first route failed: "
+                        f"{str(exc).splitlines()[0]}"
+                    )
+
+            if not opened_via_trade_page:
+                self._log_submission_export("opening bids/new page")
+                self._log_submission_export(f"lot_id={lot_id_int}")
+                submission_url = self._build_submission_export_url(lot_id_int)
+                page.goto(
+                    submission_url,
+                    wait_until="domcontentloaded",
+                    timeout=max(60_000, self._timeout_ms),
+                )
+                try:
+                    page.wait_for_load_state("networkidle", timeout=10_000)
+                except Exception as exc:
+                    self._log_submission_export(
+                        f"networkidle timeout ignored: {str(exc).splitlines()[0]}"
+                    )
+                self._ensure_submission_export_page(
+                    page,
+                    lot_id=lot_id_int,
+                    trade_id=trade_id_int,
+                    trade_search_text=trade_search_text,
+                )
 
             self._wait_for_any_selector(
                 page,
@@ -1524,6 +1543,36 @@ query tradeWithCurrentStage($id: Int) {
         if not cookies:
             raise ValueError("Не найдены cookies для авторизации в config.json")
         return cookies
+
+    def _resolve_submission_trade_id(
+        self,
+        *,
+        cookies: dict[str, str],
+        lot_id: int,
+        trade_id: int | None,
+    ) -> int | None:
+        if trade_id is not None:
+            return trade_id
+
+        session = self._build_api_session(cookies)
+        try:
+            resolved_trade_id = self._resolve_trade_id_by_lot_id(
+                session=session,
+                lot_id=lot_id,
+            )
+        except Exception as exc:
+            self._log_submission_export(
+                "trade_id resolve by lot_id failed: "
+                f"{str(exc).splitlines()[0]}"
+            )
+            return None
+        finally:
+            session.close()
+
+        self._log_submission_export(
+            f"resolved trade_id={resolved_trade_id} by lot_id={lot_id}"
+        )
+        return resolved_trade_id
 
     @staticmethod
     def _has_trade_payload(trade_payload: dict[str, Any]) -> bool:
@@ -2014,6 +2063,11 @@ query tradeWithCurrentStage($id: Int) {
         )
         target_path = self._validate_target_path(download_path)
         cookies = self._load_cookies_for_export()
+        trade_id_int = self._resolve_submission_trade_id(
+            cookies=cookies,
+            lot_id=lot_id_int,
+            trade_id=trade_id_int,
+        )
         playwright_cookies = self._build_playwright_cookies(cookies)
         if not playwright_cookies:
             raise RuntimeError("Не удалось подготовить cookies для Playwright")

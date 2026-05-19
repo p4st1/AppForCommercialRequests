@@ -93,6 +93,7 @@ class HistoryService:
         total_amount: float,
         currency: str,
         file_path: str,
+        remote_url: str = "",
         notes: str = "Экспорт расчетной таблицы",
     ) -> int:
         return self._offer_repository.add_history_event(
@@ -101,11 +102,28 @@ class HistoryService:
             total_amount=total_amount,
             currency=currency,
             file_path=file_path,
+            remote_url=remote_url,
             notes=notes,
         )
 
-    def get_history(self, *, limit: int = 1000):
-        return self._offer_repository.get_history(limit=limit)
+    def get_history(
+        self,
+        *,
+        limit: int = 1000,
+        customer_query: str = "",
+        event_type: str = "",
+        date_from: str = "",
+        date_to: str = "",
+        search_text: str = "",
+    ):
+        return self._offer_repository.get_history(
+            limit=limit,
+            customer_query=customer_query,
+            event_type=event_type,
+            date_from=date_from,
+            date_to=date_to,
+            search_text=search_text,
+        )
 
     def delete_event(self, event_id: int):
         self._offer_repository.delete_history_event(event_id=event_id)
