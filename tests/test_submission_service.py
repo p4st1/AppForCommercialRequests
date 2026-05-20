@@ -115,6 +115,27 @@ class SubmissionServiceTests(unittest.TestCase):
         self.assertEqual(rows[0].unit_price, 100.0)
         self.assertEqual(rows[0].delivery_time, "30 дней")
 
+    def test_currency_from_matrix_detects_export_header_code(self):
+        currency = SubmissionService._currency_from_matrix(
+            [
+                [
+                    "Наименование",
+                    "Предлагаемая цена за ед. (без учета НДС)",
+                    "Сумма, CNY (без учета НДС)",
+                ],
+                ["Насос", "100", "200"],
+            ]
+        )
+
+        self.assertEqual(currency, "CNY")
+
+    def test_normalize_currency_code_accepts_symbols_and_names(self):
+        self.assertEqual(SubmissionService.normalize_currency_code("рубли"), "RUB")
+        self.assertEqual(SubmissionService.normalize_currency_code("1 000,00 ₽"), "RUB")
+        self.assertEqual(SubmissionService.normalize_currency_code("юани"), "CNY")
+        self.assertEqual(SubmissionService.normalize_currency_code("CYN"), "CNY")
+        self.assertEqual(SubmissionService.normalize_currency_code("USD"), "USD")
+
     def test_load_csv_detects_semicolon_delimiter(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             file_path = Path(tmpdir) / "submission.csv"

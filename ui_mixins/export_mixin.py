@@ -4068,6 +4068,12 @@ QTableWidget::indicator {{
             "payment_condition": str(
                 context.get("payment_condition", "") or ""
             ).strip(),
+            "supplier_status": str(context.get("supplier_status", "") or "").strip(),
+            "warranty": str(
+                context.get("warranty", "")
+                or context.get("guarantee", "")
+                or ""
+            ).strip(),
         }
 
     def _set_pending_submission_export_metadata(
@@ -4097,6 +4103,10 @@ QTableWidget::indicator {{
             metadata["payment_terms"] = context_metadata["payment_condition"]
         if context_metadata["payment_condition"]:
             metadata["payment_condition"] = context_metadata["payment_condition"]
+        if context_metadata["supplier_status"]:
+            metadata["supplier_status"] = context_metadata["supplier_status"]
+        if context_metadata["warranty"]:
+            metadata["warranty"] = context_metadata["warranty"]
         self._pending_submission_export_metadata = metadata
 
     def _start_export_worker(
@@ -4349,7 +4359,13 @@ QTableWidget::indicator {{
             return self.EXPORT_MISMATCH_OPEN_AND_COPY
         return self.EXPORT_MISMATCH_CANCEL
 
-    def get_table_rows(self, *, default_manufacturer: str = "") -> list[dict]:
+    def get_table_rows(
+        self,
+        *,
+        default_manufacturer: str = "",
+        default_supplier_status: str = "",
+        default_warranty: str = "",
+    ) -> list[dict]:
         table = getattr(getattr(self, "ui", None), "KpTable", None)
         if table is None:
             return []
@@ -4380,6 +4396,10 @@ QTableWidget::indicator {{
                 if kind == "qty" and ("колво" in normalized or "количество" in normalized):
                     return column
                 if kind == "manufacturer" and "производ" in normalized:
+                    return column
+                if kind == "supplier_status" and "статус" in normalized and "постав" in normalized:
+                    return column
+                if kind == "warranty" and "гарант" in normalized:
                     return column
                 if kind == "sale_price" and (
                     "ценареализациизаедбезндс" in normalized
@@ -4428,7 +4448,11 @@ QTableWidget::indicator {{
         delivery_col = 13 if 13 < column_count else None
         supplier_delivery_col = 14 if 14 < column_count else None
         manufacturer_col = find_column("manufacturer")
+        supplier_status_col = find_column("supplier_status")
+        warranty_col = find_column("warranty")
         default_manufacturer_text = str(default_manufacturer or "").strip()
+        default_supplier_status_text = str(default_supplier_status or "").strip()
+        default_warranty_text = str(default_warranty or "").strip()
 
         def cell_text(row: int, column: int | None) -> str:
             if column is None or column < 0 or column >= column_count:
@@ -4461,6 +4485,12 @@ QTableWidget::indicator {{
             manufacturer = cell_text(row_index, manufacturer_col)
             if not manufacturer:
                 manufacturer = default_manufacturer_text
+            supplier_status = cell_text(row_index, supplier_status_col)
+            if not supplier_status:
+                supplier_status = default_supplier_status_text
+            warranty = cell_text(row_index, warranty_col)
+            if not warranty:
+                warranty = default_warranty_text
 
             rows.append(
                 {
@@ -4476,6 +4506,9 @@ QTableWidget::indicator {{
                     "manufacturer": manufacturer,
                     "tech_characteristics": manufacturer,
                     "technical_characteristics": manufacturer,
+                    "supplier_status": supplier_status,
+                    "warranty": warranty,
+                    "guarantee": warranty,
                 }
             )
 
@@ -4632,8 +4665,21 @@ QTableWidget::indicator {{
                     or metadata.get("manufacturer", "")
                     or ""
                 ).strip()
+                default_supplier_status = str(
+                    metadata.get("supplier_status", "") or ""
+                ).strip()
+                default_warranty = str(
+                    metadata.get("warranty", "")
+                    or metadata.get("guarantee", "")
+                    or ""
+                ).strip()
+            else:
+                default_supplier_status = ""
+                default_warranty = ""
             source_rows = self.get_table_rows(
                 default_manufacturer=default_manufacturer,
+                default_supplier_status=default_supplier_status,
+                default_warranty=default_warranty,
             )
             if not source_rows:
                 Tool.write_log(

@@ -86,6 +86,12 @@ class DocExportFlowMixin:
             "payment_condition": str(
                 context.get("payment_condition", "") or ""
             ).strip(),
+            "supplier_status": str(context.get("supplier_status", "") or "").strip(),
+            "warranty": str(
+                context.get("warranty", "")
+                or context.get("guarantee", "")
+                or ""
+            ).strip(),
         }
         if not result["offer_validity_period"]:
             result["offer_validity_period"] = cls._default_submission_offer_validity_period()

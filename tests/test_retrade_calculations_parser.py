@@ -751,6 +751,39 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertEqual(rows[0]["manufacturer"], "Завод")
         self.assertEqual(rows[0]["technical_characteristics"], "Завод")
 
+    def test_get_table_rows_applies_submission_defaults(self):
+        headers = [
+            "№",
+            "Наименование",
+            "Каталожный номер",
+            "Ед. изм.",
+            "Кол-во",
+            "Цена за ед. без НДС",
+            "Итого без НДС",
+            "Логистика",
+            "Таможня",
+            "Цена за ед",
+            "Цена реализации за ед. без НДС",
+            "Итого реализации без НДС",
+            "Итого реализации с НДС",
+            "Срок поставки",
+            "Срок поставщика",
+        ]
+        table = _FakeEditableTable(
+            [["1", "Насос", "P-1", "шт", 2, 100, 200, "", "", "", 150, 300, 360, "30 дней", "20 дней"]],
+            headers=headers,
+        )
+        window = ExportMixin()
+        window.ui = SimpleNamespace(KpTable=table)
+
+        rows = window.get_table_rows(
+            default_supplier_status="Посредник",
+            default_warranty="12 мес.",
+        )
+
+        self.assertEqual(rows[0]["supplier_status"], "Посредник")
+        self.assertEqual(rows[0]["warranty"], "12 мес.")
+
     def test_format_missing_retrade_required_cells_message(self):
         message = ExportMixin._format_missing_retrade_required_cells_message(
             [

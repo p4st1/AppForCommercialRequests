@@ -110,6 +110,41 @@ class SubmissionValidationIssue:
 
 
 class SubmissionService:
+    CURRENCY_CODES = {
+        "AUD",
+        "BYN",
+        "CHF",
+        "CNY",
+        "EUR",
+        "GBP",
+        "INR",
+        "JPY",
+        "KZT",
+        "RSD",
+        "RUB",
+        "TRY",
+        "UAH",
+        "USD",
+    }
+    CURRENCY_ALIASES = {
+        "₽": "RUB",
+        "руб": "RUB",
+        "рубл": "RUB",
+        "rur": "RUB",
+        "$": "USD",
+        "доллар": "USD",
+        "usd": "USD",
+        "€": "EUR",
+        "евро": "EUR",
+        "eur": "EUR",
+        "¥": "CNY",
+        "юан": "CNY",
+        "yuan": "CNY",
+        "cny": "CNY",
+        "cyn": "CNY",
+        "тенге": "KZT",
+        "kzt": "KZT",
+    }
     REQUIRED_HEADER_FIELDS = {
         "number": "Номер заявки",
         "title": "Название заявки",
@@ -128,6 +163,115 @@ class SubmissionService:
         "supplier_status": "Статус поставщика",
         "warranty": "Гарантия",
     }
+
+    @classmethod
+    def normalize_currency_code(cls, value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+
+        upper_text = text.upper()
+        for code in sorted(cls.CURRENCY_CODES, key=len, reverse=True):
+            if re.search(rf"(?<![A-Z]){re.escape(code)}(?![A-Z])", upper_text):
+                return code
+
+        normalized = text.casefold().replace("ё", "е")
+        compact = re.sub(r"\s+", " ", normalized)
+        for alias, code in cls.CURRENCY_ALIASES.items():
+            if alias in compact:
+                return code
+        return ""
+
+    @classmethod
+    def _currency_from_matrix(cls, matrix: list[list[Any]]) -> str:
+        currency_columns = []
+        plain_cells = []
+        for row in matrix[:30]:
+            for cell in list(row or [])[:80]:
+                text = str(cell or "").strip()
+                if not text:
+                    continue
+                normalized = cls._normalize_header(text)
+                if (
+                    "валют" in normalized
+                    or "сумма" in normalized
+                    or "цена" in normalized
+                    or "стоим" in normalized
+                ):
+                    currency_columns.append(text)
+                else:
+                    plain_cells.append(text)
+
+        for text in currency_columns + plain_cells:
+            code = cls.normalize_currency_code(text)
+            if code:
+                return code
+        return ""
+
+    @classmethod
+    def detect_currency(cls, file_path: str | Path) -> str:
+        path = Path(file_path).expanduser()
+        if not path.exists() or not path.is_file():
+            return ""
+
+        suffix = path.suffix.lower()
+        try:
+            if suffix == ".docx":
+                from docx import Document
+
+                document = Document(str(path))
+                matrix: list[list[Any]] = []
+                for table in document.tables:
+                    matrix.extend([[cell.text for cell in row.cells] for row in table.rows])
+                return cls._currency_from_matrix(matrix)
+
+            if suffix in {".xlsx", ".xlsm", ".xltx", ".xltm"}:
+                from openpyxl import load_workbook
+
+                workbook = load_workbook(path, read_only=True, data_only=True)
+                try:
+                    worksheet = workbook.active
+                    max_row = min(int(worksheet.max_row or 1), 30)
+                    max_column = min(int(worksheet.max_column or 1), 80)
+                    matrix = []
+                    for row_index in range(1, max_row + 1):
+                        row_values = []
+                        for column_index in range(1, max_column + 1):
+                            cell = worksheet.cell(
+                                row=row_index,
+                                column=column_index,
+                            )
+                            row_values.append(cell.value)
+                            number_format = str(cell.number_format or "")
+                            if number_format and number_format != "General":
+                                row_values.append(number_format)
+                        matrix.append(row_values)
+                    return cls._currency_from_matrix(matrix)
+                finally:
+                    workbook.close()
+
+            if suffix == ".csv":
+                try:
+                    text = path.read_text(encoding="utf-8-sig")
+                except UnicodeDecodeError:
+                    text = path.read_text(encoding="cp1251")
+                sample = text[:4096]
+                try:
+                    dialect = csv.Sniffer().sniff(sample, delimiters=";,\t")
+                    delimiter = dialect.delimiter
+                except csv.Error:
+                    delimiter = ";" if sample.count(";") >= sample.count(",") else ","
+                matrix = list(csv.reader(text.splitlines()[:30], delimiter=delimiter))
+                return cls._currency_from_matrix(matrix)
+
+            if suffix == ".xls":
+                import pandas as pd
+
+                dataframe = pd.read_excel(path, header=None, nrows=30)
+                return cls._currency_from_matrix(dataframe.values.tolist())
+        except Exception:
+            return ""
+        return ""
 
     @staticmethod
     def parse_number(value: Any) -> float | None:
@@ -225,7 +369,8 @@ class SubmissionService:
             number=str(header.number or "").strip(),
             title=str(header.title or "").strip(),
             customer=str(header.customer or "").strip(),
-            currency=str(header.currency or "").strip(),
+            currency=cls.normalize_currency_code(header.currency)
+            or str(header.currency or "").strip(),
             offer_validity_period=str(
                 getattr(header, "offer_validity_period", "") or ""
             ).strip(),

@@ -298,6 +298,8 @@ class DocExportFlowMixinTests(unittest.TestCase):
             "delivery_order": "",
             "payment_terms": "",
             "payment_condition": "",
+            "supplier_status": "Посредник",
+            "warranty": "12 мес.",
         }
         window.run_web_pipeline("A-100", submission_context=context)
         window.all_trades = [
@@ -322,6 +324,8 @@ class DocExportFlowMixinTests(unittest.TestCase):
         context = window._web_pipeline_submission_context
         self.assertEqual(context["customer"], "ООО Тест")
         self.assertRegex(context["offer_validity_period"], r"^\d{2}\.\d{2}\.\d{4}$")
+        self.assertEqual(context["supplier_status"], "")
+        self.assertEqual(context["warranty"], "")
 
     @patch("app.ui.doc_export_flow_mixin.QMessageBox.warning")
     def test_on_trades_loaded_shows_warning_when_trade_not_found(self, warning):

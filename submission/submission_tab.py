@@ -415,6 +415,7 @@ class SubmissionTabMixin:
         self._submission_loaded_kp_rows = rows
         self._submission_loaded_kp_path = file_path
         self._submission_lot_id = ""
+        self._set_submission_currency_from_file(file_path)
         self._set_submission_status("idle", f"КП загружено: {len(rows)} поз.")
         status_bar = self.statusBar() if callable(getattr(self, "statusBar", None)) else None
         if status_bar is not None:
@@ -442,6 +443,7 @@ class SubmissionTabMixin:
         self._submission_loaded_kp_rows = rows
         self._submission_loaded_kp_path = str(path)
         self._submission_lot_id = self._submission_lot_id_from_export_path(path)
+        self._set_submission_currency_from_file(path)
         self._set_submission_rows(rows)
         self._set_submission_status("idle", f"Загружено из экспорта: {len(rows)} поз.")
         self.activate_submission_tab()
@@ -451,11 +453,60 @@ class SubmissionTabMixin:
             status_bar.showMessage("Экспорт загружен во вкладку Подача заявки", 5_000)
         return len(rows)
 
+    def _set_submission_currency_from_file(self, file_path: str | Path) -> None:
+        currency = self.submission_service.detect_currency(file_path)
+        self._submission_export_detected_currency = currency
+        if currency:
+            blocker = QSignalBlocker(self.submission_currency_input)
+            try:
+                self.submission_currency_input.setText(currency)
+            finally:
+                del blocker
+
+    def _apply_submission_row_defaults(self, metadata: dict[str, Any]) -> None:
+        if not isinstance(metadata, dict):
+            return
+
+        field_values = {
+            "supplier_status": str(metadata.get("supplier_status", "") or "").strip(),
+            "warranty": str(
+                metadata.get("warranty", "")
+                or metadata.get("guarantee", "")
+                or ""
+            ).strip(),
+        }
+        field_values = {key: value for key, value in field_values.items() if value}
+        if not field_values:
+            return
+
+        column_by_field = {field: index for index, field in enumerate(FIELD_ORDER)}
+        self._updating_submission_table = True
+        blocker = QSignalBlocker(self.submission_table)
+        try:
+            for row in range(self.submission_table.rowCount()):
+                if not self._submission_row_has_content(row):
+                    continue
+                for field, value in field_values.items():
+                    column = column_by_field.get(field)
+                    if column is None or self._submission_item_text(row, column):
+                        continue
+                    self._ensure_submission_item(row, column).setText(value)
+        finally:
+            del blocker
+            self._updating_submission_table = False
+        self._update_submission_total()
+
     def apply_submission_export_metadata(self, metadata: dict[str, Any] | None) -> None:
         if not isinstance(metadata, dict):
             return
 
         self._ensure_submission_tab()
+        metadata = dict(metadata)
+        detected_currency = str(
+            getattr(self, "_submission_export_detected_currency", "") or ""
+        ).strip()
+        if detected_currency:
+            metadata["currency"] = detected_currency
         lot_id = str(metadata.get("lot_id", "") or "").strip()
         if lot_id:
             self._submission_lot_id = lot_id
@@ -472,12 +523,15 @@ class SubmissionTabMixin:
         try:
             for key, input_widget in field_map:
                 value = str(metadata.get(key, "") or "").strip()
+                if key == "currency":
+                    value = self.submission_service.normalize_currency_code(value) or value
                 if not value:
                     continue
                 blockers.append(QSignalBlocker(input_widget))
                 input_widget.setText(value)
         finally:
             blockers.clear()
+        self._apply_submission_row_defaults(metadata)
 
     @staticmethod
     def _submission_lot_id_from_export_path(path: str | Path) -> str:
