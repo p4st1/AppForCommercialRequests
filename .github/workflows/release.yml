@@ -99,15 +99,35 @@ jobs:
           python -m pip install -U pip
           pip install -r requirements.txt
           pip install -U pyinstaller PySide6 python-docx
-          PLAYWRIGHT_BROWSERS_PATH=0 python -m playwright install chromium
 
-      - name: Resolve Playwright browsers path (site-packages)
+      - name: Install Playwright Chromium (Windows)
+        if: runner.os == 'Windows'
         shell: bash
         run: |
           set -eux
+          PLAYWRIGHT_BROWSERS_PATH=0 python -m playwright install chromium
+
           PW_BROWSERS="$(python -c "from pathlib import Path; import playwright; print(Path(playwright.__file__).resolve().parent / 'driver' / 'package' / '.local-browsers')")"
           echo "PW_BROWSERS=$PW_BROWSERS" >> "$GITHUB_ENV"
           test -d "$PW_BROWSERS"
+          find "$PW_BROWSERS" -maxdepth 4 -type f | head -n 20
+
+      - name: Install Playwright Chromium (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -eux
+          PW_SITE_BROWSERS="$(python -c "from pathlib import Path; import playwright; print(Path(playwright.__file__).resolve().parent / 'driver' / 'package' / '.local-browsers')")"
+          rm -rf "$PW_SITE_BROWSERS"
+
+          PW_BROWSERS="$RUNNER_TEMP/playwright-browsers"
+          rm -rf "$PW_BROWSERS"
+          mkdir -p "$PW_BROWSERS"
+          PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS" python -m playwright install chromium
+
+          echo "PW_BROWSERS=$PW_BROWSERS" >> "$GITHUB_ENV"
+          test -d "$PW_BROWSERS"
+          test ! -d "$PW_SITE_BROWSERS"
           find "$PW_BROWSERS" -maxdepth 4 -type f | head -n 20
 
       - name: Verify import main
