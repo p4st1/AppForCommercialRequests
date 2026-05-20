@@ -72,7 +72,23 @@ class TableFilterMixin:
 
     def _apply_table_filters(self):
         table = self.ui.KpTable
-        for row in range(table.rowCount()):
+        row_count = table.rowCount()
+        if not self.columnFilters and not self.quickSearchText:
+            if (
+                getattr(self, "_table_filter_all_visible", False)
+                and getattr(self, "_table_filter_row_count", None) == row_count
+            ):
+                return
+
+            is_row_hidden = getattr(table, "isRowHidden", None)
+            for row in range(row_count):
+                if not callable(is_row_hidden) or is_row_hidden(row):
+                    table.setRowHidden(row, False)
+            self._table_filter_all_visible = True
+            self._table_filter_row_count = row_count
+            return
+
+        for row in range(row_count):
             is_visible = True
             for col, filter_spec in self.columnFilters.items():
                 item = table.item(row, col)
@@ -90,6 +106,8 @@ class TableFilterMixin:
                         break
                 is_visible = row_has_match
             table.setRowHidden(row, not is_visible)
+        self._table_filter_all_visible = False
+        self._table_filter_row_count = row_count
 
     def _clear_all_filters(self):
         self.columnFilters.clear()
@@ -177,4 +195,3 @@ class TableFilterMixin:
 
         self._refresh_filter_headers()
         self._apply_table_filters()
-

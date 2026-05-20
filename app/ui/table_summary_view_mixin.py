@@ -1,7 +1,7 @@
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableWidgetItem
 
-from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
+from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents, table_update_guard
 
 
 class TableSummaryViewMixin:
@@ -30,11 +30,12 @@ class TableSummaryViewMixin:
         table = self.ui.tableWidget_3
         rows = self.getTableData() if self.ui.KpTable.rowCount() > 0 else []
 
-        blocker = QSignalBlocker(table)
-        table.clearContents()
-        table.setRowCount(len(rows))
-        for row_idx, row_data in enumerate(rows):
-            for col_idx, value in enumerate(row_data):
-                table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
-        del blocker
+        with table_update_guard(table):
+            blocker = QSignalBlocker(table)
+            table.clearContents()
+            table.setRowCount(len(rows))
+            for row_idx, row_data in enumerate(rows):
+                for col_idx, value in enumerate(row_data):
+                    table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
+            del blocker
         resize_table_to_contents(table)

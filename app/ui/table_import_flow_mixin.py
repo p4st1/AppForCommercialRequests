@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-from app.ui.table_autosize import resize_table_to_contents
+from app.ui.table_autosize import resize_table_to_contents, table_update_guard
 from config import Config
 from tools import DatabaseTools as Tool
 
@@ -54,8 +54,9 @@ class TableImportFlowMixin:
             self.error("Ошибка", f"Невозможно прочитать таблицу\n{e}")
             return
 
-        self.ui.KpTable.setRowCount(len(parsed_rows))
-        self.tableData = {
+        table = self.ui.KpTable
+        summary_table = getattr(self.ui, "tableWidget_3", None)
+        table_data = {
             "amount": [],
             "currency": [],
             "unitPrice": [],
@@ -64,43 +65,52 @@ class TableImportFlowMixin:
             "logistic": [],
         }
 
-        blocker = QSignalBlocker(self.ui.KpTable)
-        for row_num, row in enumerate(parsed_rows):
-            total_price = self._round_money(row["qty"] * row["unitPrice"])
-            self._set_table_item(row_num, 0, row["number"], editable=True)
-            self._set_table_item(row_num, 1, row["name"], editable=True)
-            self._set_table_item(row_num, 2, row["sku"], editable=True)
-            self._set_table_item(row_num, 3, row["unit"], editable=True)
-            self._set_table_item(row_num, 4, row["qty"], editable=True)
-            self._set_table_item(
-                row_num,
-                5,
-                Tool.formatPrice(str(row["unitPrice"]), row["currency"]),
-                editable=True,
-            )
-            self._set_table_item(
-                row_num,
-                6,
-                Tool.formatPrice(str(total_price), row["currency"]),
-                editable=False,
-            )
-            self._set_table_item(row_num, 14, f"{row['supplierTermDays']} дней", editable=True)
+        with table_update_guard(table, summary_table):
+            table.setRowCount(len(parsed_rows))
+            blocker = QSignalBlocker(table)
+            for row_num, row in enumerate(parsed_rows):
+                total_price = self._round_money(row["qty"] * row["unitPrice"])
+                self._set_table_item(row_num, 0, row["number"], editable=True)
+                self._set_table_item(row_num, 1, row["name"], editable=True)
+                self._set_table_item(row_num, 2, row["sku"], editable=True)
+                self._set_table_item(row_num, 3, row["unit"], editable=True)
+                self._set_table_item(row_num, 4, row["qty"], editable=True)
+                self._set_table_item(
+                    row_num,
+                    5,
+                    Tool.formatPrice(str(row["unitPrice"]), row["currency"]),
+                    editable=True,
+                )
+                self._set_table_item(
+                    row_num,
+                    6,
+                    Tool.formatPrice(str(total_price), row["currency"]),
+                    editable=False,
+                )
+                self._set_table_item(row_num, 14, f"{row['supplierTermDays']} дней", editable=True)
 
-            self.tableData["amount"].append(row["qty"])
-            self.tableData["currency"].append(row["currency"])
-            self.tableData["unitPrice"].append(row["unitPrice"])
-            self.tableData["totalPrice"].append(total_price)
-            self.tableData["termDelivery"].append(row["supplierTermDays"])
-        del blocker
+                table_data["amount"].append(row["qty"])
+                table_data["currency"].append(row["currency"])
+                table_data["unitPrice"].append(row["unitPrice"])
+                table_data["totalPrice"].append(total_price)
+                table_data["termDelivery"].append(row["supplierTermDays"])
+            del blocker
 
-        self.rows = len(parsed_rows)
-        self._init_formula_expressions()
-        self._clear_undo_history()
-        self.mixedCurrencyWarningShown = False
-        self.logisticCalculate()
-        self.calculating()
-        resize_table_to_contents(self.ui.KpTable)
-        self._apply_table_filters()
+            self.tableData = table_data
+            self.rows = len(parsed_rows)
+            self._init_formula_expressions()
+            self._clear_undo_history()
+            self.mixedCurrencyWarningShown = False
+            self.logisticCalculate(apply_filters=False)
+            self.calculating(apply_filters=False, resize=False, update_summary=False)
+            if not getattr(self, "columnFilters", {}) and not getattr(self, "quickSearchText", ""):
+                self._table_filter_all_visible = True
+                self._table_filter_row_count = len(parsed_rows)
+            self._apply_table_filters()
+            resize_table_to_contents(table)
+            update_total_tab_table = getattr(self, "_update_total_tab_table", None)
+            if callable(update_total_tab_table):
+                update_total_tab_table()
 
         Config.config["lastTable"] = filename
         self.saveConfig()

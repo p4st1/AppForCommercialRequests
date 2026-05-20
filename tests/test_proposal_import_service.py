@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from app.services.proposal_import_service import ProposalImportService
 
@@ -117,6 +119,40 @@ class ProposalImportServiceTests(unittest.TestCase):
             self.service.parse_source_rows(df)
 
         self.assertIn("не найдено ни одной валидной строки", str(context.exception))
+
+    def test_read_source_table_reads_csv_without_pandas(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "input.csv"
+            path.write_text(
+                "№;Наименование;Каталожный номер;Ед.;Кол-во;Цена;Срок\n"
+                "1;Насос;SKU-1;шт;2;¥10,5;15 дней\n",
+                encoding="utf-8",
+            )
+
+            rows, warnings = self.service.load_source_rows(path)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Насос")
+        self.assertEqual(rows[0]["unitPrice"], 10.5)
+
+    def test_read_source_table_reads_xlsx_in_streaming_mode(self):
+        from openpyxl import Workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "input.xlsx"
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(["№", "Наименование", "Каталожный номер", "Ед.", "Кол-во", "Цена", "Срок"])
+            sheet.append(["1", "Клапан", "SKU-2", "шт", "3", "100 ₽", "20 дней"])
+            workbook.save(path)
+
+            rows, warnings = self.service.load_source_rows(path)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Клапан")
+        self.assertEqual(rows[0]["qty"], 3)
 
 
 if __name__ == "__main__":

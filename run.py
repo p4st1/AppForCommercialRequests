@@ -72,8 +72,12 @@ if __name__ == '__main__':
         Tool.write_log(f"Python path: {sys.prefix}")
         Tool.write_log(f"argv[0]: {sys.argv[0]}")
         Tool.write_log(f"frozen: {getattr(sys, 'frozen', False)}")
+        bundled_playwright_browsers = resources_dir / "playwright" / "driver" / "package" / ".local-browsers"
+        if bundled_playwright_browsers.exists():
+            os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(bundled_playwright_browsers))
+            Tool.write_log(f"Bundled Playwright browsers: {bundled_playwright_browsers}")
         Tool.write_log("Environment variables:")
-        for key in ['PATH', 'PYTHONPATH', 'HOME', 'USER']:
+        for key in ['PATH', 'PYTHONPATH', 'HOME', 'USER', 'PLAYWRIGHT_BROWSERS_PATH']:
             value = os.environ.get(key, 'NOT SET')
             Tool.write_log(f"  {key}: {value}")
         Tool.write_log("=== PATH DIAGNOSTICS ===")

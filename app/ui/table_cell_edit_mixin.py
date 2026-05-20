@@ -66,8 +66,8 @@ class TableCellEditMixin:
                 self._set_table_item(row, 4, parsed_amount, editable=True)
                 self._update_total_price_cell(row)
                 del blocker
-                self.logisticCalculate()
-                self.calculating()
+                self.logisticCalculate(apply_filters=False)
+                self.calculating(apply_filters=False, resize=False)
             elif col == 5:
                 currency, price_text = Tool.parsePrice(text)
                 if not currency:
@@ -80,15 +80,15 @@ class TableCellEditMixin:
                 self._set_table_item(row, 5, Tool.formatPrice(str(parsed_price), currency), editable=True)
                 self._update_total_price_cell(row)
                 del blocker
-                self.logisticCalculate()
-                self.calculating()
+                self.logisticCalculate(apply_filters=False)
+                self.calculating(apply_filters=False, resize=False)
             elif col == 14:
                 parsed_term = Tool.parse_delivery_days(text)
                 self.tableData["termDelivery"][row] = parsed_term
                 blocker = QSignalBlocker(self.ui.KpTable)
                 self._set_table_item(row, 14, f"{parsed_term} дней", editable=True)
                 del blocker
-                self.calculating()
+                self.calculating(apply_filters=False, resize=False)
             else:
                 blocker = QSignalBlocker(self.ui.KpTable)
                 self._set_table_item(row, col, text, editable=True)

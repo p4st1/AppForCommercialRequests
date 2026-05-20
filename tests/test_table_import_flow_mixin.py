@@ -136,10 +136,10 @@ class _FakeWindow(TableImportFlowMixin):
     def _clear_undo_history(self):
         self.clear_undo_calls += 1
 
-    def logisticCalculate(self):
+    def logisticCalculate(self, **_kwargs):
         self.logistic_calls += 1
 
-    def calculating(self):
+    def calculating(self, **_kwargs):
         self.calculating_calls += 1
 
     def _apply_table_filters(self):

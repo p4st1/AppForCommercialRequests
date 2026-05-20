@@ -232,7 +232,6 @@ jobs:
             --add-data=utilities:utilities \
             --add-data=database:database \
             --add-data=retrade.ui:. \
-            --add-data="${PW_BROWSERS}:playwright/driver/package/.local-browsers" \
             --add-data=templates/template.xlsx:templates \
             --add-data=templates/template.docx:templates \
             --add-data=templates/template_short.docx:templates \
@@ -242,6 +241,12 @@ jobs:
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
           test -f "$APP_PATH/Contents/Resources/retrade.ui"
+
+          PW_DST="$APP_PATH/Contents/Resources/playwright/driver/package/.local-browsers"
+          rm -rf "$PW_DST"
+          mkdir -p "$(dirname "$PW_DST")"
+          cp -R "$PW_BROWSERS" "$PW_DST"
+
           test -d "$APP_PATH/Contents/Resources/playwright/driver/package/.local-browsers"
           test -n "$(find "$APP_PATH/Contents/Resources/playwright/driver/package/.local-browsers" -path "*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" -type f -print -quit)"
 

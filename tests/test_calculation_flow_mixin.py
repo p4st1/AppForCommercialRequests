@@ -203,7 +203,7 @@ class _FakeEventWindow(CalculationFlowMixin):
         self.calculation_calls = 0
         self.error_calls = []
 
-    def logisticCalculate(self):
+    def logisticCalculate(self, **_kwargs):
         self.logistic_calls += 1
 
     def calculating(self):
