@@ -110,7 +110,7 @@ jobs:
           PW_BROWSERS="$(python -c "from pathlib import Path; import playwright; print(Path(playwright.__file__).resolve().parent / 'driver' / 'package' / '.local-browsers')")"
           echo "PW_BROWSERS=$PW_BROWSERS" >> "$GITHUB_ENV"
           test -d "$PW_BROWSERS"
-          find "$PW_BROWSERS" -maxdepth 4 -type f | head -n 20
+          python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); [print(path) for _, path in zip(range(20), (p for p in root.rglob('*') if p.is_file()))]" "$PW_BROWSERS"
 
       - name: Install Playwright Chromium (macOS)
         if: runner.os == 'macOS'
@@ -128,7 +128,7 @@ jobs:
           echo "PW_BROWSERS=$PW_BROWSERS" >> "$GITHUB_ENV"
           test -d "$PW_BROWSERS"
           test ! -d "$PW_SITE_BROWSERS"
-          find "$PW_BROWSERS" -maxdepth 4 -type f | head -n 20
+          python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); [print(path) for _, path in zip(range(20), (p for p in root.rglob('*') if p.is_file()))]" "$PW_BROWSERS"
 
       - name: Verify import main
         shell: bash
@@ -143,7 +143,7 @@ jobs:
           DOCX_TPL="$(python -c "import docx, os; print(os.path.join(os.path.dirname(docx.__file__), 'templates'))")"
           echo "DOCX_TPL=$DOCX_TPL" >> $GITHUB_ENV
           test -d "$DOCX_TPL"
-          ls -la "$DOCX_TPL" | head -n 20
+          python -c "from pathlib import Path; import sys; [print(path.name) for _, path in zip(range(20), Path(sys.argv[1]).iterdir())]" "$DOCX_TPL"
 
       # ---------------- WINDOWS ----------------
 
@@ -258,7 +258,7 @@ jobs:
             --add-data=templates/logs.log:templates \
             run.py
 
-          APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
+          APP_PATH="$(find dist -maxdepth 4 -name '*.app' -print -quit)"
           test -n "$APP_PATH"
           test -f "$APP_PATH/Contents/Resources/retrade.ui"
 
@@ -278,7 +278,7 @@ jobs:
 
           test -d "$DOCX_BASE/parts"
           test -f "$DOCX_BASE/templates/default-header.xml"
-          ls -la "$DOCX_BASE/templates" | head -n 20
+          python -c "from pathlib import Path; import sys; [print(path.name) for _, path in zip(range(20), Path(sys.argv[1]).joinpath('templates').iterdir())]" "$DOCX_BASE"
 
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
 
