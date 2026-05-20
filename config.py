@@ -40,6 +40,7 @@ class Config:
         "lastTable": "",
         "offerValidityDays": str(DEFAULT_OFFER_VALIDITY_DAYS),
         "lastCreateDocFields": {},
+        "manufacturerHistory": [],
         "paymentTemplates": DEFAULT_PAYMENT_TEMPLATES.copy(),
         "platformLogin": "",
         "platformPassword": "",

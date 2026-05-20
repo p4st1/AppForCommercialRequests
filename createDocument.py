@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QHBoxLayout,
     QLineEdit,
+    QComboBox,
     QLabel,
     QCheckBox,
     QButtonGroup,
@@ -53,6 +54,8 @@ class mainWindow(QMainWindow):
     FORMAT_DOCX = "docx"
     FORMAT_PDF = "pdf"
     FORMAT_GOOGLE_DOCX = "google_docx"
+    MANUFACTURER_HISTORY_KEY = "manufacturerHistory"
+    MANUFACTURER_HISTORY_LIMIT = 30
 
     def __init__(self, parent=None, tableData=None):
         super(mainWindow, self).__init__(parent)
@@ -176,6 +179,15 @@ QListWidget::item {
         self.ui.radioButton.setText('Показывать столбец "Срок поставки" в КП')
         self.ui.radioButton.setAutoExclusive(False)
 
+        self.producerComboBox = QComboBox(self)
+        self.producerComboBox.setObjectName("producerComboBox")
+        self.producerComboBox.setEditable(True)
+        self.producerComboBox.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.producerComboBox.setStyleSheet(self.ui.producerLine.styleSheet())
+        self.ui.producerComboBox = self.producerComboBox
+        self.ui.producerLine.hide()
+        self._refresh_manufacturer_history_combo()
+
         self.deliveryOrderLabel = QLabel("Порядок доставки", self)
         self.deliveryOrderLabel.setObjectName("deliveryOrderLabel")
         self.deliveryOrderLabel.setStyleSheet(self.ui.label_7.styleSheet())
@@ -256,12 +268,16 @@ QCheckBox::indicator, QRadioButton::indicator {
             widget.setMinimumHeight(32)
             if isinstance(widget, QLineEdit):
                 widget.setClearButtonEnabled(True)
+            elif isinstance(widget, QComboBox):
+                line_edit = widget.lineEdit()
+                if line_edit is not None:
+                    line_edit.setClearButtonEnabled(True)
             grid.addWidget(label, row, column, 1, 1)
             grid.addWidget(widget, row + 1, column, 1, 1)
 
         add_pair(0, 0, self.ui.label, self.ui.numLine)
         add_pair(0, 1, self.ui.label_5, self.ui.deliveryTimeLine)
-        add_pair(0, 2, self.ui.label_6, self.ui.producerLine)
+        add_pair(0, 2, self.ui.label_6, self.producerComboBox)
         add_pair(2, 0, self.ui.label_4, self.ui.warrantyPeriod)
         add_pair(2, 1, self.ui.label_7, self.ui.conditionLine)
         add_pair(2, 2, self.ui.label_8, self.ui.payComboBox)
@@ -318,7 +334,7 @@ QCheckBox::indicator, QRadioButton::indicator {
         self.ui.numLine.setPlaceholderText("")
         self.ui.warrantyPeriod.setPlaceholderText("")
         self.ui.conditionLine.setPlaceholderText("")
-        self.ui.producerLine.setPlaceholderText("")
+        self._set_producer_placeholder("")
         self.ui.deliveryTimeLine.setPlaceholderText("")
         if hasattr(self, "deliveryOrderLine"):
             self.deliveryOrderLine.setPlaceholderText("")
@@ -327,6 +343,90 @@ QCheckBox::indicator, QRadioButton::indicator {
             self.submissionSupplierStatusLine.setPlaceholderText("Например: Посредник")
         if hasattr(self, "submissionWarrantyLine"):
             self.submissionWarrantyLine.setPlaceholderText("Например: 12 месяцев")
+
+    @classmethod
+    def _normalize_manufacturer_history(cls, values) -> list[str]:
+        if isinstance(values, str):
+            source_values = [values]
+        elif isinstance(values, (list, tuple)):
+            source_values = list(values)
+        else:
+            source_values = []
+
+        result = []
+        seen = set()
+        for value in source_values:
+            text = str(value or "").strip()
+            if not text:
+                continue
+            key = text.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(text)
+            if len(result) >= cls.MANUFACTURER_HISTORY_LIMIT:
+                break
+        return result
+
+    def _manufacturer_history(self) -> list[str]:
+        return self._normalize_manufacturer_history(
+            Config.config.get(self.MANUFACTURER_HISTORY_KEY, [])
+        )
+
+    def _refresh_manufacturer_history_combo(self) -> None:
+        combo = getattr(self, "producerComboBox", None)
+        if not isinstance(combo, QComboBox):
+            return
+
+        current_text = combo.currentText().strip()
+        blocker = QSignalBlocker(combo)
+        combo.clear()
+        combo.addItems(self._manufacturer_history())
+        combo.setEditText(current_text)
+        del blocker
+
+        completer = combo.completer()
+        if completer is not None:
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            try:
+                completer.setFilterMode(Qt.MatchFlag.MatchContains)
+            except Exception:
+                pass
+
+    def _producer_text(self) -> str:
+        combo = getattr(self, "producerComboBox", None)
+        if isinstance(combo, QComboBox):
+            return combo.currentText().strip()
+        return self.ui.producerLine.text().strip()
+
+    def _set_producer_text(self, value: str) -> None:
+        text = str(value or "")
+        combo = getattr(self, "producerComboBox", None)
+        if isinstance(combo, QComboBox):
+            combo.setEditText(text)
+            return
+        self.ui.producerLine.setText(text)
+
+    def _set_producer_placeholder(self, value: str) -> None:
+        combo = getattr(self, "producerComboBox", None)
+        if isinstance(combo, QComboBox):
+            line_edit = combo.lineEdit()
+            if line_edit is not None:
+                line_edit.setPlaceholderText(value)
+            return
+        self.ui.producerLine.setPlaceholderText(value)
+
+    def _remember_manufacturer(self, value: str) -> None:
+        text = str(value or "").strip()
+        if not text:
+            return
+
+        history = [text]
+        history.extend(self._manufacturer_history())
+        Config.config[self.MANUFACTURER_HISTORY_KEY] = self._normalize_manufacturer_history(
+            history
+        )
+        self._refresh_manufacturer_history_combo()
 
     def _sync_submission_extra_fields_enabled(self, *_args):
         if hasattr(self, "submissionSupplierStatusLine") and hasattr(
@@ -459,7 +559,6 @@ QCheckBox::indicator, QRadioButton::indicator {
         for widget, key in (
             (self.ui.warrantyPeriod, "warranty_period"),
             (self.ui.conditionLine, "payment_terms"),
-            (self.ui.producerLine, "producer"),
             (self.ui.deliveryTimeLine, "delivery_time"),
             (getattr(self, "deliveryOrderLine", None), "delivery_order"),
             (
@@ -473,6 +572,10 @@ QCheckBox::indicator, QRadioButton::indicator {
             value = str(fields.get(key, "") or "")
             if value:
                 widget.setText(value)
+
+        producer_value = str(fields.get("producer", "") or "")
+        if producer_value:
+            self._set_producer_text(producer_value)
 
         self.ui.radioButton.setChecked(bool(fields.get("show_delivery_column", False)))
         if hasattr(self, "checkbox_participate"):
@@ -507,7 +610,7 @@ QCheckBox::indicator, QRadioButton::indicator {
         fields = {
             "warranty_period": self.ui.warrantyPeriod.text().strip(),
             "payment_terms": self.ui.conditionLine.text().strip(),
-            "producer": self.ui.producerLine.text().strip(),
+            "producer": self._producer_text(),
             "delivery_time": self.ui.deliveryTimeLine.text().strip(),
             "delivery_order": self.deliveryOrderLine.text().strip()
             if hasattr(self, "deliveryOrderLine")
@@ -533,6 +636,7 @@ QCheckBox::indicator, QRadioButton::indicator {
             "output_format": self._selected_output_format(),
         }
         Config.config["lastCreateDocFields"] = fields
+        self._remember_manufacturer(fields["producer"])
         self._save_config_snapshot()
 
     def filterSuppliers(self, text):
@@ -794,7 +898,7 @@ QCheckBox::indicator, QRadioButton::indicator {
         result.append(self.ui.numLine.text())
         result.append(self.ui.warrantyPeriod.text())
         result.append(self.ui.conditionLine.text())
-        result.append(self.ui.producerLine.text())
+        result.append(self._producer_text())
         result.append(self.ui.deliveryTimeLine.text())
         result.append(self.deliveryOrderLine.text() if hasattr(self, "deliveryOrderLine") else "")
         return result
