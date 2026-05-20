@@ -58,6 +58,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QGridLayout,
+    QSizePolicy,
 )
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QSignalBlocker, QTimer
@@ -296,6 +297,7 @@ class mainWindow(
         )
         resize_table_to_contents(self.ui.KpTable)
         self._setup_table_quick_search()
+        self._setup_main_table_area_layout()
         self._setup_shortcuts()
         self._init_table_filters()
         self._setup_total_tab_table()
@@ -364,6 +366,28 @@ class mainWindow(
             if child_layout is not None:
                 self._clear_layout_items(child_layout)
 
+    def _setup_main_table_area_layout(self):
+        full_table_tab = getattr(self.ui, "tab", None)
+        table = getattr(self.ui, "KpTable", None)
+        table_layout = getattr(self.ui, "verticalLayout_2", None)
+
+        if full_table_tab is not None:
+            full_table_tab.setMaximumHeight(16777215)
+            full_table_tab.setSizePolicy(
+                QSizePolicy.Policy.Preferred,
+                QSizePolicy.Policy.Expanding,
+            )
+        if table is not None:
+            table.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
+        if table_layout is not None and table is not None:
+            for index in range(table_layout.count()):
+                item = table_layout.itemAt(index)
+                widget = item.widget() if item is not None else None
+                table_layout.setStretch(index, 1 if widget is table else 0)
+
     @staticmethod
     def _input_block(label_widget, *input_widgets):
         block = QVBoxLayout()
@@ -376,6 +400,8 @@ class mainWindow(
 
     def _setup_full_table_input_layout(self):
         self.ui.verticalLayout.setSpacing(0)
+        self.ui.verticalLayout.setStretch(0, 1)
+        self.ui.verticalLayout.setStretch(1, 0)
         root_layout = self.ui.funcButtons
         self._clear_layout_items(root_layout)
         root_layout.setContentsMargins(8, 0, 8, 8)

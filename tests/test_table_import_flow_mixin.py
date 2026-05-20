@@ -62,15 +62,20 @@ class _FakeKpTable:
 class _FakeTabWidget:
     def __init__(self):
         self.indices = []
+        self.widgets = []
 
     def setCurrentIndex(self, index):
         self.indices.append(index)
+
+    def setCurrentWidget(self, widget):
+        self.widgets.append(widget)
 
 
 class _FakeUi:
     def __init__(self):
         self.KpTable = _FakeKpTable()
         self.tabWidget = _FakeTabWidget()
+        self.tab = object()
 
 
 class _FakeProposalImportService:
@@ -246,7 +251,8 @@ class TableImportFlowMixinTests(unittest.TestCase):
         self.assertFalse(window.mixedCurrencyWarningShown)
         self.assertEqual(Config.config["lastTable"], "/tmp/input.csv")
         self.assertTrue(Config.isTableOpened)
-        self.assertEqual(window.ui.tabWidget.indices, [1])
+        self.assertEqual(window.ui.tabWidget.widgets, [window.ui.tab])
+        self.assertEqual(window.ui.tabWidget.indices, [])
         self.assertEqual(len(window.set_item_calls), 8)
         warning.assert_called_once()
 

@@ -99,6 +99,16 @@ jobs:
           python -m pip install -U pip
           pip install -r requirements.txt
           pip install -U pyinstaller PySide6 python-docx
+          PLAYWRIGHT_BROWSERS_PATH=0 python -m playwright install chromium
+
+      - name: Resolve Playwright browsers path (site-packages)
+        shell: bash
+        run: |
+          set -eux
+          PW_BROWSERS="$(python -c "from pathlib import Path; import playwright; print(Path(playwright.__file__).resolve().parent / 'driver' / 'package' / '.local-browsers')")"
+          echo "PW_BROWSERS=$PW_BROWSERS" >> "$GITHUB_ENV"
+          test -d "$PW_BROWSERS"
+          find "$PW_BROWSERS" -maxdepth 4 -type f | head -n 20
 
       - name: Verify import main
         shell: bash
@@ -128,6 +138,7 @@ jobs:
             --add-data=utilities:utilities `
             --add-data=database:database `
             --add-data=retrade.ui:. `
+            --add-data="$env:PW_BROWSERS;playwright/driver/package/.local-browsers" `
             --add-data=assets/app.ico:assets `
             --add-data=assets/app.jpg:assets `
             --add-data=assets/print.png:assets `
@@ -141,6 +152,17 @@ jobs:
 
           if (-not (Test-Path "dist\$env:APP_NAME\_internal\retrade.ui") -and -not (Test-Path "dist\$env:APP_NAME\retrade.ui")) {
             throw "Missing bundled retrade.ui"
+          }
+          $pwRoot = "dist\$env:APP_NAME\_internal\playwright\driver\package\.local-browsers"
+          if (-not (Test-Path $pwRoot)) {
+            $pwRoot = "dist\$env:APP_NAME\playwright\driver\package\.local-browsers"
+          }
+          if (-not (Test-Path $pwRoot)) {
+            throw "Missing bundled Playwright browsers"
+          }
+          $chromeExe = Get-ChildItem -Path $pwRoot -Recurse -Filter "chrome.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -eq $chromeExe) {
+            throw "Missing bundled Playwright Chromium executable"
           }
 
       - name: Fix python-docx templates (Windows)
@@ -210,6 +232,7 @@ jobs:
             --add-data=utilities:utilities \
             --add-data=database:database \
             --add-data=retrade.ui:. \
+            --add-data="${PW_BROWSERS}:playwright/driver/package/.local-browsers" \
             --add-data=templates/template.xlsx:templates \
             --add-data=templates/template.docx:templates \
             --add-data=templates/template_short.docx:templates \
@@ -219,6 +242,8 @@ jobs:
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
           test -f "$APP_PATH/Contents/Resources/retrade.ui"
+          test -d "$APP_PATH/Contents/Resources/playwright/driver/package/.local-browsers"
+          test -n "$(find "$APP_PATH/Contents/Resources/playwright/driver/package/.local-browsers" -path "*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" -type f -print -quit)"
 
           DOCX_BASE="$APP_PATH/Contents/Frameworks/docx"
           mkdir -p "$DOCX_BASE/templates"

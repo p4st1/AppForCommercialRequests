@@ -9,6 +9,24 @@ from tools import DatabaseTools as Tool
 
 
 class TableImportFlowMixin:
+    def _show_full_table_tab(self):
+        tabs = getattr(getattr(self, "ui", None), "tabWidget", None)
+        full_table_tab = getattr(getattr(self, "ui", None), "tab", None)
+        if tabs is None:
+            return
+
+        set_current_widget = getattr(tabs, "setCurrentWidget", None)
+        if callable(set_current_widget) and full_table_tab is not None:
+            set_current_widget(full_table_tab)
+            return
+
+        index_of = getattr(tabs, "indexOf", None)
+        set_current_index = getattr(tabs, "setCurrentIndex", None)
+        if callable(index_of) and callable(set_current_index) and full_table_tab is not None:
+            index = index_of(full_table_tab)
+            if index >= 0:
+                set_current_index(index)
+
     def openTable(self, file=None):
         filename = file
         if not filename:
@@ -87,7 +105,7 @@ class TableImportFlowMixin:
         Config.config["lastTable"] = filename
         self.saveConfig()
         Config.isTableOpened = True
-        self.ui.tabWidget.setCurrentIndex(1)
+        self._show_full_table_tab()
 
         if warnings:
             trimmed = warnings[:10]
