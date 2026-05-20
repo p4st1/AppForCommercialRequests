@@ -139,6 +139,10 @@ jobs:
             --add-data=templates/logs.log:templates `
             run.py
 
+          if (-not (Test-Path "dist\$env:APP_NAME\_internal\retrade.ui") -and -not (Test-Path "dist\$env:APP_NAME\retrade.ui")) {
+            throw "Missing bundled retrade.ui"
+          }
+
       - name: Fix python-docx templates (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -214,6 +218,7 @@ jobs:
 
           APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
           test -n "$APP_PATH"
+          test -f "$APP_PATH/Contents/Resources/retrade.ui"
 
           DOCX_BASE="$APP_PATH/Contents/Frameworks/docx"
           mkdir -p "$DOCX_BASE/templates"

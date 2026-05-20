@@ -12,7 +12,7 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PySide6.QtCore import QSettings, QThread, Signal, QTimer, Qt
 from PySide6.QtGui import QAction, QColor
-from PySide6.QtUiTools import loadUiType
+from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -465,11 +465,23 @@ QTableWidget::indicator {{
         searched_paths = ", ".join(str(path) for path in candidate_paths)
         raise RuntimeError(f"Не найден {self.RETRADE_UI_FILE}; проверенные пути: {searched_paths}")
 
-    def _copy_retrade_ui_attrs(self, retrade_form: Any, attr_names: tuple[str, ...]) -> None:
+    def _copy_retrade_ui_attrs(self, retrade_tab: QWidget, attr_names: tuple[str, ...]) -> None:
         for attr_name in attr_names:
-            widget = getattr(retrade_form, attr_name)
+            widget = retrade_tab.findChild(QWidget, attr_name)
+            if widget is None:
+                widget = retrade_tab.findChild(QHBoxLayout, attr_name)
+            if widget is None:
+                raise RuntimeError(f"В {self.RETRADE_UI_FILE} не найден элемент {attr_name}")
             setattr(self, attr_name, widget)
             setattr(self.ui, attr_name, widget)
+
+    def _load_retrade_ui(self, tabs: QTabWidget) -> QWidget:
+        ui_path = self._get_retrade_ui_path()
+        loader = QUiLoader()
+        retrade_tab = loader.load(str(ui_path), tabs)
+        if not isinstance(retrade_tab, QWidget):
+            raise RuntimeError(f"Не удалось загрузить интерфейс {ui_path}")
+        return retrade_tab
 
     def _ensure_retrade_tab(self) -> None:
         if hasattr(self, "table_retrade") and hasattr(self, "retrade_tab"):
@@ -481,13 +493,10 @@ QTableWidget::indicator {{
         if not isinstance(tabs, QTabWidget):
             raise RuntimeError("Не найден tabWidget для вкладки Переторжка")
 
-        form_class, base_class = loadUiType(str(self._get_retrade_ui_path()))
-        retrade_tab = base_class(tabs)
-        retrade_form = form_class()
-        retrade_form.setupUi(retrade_tab)
+        retrade_tab = self._load_retrade_ui(tabs)
 
         self._copy_retrade_ui_attrs(
-            retrade_form,
+            retrade_tab,
             (
                 "table_retrade",
                 "retrade_inner_tabs",
@@ -517,8 +526,12 @@ QTableWidget::indicator {{
         self.retradingTable = self.retrade_table
         self.calculationsTable = self.retrade_calculations_table
         self.retrade_calculations_container_layout = (
-            retrade_form.retradeCalculationsContainerLayout
+            self.retrade_calculations_container.layout()
         )
+        if self.retrade_calculations_container_layout is None:
+            raise RuntimeError(
+                f"В {self.RETRADE_UI_FILE} не найден layout контейнера расчетов"
+            )
         self.total_without_vat_label = self.retrade_total_without_vat_label
         self.price_total_label = self.retrade_price_total_label
         self.ui.retradeTab = retrade_tab

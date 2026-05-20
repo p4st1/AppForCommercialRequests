@@ -125,6 +125,12 @@ def _ensure_pyside_stubs() -> None:
         sys.modules["PySide6.QtUiTools"] = qtuitools
     if not hasattr(qtuitools, "loadUiType"):
         qtuitools.loadUiType = lambda *_args, **_kwargs: (object, object)
+
+    class _QUiLoader:
+        def load(self, *_args, **_kwargs):
+            return None
+
+    qtuitools.QUiLoader = getattr(qtuitools, "QUiLoader", _QUiLoader)
     pyside6.QtUiTools = qtuitools
 
     qtwidgets = sys.modules.get("PySide6.QtWidgets")
