@@ -159,6 +159,7 @@ class AuthLoginWorker(QThread):
 
 class AuthStatusWorker(QThread):
     finished = Signal(bool)
+    STATUS_CHECK_TIMEOUT_SECONDS = 5.0
 
     def __init__(
         self,
@@ -168,22 +169,39 @@ class AuthStatusWorker(QThread):
         super().__init__(parent)
         self._cookies = dict(cookies)
 
+    def _interruption_requested(self) -> bool:
+        is_interruption_requested = getattr(self, "isInterruptionRequested", None)
+        if not callable(is_interruption_requested):
+            return False
+        try:
+            return bool(is_interruption_requested())
+        except RuntimeError:
+            return True
+
     def run(self) -> None:
         try:
+            if self._interruption_requested():
+                return
             if not self._cookies:
                 self.finished.emit(False)
                 return
-            client = MetalITClient(self._cookies)
+            client = MetalITClient(
+                self._cookies,
+                timeout=self.STATUS_CHECK_TIMEOUT_SECONDS,
+            )
             is_auth = client.is_authenticated()
-            self.finished.emit(bool(is_auth))
+            if not self._interruption_requested():
+                self.finished.emit(bool(is_auth))
         except Exception:
-            self.finished.emit(False)
+            if not self._interruption_requested():
+                self.finished.emit(False)
 
 
 class PlatformMixin:
     SEARCH_DEBOUNCE_MS = 250
     MIN_SEARCH_CHARS = 3
     TRADE_AUTOSIZE_ROW_LIMIT = 200
+    AUTH_STATUS_REFRESH_DELAY_MS = 0
 
     TRADE_HEADERS = (
         "id",
@@ -203,6 +221,7 @@ class PlatformMixin:
         self._load_retrades_worker: LoadRetradesWorker | None = None
         self._auth_login_worker: AuthLoginWorker | None = None
         self._auth_status_worker: AuthStatusWorker | None = None
+        self._auth_status_refresh_timer: QTimer | None = None
         self._ensure_platform_tab()
         self._platform_search_timer = QTimer(self)
         self._platform_search_timer.setSingleShot(True)
@@ -215,7 +234,14 @@ class PlatformMixin:
         self.table_retrades.itemSelectionChanged.connect(self.on_retrade_selection_changed)
         self.search_input.textChanged.connect(self.apply_search)
         self.checkbox_active.stateChanged.connect(self.apply_filters)
-        self.refresh_auth_status_on_startup()
+        self._schedule_auth_status_refresh()
+
+    def _schedule_auth_status_refresh(self) -> None:
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self.refresh_auth_status_on_startup)
+        self._auth_status_refresh_timer = timer
+        timer.start(self.AUTH_STATUS_REFRESH_DELAY_MS)
 
     def _ensure_platform_tab(self) -> None:
         if (
@@ -416,6 +442,8 @@ class PlatformMixin:
             status_bar.showMessage(status_message, 4000)
 
     def refresh_auth_status_on_startup(self) -> None:
+        if bool(getattr(self, "_app_is_closing", False)):
+            return
         if self._auth_status_worker is not None and self._auth_status_worker.isRunning():
             return
 
@@ -440,6 +468,8 @@ class PlatformMixin:
         self._auth_status_worker = None
         if worker is not None:
             worker.deleteLater()
+        if bool(getattr(self, "_app_is_closing", False)):
+            return
         self._set_auth_status(is_auth=bool(is_auth))
 
     def _set_auth_status_checking(self) -> None:
