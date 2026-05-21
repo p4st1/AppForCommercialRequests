@@ -184,6 +184,10 @@ jobs:
           if ($null -eq $chromeExe) {
             throw "Missing bundled Playwright Chromium executable"
           }
+          & "dist\$env:APP_NAME\$env:APP_NAME.exe" --smoke-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Application smoke test failed"
+          }
 
       - name: Fix python-docx templates (Windows)
         if: runner.os == 'Windows'
@@ -279,6 +283,8 @@ jobs:
           test -d "$DOCX_BASE/parts"
           test -f "$DOCX_BASE/templates/default-header.xml"
           python -c "from pathlib import Path; import sys; [print(path.name) for _, path in zip(range(20), Path(sys.argv[1]).joinpath('templates').iterdir())]" "$DOCX_BASE"
+
+          "$APP_PATH/Contents/MacOS/${APP_NAME}" --smoke-test
 
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
 

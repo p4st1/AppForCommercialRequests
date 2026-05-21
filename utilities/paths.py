@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -36,6 +37,9 @@ def app_dir() -> Path:
 def user_data_dir(app_name: str = APP_NAME) -> Path:
     """Return and create the per-user writable data directory."""
     app_name = str(app_name or APP_NAME).strip() or APP_NAME
+    override = os.environ.get("MYAPP_USER_DATA_DIR", "").strip()
+    if override:
+        return _ensure_writable_dir(Path(override).expanduser(), app_name)
 
     if sys.platform.startswith("win"):
         base = os.environ.get("APPDATA")
@@ -46,8 +50,20 @@ def user_data_dir(app_name: str = APP_NAME) -> Path:
         base_dir = Path.home() / ".local" / "share"
 
     target = (base_dir / app_name).expanduser()
-    target.mkdir(parents=True, exist_ok=True)
-    return target
+    return _ensure_writable_dir(target, app_name)
+
+
+def _ensure_writable_dir(target: Path, app_name: str = APP_NAME) -> Path:
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / ".write_test"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return target
+    except OSError:
+        fallback = Path(tempfile.gettempdir()) / app_name
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 def bundled_path(*parts: str | os.PathLike[str]) -> Path:
