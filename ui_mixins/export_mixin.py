@@ -2491,7 +2491,6 @@ QTableWidget::indicator {{
             )
             source_price_cell = worksheet.cell(row=excel_row, column=10)
             if cls._is_zero_retrade_price(source_price_cell.value):
-                target_cell.value = None
                 continue
             currency = (
                 cls._detect_currency(target_cell.value, target_cell.number_format)
@@ -2560,6 +2559,29 @@ QTableWidget::indicator {{
         return numeric_value is not None and abs(numeric_value) <= 1e-12
 
     @classmethod
+    def _is_zero_retrade_price_cell(
+        cls,
+        worksheet: Any,
+        row: int,
+        column: int,
+        *,
+        values_worksheet: Any | None = None,
+    ) -> bool:
+        if values_worksheet is not None:
+            try:
+                value = values_worksheet.cell(row=row, column=column).value
+            except Exception:
+                value = None
+            if cls._is_zero_retrade_price(value):
+                return True
+
+        try:
+            value = worksheet.cell(row=row, column=column).value
+        except Exception:
+            return False
+        return cls._is_zero_retrade_price(value)
+
+    @classmethod
     def _write_best_prices_to_calculations_file(
         cls,
         file_path: str,
@@ -2570,7 +2592,14 @@ QTableWidget::indicator {{
         delta_percent: float | None = None,
     ) -> str:
         workbook = load_workbook(file_path)
+        workbook_values = None
         try:
+            try:
+                workbook_values = load_workbook(file_path, data_only=True, read_only=True)
+                sheet_values = workbook_values.worksheets[0]
+            except Exception:
+                sheet_values = None
+
             sheet_original = workbook.worksheets[0]
             sheet_copy = workbook.copy_worksheet(sheet_original)
             sheet_copy.title = cls._next_retrade_sheet_title(workbook)
@@ -2632,14 +2661,17 @@ QTableWidget::indicator {{
             rating_values = ratings or []
             for index, best_price in enumerate(best_prices):
                 excel_row = start_row + index
-                source_price_cell = sheet_copy.cell(row=excel_row, column=10)
-                if cls._is_zero_retrade_price(source_price_cell.value):
+                if cls._is_zero_retrade_price_cell(
+                    sheet_copy,
+                    excel_row,
+                    10,
+                    values_worksheet=sheet_values,
+                ):
                     for column in (
                         real_rating_col,
                         best_price_col,
                         formula_col,
                         corrected_rating_col,
-                        realization_price_col,
                     ):
                         sheet_copy.cell(row=excel_row, column=column).value = None
                     continue
@@ -2677,6 +2709,8 @@ QTableWidget::indicator {{
             workbook.save(file_path)
             return sheet_copy.title
         finally:
+            if workbook_values is not None:
+                workbook_values.close()
             workbook.close()
 
     def generate_retrade_calculation(self) -> None:

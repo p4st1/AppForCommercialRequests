@@ -298,6 +298,22 @@ class SubmissionPlaywright:
         for label in labels:
             pattern = re.compile(re.escape(label), re.IGNORECASE)
             locators = []
+            locator_getter = getattr(page, "locator", None)
+            if callable(locator_getter):
+                for selector in (
+                    f"mat-form-field:has-text('{label}') input:not([type='checkbox']):not([type='radio']):not([type='file'])",
+                    f"mat-form-field:has-text('{label}') textarea",
+                    f"um-string-field:has-text('{label}') input:not([type='checkbox']):not([type='radio']):not([type='file'])",
+                    f"um-string-field:has-text('{label}') textarea",
+                    f"um-text-field:has-text('{label}') input:not([type='checkbox']):not([type='radio']):not([type='file'])",
+                    f"um-text-field:has-text('{label}') textarea",
+                    f"input[name*='{label}' i]:not([type='checkbox']):not([type='radio']):not([type='file'])",
+                    f"textarea[name*='{label}' i]",
+                ):
+                    try:
+                        locators.append(locator_getter(selector))
+                    except Exception:
+                        pass
             for getter_name in ("get_by_label", "get_by_placeholder"):
                 getter = getattr(page, getter_name, None)
                 if callable(getter):
@@ -305,36 +321,52 @@ class SubmissionPlaywright:
                         locators.append(getter(pattern))
                     except Exception:
                         pass
-            locator_getter = getattr(page, "locator", None)
-            if callable(locator_getter):
-                for selector in (
-                    f"mat-form-field:has-text('{label}') input",
-                    f"mat-form-field:has-text('{label}') textarea",
-                    f"um-string-field:has-text('{label}') input",
-                    f"um-string-field:has-text('{label}') textarea",
-                    f"um-text-field:has-text('{label}') input",
-                    f"um-text-field:has-text('{label}') textarea",
-                    f"input[name*='{label}' i]",
-                    f"textarea[name*='{label}' i]",
-                ):
-                    try:
-                        locators.append(locator_getter(selector))
-                    except Exception:
-                        pass
             for locator in locators:
-                try:
-                    if locator.count() == 0:
-                        continue
-                    candidate = locator.first if hasattr(locator, "first") else locator
-                    if not candidate.is_visible(timeout=500):
-                        continue
-                    candidate.fill(text_value, timeout=3_000)
+                if self._fill_text_locator(locator, text_value):
                     return True
-                except PlaywrightTimeoutError:
-                    continue
-                except AttributeError:
-                    continue
         return False
+
+    @staticmethod
+    def _locator_attribute(locator: Any, name: str) -> str:
+        getter = getattr(locator, "get_attribute", None)
+        if not callable(getter):
+            return ""
+        try:
+            return str(getter(name) or "").strip()
+        except Exception:
+            return ""
+
+    @classmethod
+    def _is_text_fillable_locator(cls, locator: Any) -> bool:
+        input_type = cls._locator_attribute(locator, "type").casefold()
+        role = cls._locator_attribute(locator, "role").casefold()
+        aria_checked = cls._locator_attribute(locator, "aria-checked").casefold()
+        if input_type in {"checkbox", "radio", "file", "button", "submit", "reset"}:
+            return False
+        if role in {"switch", "checkbox", "radio", "button"}:
+            return False
+        if aria_checked in {"true", "false", "mixed"}:
+            return False
+        return True
+
+    @classmethod
+    def _fill_text_locator(cls, locator: Any, text_value: str) -> bool:
+        try:
+            if locator.count() == 0:
+                return False
+            candidate = locator.first if hasattr(locator, "first") else locator
+            if not candidate.is_visible(timeout=500):
+                return False
+            if not cls._is_text_fillable_locator(candidate):
+                return False
+            candidate.fill(text_value, timeout=3_000)
+            return True
+        except PlaywrightTimeoutError:
+            return False
+        except Exception as exc:
+            if "cannot be filled" in str(exc).casefold():
+                return False
+            return False
 
     def _fill_position_field(
         self,
@@ -361,14 +393,14 @@ class SubmissionPlaywright:
                     re.compile(re.escape(label), re.IGNORECASE)
                 ).first
                 if field.count() > 0:
-                    field.fill(text_value, timeout=3_000)
-                    return True
+                    if self._fill_text_locator(field, text_value):
+                        return True
                 placeholder = row_locator.get_by_placeholder(
                     re.compile(re.escape(label), re.IGNORECASE)
                 ).first
                 if placeholder.count() > 0:
-                    placeholder.fill(text_value, timeout=3_000)
-                    return True
+                    if self._fill_text_locator(placeholder, text_value):
+                        return True
             except PlaywrightTimeoutError:
                 continue
 

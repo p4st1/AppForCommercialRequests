@@ -427,7 +427,7 @@ class SubmissionService:
                                 row=row_index,
                                 field=field,
                                 label=label,
-                                severity="error",
+                                severity="warning",
                                 message=f"Строка {row_index + 1}: заполните '{label}'",
                             )
                         )
@@ -438,7 +438,7 @@ class SubmissionService:
                             row=row_index,
                             field=field,
                             label=label,
-                            severity="error",
+                            severity="warning",
                             message=f"Строка {row_index + 1}: заполните '{label}'",
                         )
                     )

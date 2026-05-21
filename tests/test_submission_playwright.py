@@ -8,9 +8,11 @@ from submission.submission_service import SubmissionHeader, SubmissionPayload
 
 
 class _FakeElement:
-    def __init__(self, *, visible=True, enabled=True):
+    def __init__(self, *, visible=True, enabled=True, attrs=None, fill_error=None):
         self.visible = visible
         self.enabled = enabled
+        self.attrs = dict(attrs or {})
+        self.fill_error = fill_error
         self.clicked = False
         self.scrolled = False
         self.dispatched = False
@@ -36,7 +38,12 @@ class _FakeElement:
         self.files = [str(files)]
 
     def fill(self, value, timeout=None):
+        if self.fill_error is not None:
+            raise self.fill_error
         self.filled_value = value
+
+    def get_attribute(self, name):
+        return self.attrs.get(name)
 
     def wait_for(self, *_args, **_kwargs):
         return None
@@ -64,6 +71,12 @@ class _FakePage:
 
     def locator(self, selector):
         return _FakeLocator(self.locators.get(selector, []))
+
+    def get_by_label(self, *_args, **_kwargs):
+        return _FakeLocator(self.locators.get("get_by_label", []))
+
+    def get_by_placeholder(self, *_args, **_kwargs):
+        return _FakeLocator(self.locators.get("get_by_placeholder", []))
 
     def get_by_role(self, *_args, **_kwargs):
         return _FakeLocator()
@@ -205,7 +218,7 @@ class SubmissionPlaywrightTests(unittest.TestCase):
         field = _FakeElement()
         page = _FakePage(
             {
-                "mat-form-field:has-text('Порядок доставки') input": [field],
+                "mat-form-field:has-text('Порядок доставки') input:not([type='checkbox']):not([type='radio']):not([type='file'])": [field],
             }
         )
         submitter = SubmissionPlaywright({"JSESSIONID": "cookie"}, allow_submit=True)
@@ -217,13 +230,31 @@ class SubmissionPlaywrightTests(unittest.TestCase):
         field = _FakeElement()
         page = _FakePage(
             {
-                "mat-form-field:has-text('Условие оплаты') input": [field],
+                "mat-form-field:has-text('Условие оплаты') input:not([type='checkbox']):not([type='radio']):not([type='file'])": [field],
             }
         )
         submitter = SubmissionPlaywright({"JSESSIONID": "cookie"}, allow_submit=True)
 
         self.assertTrue(submitter._fill_payment_terms(page, "Оплата по договору"))
         self.assertEqual(field.filled_value, "Оплата по договору")
+
+    def test_fill_payment_terms_skips_switch_label_match(self):
+        switch = _FakeElement(
+            attrs={"type": "checkbox", "role": "switch", "aria-checked": "false"},
+            fill_error=RuntimeError('Input of type "checkbox" cannot be filled'),
+        )
+        field = _FakeElement()
+        page = _FakePage(
+            {
+                "get_by_label": [switch],
+                "mat-form-field:has-text('Условия оплаты') input:not([type='checkbox']):not([type='radio']):not([type='file'])": [field],
+            }
+        )
+        submitter = SubmissionPlaywright({"JSESSIONID": "cookie"}, allow_submit=True)
+
+        self.assertTrue(submitter._fill_payment_terms(page, "10 рабочих дней"))
+        self.assertIsNone(switch.filled_value)
+        self.assertEqual(field.filled_value, "10 рабочих дней")
 
 
 if __name__ == "__main__":

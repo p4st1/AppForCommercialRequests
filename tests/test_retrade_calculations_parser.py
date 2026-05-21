@@ -1038,11 +1038,29 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             worksheet.cell(row=2, column=11).number_format,
             ExportMixin._currency_format("₽"),
         )
-        self.assertIsNone(worksheet.cell(row=3, column=11).value)
+        self.assertEqual(worksheet.cell(row=3, column=11).value, "=OLD")
         self.assertEqual(worksheet.cell(row=4, column=11).value, "=ROUND(J4*S4, 2)")
         self.assertEqual(
             worksheet.cell(row=4, column=11).number_format,
             ExportMixin._currency_format(None),
+        )
+
+    def test_is_zero_retrade_price_cell_uses_cached_value_sheet(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.cell(row=2, column=10).value = "=A2"
+
+        values_workbook = Workbook()
+        values_worksheet = values_workbook.active
+        values_worksheet.cell(row=2, column=10).value = 0
+
+        self.assertTrue(
+            ExportMixin._is_zero_retrade_price_cell(
+                worksheet,
+                2,
+                10,
+                values_worksheet=values_worksheet,
+            )
         )
 
     def test_write_realization_price_formulas_to_sheet_uses_first_non_empty_header_row(
@@ -1394,9 +1412,12 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                     best_price_col_index,
                     formula_col_index,
                     corrected_rating_col_index,
-                    realization_price_col_index,
                 ):
                     self.assertIsNone(result_sheet.cell(row=3, column=column).value)
+                self.assertEqual(
+                    result_sheet.cell(row=3, column=realization_price_col_index).value,
+                    "=OLD",
+                )
             finally:
                 result_workbook.close()
         finally:

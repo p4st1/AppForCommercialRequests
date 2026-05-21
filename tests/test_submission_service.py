@@ -34,17 +34,23 @@ class SubmissionServiceTests(unittest.TestCase):
 
         errors = [(issue.row, issue.label) for issue in issues if issue.severity == "error"]
         warnings = [(issue.row, issue.label) for issue in issues if issue.severity == "warning"]
-        self.assertEqual(
-            errors,
-            [
-                (1, "Цена за ед."),
-                (1, "Срок поставки"),
-                (1, "Производитель"),
-                (1, "Технические характеристики"),
-            ],
-        )
+        self.assertEqual(errors, [])
+        self.assertIn((1, "Цена за ед."), warnings)
+        self.assertIn((1, "Срок поставки"), warnings)
+        self.assertIn((1, "Производитель"), warnings)
+        self.assertIn((1, "Технические характеристики"), warnings)
         self.assertIn((0, "Статус поставщика"), warnings)
         self.assertIn((0, "Гарантия"), warnings)
+
+    def test_validate_keeps_missing_header_fields_blocking(self):
+        service = SubmissionService()
+
+        issues = service.validate(SubmissionHeader(), [SubmissionRow(name="Насос")])
+
+        errors = [issue.label for issue in issues if issue.severity == "error"]
+        self.assertIn("Номер заявки", errors)
+        self.assertIn("Название заявки", errors)
+        self.assertIn("Срок действия КП", errors)
 
     def test_prepare_payload_calculates_total(self):
         payload = SubmissionService.prepare_payload(
