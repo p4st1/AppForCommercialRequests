@@ -105,12 +105,23 @@ jobs:
         shell: bash
         run: |
           set -eux
-          PLAYWRIGHT_BROWSERS_PATH=0 python -m playwright install chromium
 
-          PW_BROWSERS="$(python -c "from pathlib import Path; import playwright; print(Path(playwright.__file__).resolve().parent / 'driver' / 'package' / '.local-browsers')")"
+          PW_SITE_BROWSERS="$(python -c "from pathlib import Path; import playwright; print(Path(playwright.__file__).resolve().parent / 'driver' / 'package' / '.local-browsers')")"
+          python -c "from pathlib import Path; import shutil, sys; shutil.rmtree(Path(sys.argv[1]), ignore_errors=True)" "$PW_SITE_BROWSERS"
+
+          PW_BROWSERS="$(python -c "from pathlib import Path; import os; print(Path(os.environ['RUNNER_TEMP']) / 'playwright-browsers')")"
+          python -c "from pathlib import Path; import shutil, sys; shutil.rmtree(Path(sys.argv[1]), ignore_errors=True); Path(sys.argv[1]).mkdir(parents=True, exist_ok=True)" "$PW_BROWSERS"
+          PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS" python -m playwright install --no-shell chromium
+          python -c "from pathlib import Path; import shutil, sys; root=Path(sys.argv[1]); [shutil.rmtree(path, ignore_errors=True) for path in root.glob('ffmpeg-*')]" "$PW_BROWSERS"
+
           echo "PW_BROWSERS=$PW_BROWSERS" >> "$GITHUB_ENV"
           test -d "$PW_BROWSERS"
+          test ! -d "$PW_SITE_BROWSERS"
+          test -n "$(find "$PW_BROWSERS" -path "*/chrome.exe" -type f -print -quit)"
+          test -z "$(find "$PW_BROWSERS" -path "*/chromium_headless_shell-*" -print -quit)"
+          test -z "$(find "$PW_BROWSERS" -path "*/ffmpeg-*" -print -quit)"
           python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); [print(path) for _, path in zip(range(20), (p for p in root.rglob('*') if p.is_file()))]" "$PW_BROWSERS"
+          python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); print('Playwright browsers size MB:', round(sum(p.stat().st_size for p in root.rglob('*') if p.is_file()) / 1024 / 1024, 1))" "$PW_BROWSERS"
 
       - name: Install Playwright Chromium (macOS)
         if: runner.os == 'macOS'
@@ -123,12 +134,16 @@ jobs:
           PW_BROWSERS="$RUNNER_TEMP/playwright-browsers"
           rm -rf "$PW_BROWSERS"
           mkdir -p "$PW_BROWSERS"
-          PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS" python -m playwright install chromium
+          PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS" python -m playwright install --no-shell chromium
+          rm -rf "$PW_BROWSERS"/ffmpeg-*
 
           echo "PW_BROWSERS=$PW_BROWSERS" >> "$GITHUB_ENV"
           test -d "$PW_BROWSERS"
           test ! -d "$PW_SITE_BROWSERS"
+          test -z "$(find "$PW_BROWSERS" -path "*/chromium_headless_shell-*" -print -quit)"
+          test -z "$(find "$PW_BROWSERS" -path "*/ffmpeg-*" -print -quit)"
           python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); [print(path) for _, path in zip(range(20), (p for p in root.rglob('*') if p.is_file()))]" "$PW_BROWSERS"
+          python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); print('Playwright browsers size MB:', round(sum(p.stat().st_size for p in root.rglob('*') if p.is_file()) / 1024 / 1024, 1))" "$PW_BROWSERS"
 
       - name: Verify import main
         shell: bash
@@ -283,6 +298,10 @@ jobs:
           test -d "$DOCX_BASE/parts"
           test -f "$DOCX_BASE/templates/default-header.xml"
           python -c "from pathlib import Path; import sys; [print(path.name) for _, path in zip(range(20), Path(sys.argv[1]).joinpath('templates').iterdir())]" "$DOCX_BASE"
+
+          xattr -cr "$APP_PATH"
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
           "$APP_PATH/Contents/MacOS/${APP_NAME}" --smoke-test
 
