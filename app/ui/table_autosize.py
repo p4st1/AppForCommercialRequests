@@ -127,23 +127,41 @@ def resize_table_to_contents(
                 resize_columns_to_contents()
         _apply_fixed_text_column_widths(table, text_columns)
 
-    if is_large_table:
-        _resize_rows_from_sample(
-            table,
-            min_row_height=min_row_height,
-            text_columns=text_columns,
-            sample_limit=full_resize_row_limit,
-        )
-    else:
-        resize_rows_to_contents = getattr(table, "resizeRowsToContents", None)
-        if callable(resize_rows_to_contents):
-            resize_rows_to_contents()
+    _resize_rows_by_estimate(
+        table,
+        min_row_height=min_row_height,
+        text_columns=text_columns,
+    )
+
+    refresh_table_viewport(table)
+
+
+def refresh_table_viewport(table: QTableWidget, *, force_updates_enabled: bool = False) -> None:
+    if force_updates_enabled:
+        set_updates_enabled = getattr(table, "setUpdatesEnabled", None)
+        if callable(set_updates_enabled):
+            set_updates_enabled(True)
+
+        viewport_getter = getattr(table, "viewport", None)
+        viewport = viewport_getter() if callable(viewport_getter) else None
+        viewport_set_updates_enabled = getattr(viewport, "setUpdatesEnabled", None)
+        if callable(viewport_set_updates_enabled):
+            viewport_set_updates_enabled(True)
+
+    for method_name in ("doItemsLayout", "updateGeometries"):
+        method = getattr(table, method_name, None)
+        if callable(method):
+            method()
 
     viewport_getter = getattr(table, "viewport", None)
     viewport = viewport_getter() if callable(viewport_getter) else None
     update = getattr(viewport, "update", None)
     if callable(update):
         update()
+
+    table_update = getattr(table, "update", None)
+    if callable(table_update):
+        table_update()
 
 
 def _table_count(table: QTableWidget, getter_name: str) -> int | None:
@@ -204,35 +222,29 @@ def _resize_columns_from_sample(
         set_column_width(column, width)
 
 
-def _resize_rows_from_sample(
+def _resize_rows_by_estimate(
     table: QTableWidget,
     *,
     min_row_height: int,
     text_columns: Mapping[int, int] | tuple[int, ...] | list[int] | None,
-    sample_limit: int,
 ) -> None:
     row_count = _table_count(table, "rowCount") or 0
     set_row_height = getattr(table, "setRowHeight", None)
-    resize_row_to_contents = getattr(table, "resizeRowToContents", None)
     fixed_columns = _normalise_text_columns(text_columns)
 
-    if callable(set_row_height):
-        for row in range(row_count):
-            set_row_height(
-                row,
-                _estimated_row_height(
-                    table,
-                    row=row,
-                    min_row_height=min_row_height,
-                    fixed_columns=fixed_columns,
-                ),
-            )
-
-    if not callable(resize_row_to_contents):
+    if not callable(set_row_height):
         return
 
-    for row in range(min(row_count, max(0, int(sample_limit)))):
-        resize_row_to_contents(row)
+    for row in range(row_count):
+        set_row_height(
+            row,
+            _estimated_row_height(
+                table,
+                row=row,
+                min_row_height=min_row_height,
+                fixed_columns=fixed_columns,
+            ),
+        )
 
 
 def _line_spacing(table: QTableWidget) -> int:
@@ -292,16 +304,6 @@ def table_update_guard(*tables: QTableWidget | None):
             except Exception:
                 sorting_enabled = None
 
-        set_updates_enabled = getattr(table, "setUpdatesEnabled", None)
-        updates_enabled = getattr(table, "updatesEnabled", None)
-        table_updates_enabled = None
-        if callable(set_updates_enabled):
-            try:
-                table_updates_enabled = bool(updates_enabled()) if callable(updates_enabled) else True
-                set_updates_enabled(False)
-            except Exception:
-                table_updates_enabled = None
-
         viewport_getter = getattr(table, "viewport", None)
         viewport = viewport_getter() if callable(viewport_getter) else None
         viewport_set_updates_enabled = getattr(viewport, "setUpdatesEnabled", None)
@@ -315,6 +317,16 @@ def table_update_guard(*tables: QTableWidget | None):
                 viewport_set_updates_enabled(False)
             except Exception:
                 viewport_was_enabled = None
+
+        set_updates_enabled = getattr(table, "setUpdatesEnabled", None)
+        updates_enabled = getattr(table, "updatesEnabled", None)
+        table_updates_enabled = None
+        if callable(set_updates_enabled):
+            try:
+                table_updates_enabled = bool(updates_enabled()) if callable(updates_enabled) else True
+                set_updates_enabled(False)
+            except Exception:
+                table_updates_enabled = None
 
         restore_stack.append(
             (
@@ -330,13 +342,13 @@ def table_update_guard(*tables: QTableWidget | None):
         yield
     finally:
         for table, sorting_enabled, table_updates_enabled, viewport, viewport_was_enabled in reversed(restore_stack):
-            viewport_set_updates_enabled = getattr(viewport, "setUpdatesEnabled", None)
-            if callable(viewport_set_updates_enabled) and viewport_was_enabled is not None:
-                viewport_set_updates_enabled(viewport_was_enabled)
-
             set_updates_enabled = getattr(table, "setUpdatesEnabled", None)
             if callable(set_updates_enabled) and table_updates_enabled is not None:
                 set_updates_enabled(table_updates_enabled)
+
+            viewport_set_updates_enabled = getattr(viewport, "setUpdatesEnabled", None)
+            if callable(viewport_set_updates_enabled) and viewport_was_enabled is not None:
+                viewport_set_updates_enabled(viewport_was_enabled)
 
             set_sorting_enabled = getattr(table, "setSortingEnabled", None)
             if callable(set_sorting_enabled) and sorting_enabled is not None:

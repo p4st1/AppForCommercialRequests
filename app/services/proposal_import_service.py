@@ -104,6 +104,29 @@ class ProposalImportService:
 
         return self._read_csv_table(filename)
 
+    def _read_source_table_with_pandas(self, filename):
+        import pandas as pd
+
+        ext = Path(filename).suffix.lower()
+        if ext in {".xls", ".xlsx", ".xlsm", ".xltx", ".xltm"}:
+            return pd.read_excel(filename, header=None, dtype=str).fillna("")
+
+        errors = []
+        for encoding in ("utf-8-sig", "utf-16", "cp1251", "utf-8"):
+            try:
+                return pd.read_csv(
+                    filename,
+                    header=None,
+                    sep=None,
+                    dtype=str,
+                    encoding=encoding,
+                    engine="python",
+                    on_bad_lines="skip",
+                ).fillna("")
+            except Exception as error:
+                errors.append(str(error))
+        raise ValueError("Не удалось прочитать файл. Проверьте кодировку и формат CSV")
+
     def detect_columns(self, df):
         header_row = None
         max_rows = min(len(df.index), 50)
@@ -257,5 +280,12 @@ class ProposalImportService:
         return parsed_rows, warnings
 
     def load_source_rows(self, filename):
-        df = self.read_source_table(filename)
-        return self.parse_source_rows(df)
+        try:
+            df = self.read_source_table(filename)
+            return self.parse_source_rows(df)
+        except Exception as fast_error:
+            try:
+                df = self._read_source_table_with_pandas(filename)
+                return self.parse_source_rows(df)
+            except Exception:
+                raise fast_error

@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-from app.ui.table_autosize import resize_table_to_contents, table_update_guard
+from app.ui.table_autosize import refresh_table_viewport, resize_table_to_contents, table_update_guard
 from config import Config
 from tools import DatabaseTools as Tool
 
@@ -51,8 +51,14 @@ class TableImportFlowMixin:
         try:
             parsed_rows, warnings = self.proposal_import_service.load_source_rows(filename)
         except Exception as e:
+            Tool.log_exception(
+                f"Не удалось загрузить КП поставщика: {filename}",
+                e,
+                include_traceback=False,
+            )
             self.error("Ошибка", f"Невозможно прочитать таблицу\n{e}")
             return
+        Tool.write_log(f"КП поставщика прочитано: {filename}; строк: {len(parsed_rows)}")
 
         table = self.ui.KpTable
         summary_table = getattr(self.ui, "tableWidget_3", None)
@@ -103,9 +109,8 @@ class TableImportFlowMixin:
             self.mixedCurrencyWarningShown = False
             self.logisticCalculate(apply_filters=False)
             self.calculating(apply_filters=False, resize=False, update_summary=False)
-            if not getattr(self, "columnFilters", {}) and not getattr(self, "quickSearchText", ""):
-                self._table_filter_all_visible = True
-                self._table_filter_row_count = len(parsed_rows)
+            self._table_filter_all_visible = False
+            self._table_filter_row_count = None
             self._apply_table_filters()
             resize_table_to_contents(table)
             update_total_tab_table = getattr(self, "_update_total_tab_table", None)
@@ -116,6 +121,34 @@ class TableImportFlowMixin:
         self.saveConfig()
         Config.isTableOpened = True
         self._show_full_table_tab()
+
+        scroll_to_top = getattr(table, "scrollToTop", None)
+        if callable(scroll_to_top):
+            scroll_to_top()
+        scroll_to_left = getattr(table, "scrollToLeft", None)
+        if callable(scroll_to_left):
+            scroll_to_left()
+        refresh_table_viewport(table, force_updates_enabled=True)
+
+        hidden_rows = 0
+        is_row_hidden = getattr(table, "isRowHidden", None)
+        if callable(is_row_hidden):
+            hidden_rows = sum(1 for row in range(table.rowCount()) if is_row_hidden(row))
+        first_row_height = None
+        row_height = getattr(table, "rowHeight", None)
+        if callable(row_height) and table.rowCount() > 0:
+            first_row_height = row_height(0)
+        viewport = table.viewport() if callable(getattr(table, "viewport", None)) else None
+        viewport_updates = None
+        viewport_updates_enabled = getattr(viewport, "updatesEnabled", None)
+        if callable(viewport_updates_enabled):
+            viewport_updates = viewport_updates_enabled()
+        Tool.write_log(
+            "КП поставщика отображено: "
+            f"rows={self.rows}, table_rows={table.rowCount()}, "
+            f"hidden_rows={hidden_rows}, first_row_height={first_row_height}, "
+            f"viewport_updates={viewport_updates}"
+        )
 
         if warnings:
             trimmed = warnings[:10]

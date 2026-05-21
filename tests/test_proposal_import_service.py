@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.services.proposal_import_service import ProposalImportService
 
@@ -153,6 +154,25 @@ class ProposalImportServiceTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["name"], "Клапан")
         self.assertEqual(rows[0]["qty"], 3)
+
+    def test_load_source_rows_falls_back_to_pandas_reader(self):
+        df = _FakeTable(
+            [
+                ["№", "Наименование", "Каталожный номер", "Ед.", "Кол-во", "Цена", "Срок"],
+                ["1", "Насос", "SKU-1", "шт", "2", "100 ₽", "15 дней"],
+            ]
+        )
+
+        with (
+            patch.object(self.service, "read_source_table", side_effect=ValueError("fast failed")),
+            patch.object(self.service, "_read_source_table_with_pandas", return_value=df) as fallback,
+        ):
+            rows, warnings = self.service.load_source_rows("/tmp/input.csv")
+
+        fallback.assert_called_once_with("/tmp/input.csv")
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Насос")
 
 
 if __name__ == "__main__":

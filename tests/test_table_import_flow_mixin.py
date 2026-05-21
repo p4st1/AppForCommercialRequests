@@ -55,6 +55,9 @@ class _FakeKpTable:
     def setRowCount(self, value):
         self.row_counts.append(value)
 
+    def rowCount(self):
+        return self.row_counts[-1] if self.row_counts else 0
+
     def resizeColumnsToContents(self):
         self.resize_calls += 1
 
@@ -230,7 +233,8 @@ class TableImportFlowMixinTests(unittest.TestCase):
         Config.isTableOpened = False
         Config.config["lastTable"] = ""
 
-        window.openTable(file="/tmp/input.csv")
+        with patch("app.ui.table_import_flow_mixin.QSignalBlocker", lambda _obj: SimpleNamespace()):
+            window.openTable(file="/tmp/input.csv")
 
         self.assertEqual(window.proposal_import_service.calls, ["/tmp/input.csv"])
         self.assertEqual(window.ui.KpTable.row_counts, [1])
@@ -247,6 +251,8 @@ class TableImportFlowMixinTests(unittest.TestCase):
         self.assertEqual(window.calculating_calls, 1)
         self.assertEqual(window.ui.KpTable.resize_calls, 1)
         self.assertEqual(window.apply_filters_calls, 1)
+        self.assertFalse(window._table_filter_all_visible)
+        self.assertIsNone(window._table_filter_row_count)
         self.assertEqual(window.save_calls, 1)
         self.assertFalse(window.mixedCurrencyWarningShown)
         self.assertEqual(Config.config["lastTable"], "/tmp/input.csv")

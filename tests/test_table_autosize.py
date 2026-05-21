@@ -1,6 +1,7 @@
+import os
 import unittest
 
-from app.ui.table_autosize import resize_table_to_contents, table_update_guard
+from app.ui.table_autosize import refresh_table_viewport, resize_table_to_contents, table_update_guard
 
 
 class _FakeItem:
@@ -45,6 +46,9 @@ class _FakeTable:
         self.full_column_resize_calls = 0
         self.full_row_resize_calls = 0
         self.row_resize_calls = []
+        self.layout_calls = 0
+        self.geometry_update_calls = 0
+        self.update_calls = 0
         self.row_heights = {}
         self.column_widths = {}
         self.updates = True
@@ -77,6 +81,15 @@ class _FakeTable:
     def resizeRowToContents(self, row):
         self.row_resize_calls.append(row)
 
+    def doItemsLayout(self):
+        self.layout_calls += 1
+
+    def updateGeometries(self):
+        self.geometry_update_calls += 1
+
+    def update(self):
+        self.update_calls += 1
+
     def setWordWrap(self, _value):
         pass
 
@@ -97,6 +110,8 @@ class _FakeTable:
 
     def setUpdatesEnabled(self, value):
         self.updates = bool(value)
+        if not self.updates:
+            self._viewport.setUpdatesEnabled(False)
 
     def isSortingEnabled(self):
         return self.sorting
@@ -112,8 +127,12 @@ class TableAutosizeTests(unittest.TestCase):
         resize_table_to_contents(table, full_resize_row_limit=5)
 
         self.assertEqual(table.full_column_resize_calls, 1)
-        self.assertEqual(table.full_row_resize_calls, 1)
+        self.assertEqual(table.full_row_resize_calls, 0)
         self.assertEqual(table.row_resize_calls, [])
+        self.assertEqual(len(table.row_heights), 4)
+        self.assertGreaterEqual(table.layout_calls, 1)
+        self.assertGreaterEqual(table.geometry_update_calls, 1)
+        self.assertGreaterEqual(table.update_calls, 1)
 
     def test_large_table_uses_sampled_resize(self):
         table = _FakeTable(rows=12, cols=3)
@@ -122,7 +141,7 @@ class TableAutosizeTests(unittest.TestCase):
 
         self.assertEqual(table.full_column_resize_calls, 0)
         self.assertEqual(table.full_row_resize_calls, 0)
-        self.assertEqual(table.row_resize_calls, [0, 1, 2, 3, 4])
+        self.assertEqual(table.row_resize_calls, [])
         self.assertEqual(len(table.row_heights), 12)
         self.assertEqual(table.column_widths[1], 300)
         self.assertIn(0, table.column_widths)
@@ -139,6 +158,71 @@ class TableAutosizeTests(unittest.TestCase):
         self.assertTrue(table.sorting)
         self.assertTrue(table.viewport().updates)
         self.assertGreaterEqual(table.viewport().update_calls, 1)
+
+    def test_table_update_guard_restores_real_qt_viewport_updates(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication, QTableWidget
+        except Exception as exc:
+            self.skipTest(f"PySide6 is not available: {exc}")
+
+        app = QApplication.instance() or QApplication([])
+        table = QTableWidget()
+        table.setRowCount(1)
+        table.setColumnCount(1)
+        table.show()
+        app.processEvents()
+
+        try:
+            self.assertTrue(table.updatesEnabled())
+            self.assertTrue(table.viewport().updatesEnabled())
+
+            with table_update_guard(table):
+                self.assertFalse(table.updatesEnabled())
+                self.assertFalse(table.viewport().updatesEnabled())
+
+            self.assertTrue(table.updatesEnabled())
+            self.assertTrue(table.viewport().updatesEnabled())
+        finally:
+            table.close()
+
+    def test_refresh_table_viewport_recovers_updates_after_tab_switch(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication, QLabel, QTabWidget, QTableWidget, QTableWidgetItem
+        except Exception as exc:
+            self.skipTest(f"PySide6 is not available: {exc}")
+
+        app = QApplication.instance() or QApplication([])
+        tabs = QTabWidget()
+        table = QTableWidget()
+        table.setColumnCount(2)
+        table.setRowCount(1)
+        table.setItem(0, 0, QTableWidgetItem("VISIBLE"))
+        table.setItem(0, 1, QTableWidgetItem("TEXT"))
+        tabs.addTab(table, "Полная таблица")
+        tabs.addTab(QLabel("other"), "Другая вкладка")
+        tabs.resize(640, 240)
+        tabs.show()
+        app.processEvents()
+
+        try:
+            tabs.setCurrentIndex(1)
+            app.processEvents()
+            table.setUpdatesEnabled(False)
+            table.viewport().setUpdatesEnabled(False)
+
+            tabs.setCurrentIndex(0)
+            refresh_table_viewport(table, force_updates_enabled=True)
+            app.processEvents()
+
+            self.assertTrue(table.isVisible())
+            self.assertTrue(table.updatesEnabled())
+            self.assertTrue(table.viewport().updatesEnabled())
+            self.assertEqual(table.item(0, 0).text(), "VISIBLE")
+            self.assertTrue(table.visualItemRect(table.item(0, 0)).isValid())
+        finally:
+            tabs.close()
 
 
 if __name__ == "__main__":

@@ -44,6 +44,12 @@ jobs:
   build:
     name: Build (${{ matrix.name }})
     needs: verify
+    env:
+      MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
     strategy:
       fail-fast: false
       matrix:
@@ -159,6 +165,29 @@ jobs:
           echo "DOCX_TPL=$DOCX_TPL" >> $GITHUB_ENV
           test -d "$DOCX_TPL"
           python -c "from pathlib import Path; import sys; [print(path.name) for _, path in zip(range(20), Path(sys.argv[1]).iterdir())]" "$DOCX_TPL"
+
+      - name: Import Apple signing certificate (macOS)
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE_BASE64 != ''
+        shell: bash
+        run: |
+          set -eux
+          CERT_PATH="$RUNNER_TEMP/developer_id_application.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+
+          printf '%s' "$MACOS_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
+          printf '%s\n' "$IDENTITIES"
+          CERT_ID="$(printf '%s\n' "$IDENTITIES" | awk -F '"' '/Developer ID Application:/ { print $2; exit }')"
+          test -n "$CERT_ID"
+          echo "MACOS_CODESIGN_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
 
       # ---------------- WINDOWS ----------------
 
@@ -300,8 +329,27 @@ jobs:
           python -c "from pathlib import Path; import sys; [print(path.name) for _, path in zip(range(20), Path(sys.argv[1]).joinpath('templates').iterdir())]" "$DOCX_BASE"
 
           xattr -cr "$APP_PATH"
-          codesign --force --deep --sign - "$APP_PATH"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          if [ -n "${MACOS_CODESIGN_IDENTITY:-}" ]; then
+            : "${APPLE_ID:?Missing APPLE_ID secret}"
+            : "${APPLE_TEAM_ID:?Missing APPLE_TEAM_ID secret}"
+            : "${APPLE_APP_SPECIFIC_PASSWORD:?Missing APPLE_APP_SPECIFIC_PASSWORD secret}"
+
+            codesign --force --deep --options runtime --timestamp --sign "$MACOS_CODESIGN_IDENTITY" "$APP_PATH"
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+            NOTARY_ZIP="$RUNNER_TEMP/${APP_NAME}-notary-${TARCH}.zip"
+            ditto -c -k --keepParent "$APP_PATH" "$NOTARY_ZIP"
+            xcrun notarytool submit "$NOTARY_ZIP" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --wait
+            xcrun stapler staple "$APP_PATH"
+            xcrun stapler validate "$APP_PATH"
+            spctl --assess --type execute --verbose=4 "$APP_PATH"
+          else
+            codesign --force --deep --sign - "$APP_PATH"
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          fi
 
           "$APP_PATH/Contents/MacOS/${APP_NAME}" --smoke-test
 

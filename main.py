@@ -92,7 +92,7 @@ from app.ui.table_item_mixin import TableItemMixin
 from app.ui.vat_mixin import VatMixin
 from app.ui.history_flow_mixin import HistoryFlowMixin
 from app.ui.maintenance_actions_mixin import MaintenanceActionsMixin
-from app.ui.table_autosize import resize_table_to_contents
+from app.ui.table_autosize import refresh_table_viewport, resize_table_to_contents
 from app.ui.ui_feedback_mixin import UiFeedbackMixin
 from app.ui.window_navigation_mixin import WindowNavigationMixin
 from ui_mixins.excel_viewer_mixin import ExcelViewerMixin
@@ -506,6 +506,25 @@ class mainWindow(
         show_panel = self.ui.tabWidget.currentWidget() is self.ui.tab
         for widget in self._full_table_panel_widgets:
             widget.setVisible(show_panel)
+        if show_panel:
+            self._restore_full_table_painting()
+            QTimer.singleShot(0, self._restore_full_table_painting)
+            QTimer.singleShot(80, self._restore_full_table_painting)
+
+    def _restore_full_table_painting(self):
+        table = getattr(self.ui, "KpTable", None)
+        if table is None:
+            return
+
+        if self.ui.tabWidget.currentWidget() is not self.ui.tab:
+            return
+
+        table.setVisible(True)
+        horizontal_header = table.horizontalHeader()
+        if horizontal_header is not None:
+            horizontal_header.setVisible(True)
+
+        refresh_table_viewport(table, force_updates_enabled=True)
 
     def _apply_main_tab_visibility(self):
         tabs = getattr(getattr(self, "ui", None), "tabWidget", None)
