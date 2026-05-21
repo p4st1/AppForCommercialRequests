@@ -378,6 +378,51 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             {"price": None, "logistic": None, "customs": None},
         )
 
+    def test_parse_skips_rows_that_only_have_currency_formatting(self):
+        parsed = ExportMixin._parse_retrade_calculations(
+            [
+                [
+                    {"value": None, "currency": "RUB"},
+                    {"value": "", "currency": "RUB"},
+                ],
+                [
+                    {"value": "№", "currency": None},
+                    {"value": "Цена", "currency": None},
+                ],
+                [
+                    {"value": None, "currency": "RUB"},
+                    {"value": None, "currency": "RUB"},
+                ],
+                [{"value": 1, "currency": None}, {"value": 100, "currency": "RUB"}],
+            ]
+        )
+
+        self.assertEqual(parsed["headers"], ["№", "Цена"])
+        self.assertEqual(
+            parsed["rows"],
+            [[{"value": 1, "currency": None}, {"value": 100, "currency": "RUB"}]],
+        )
+
+    def test_worksheet_visible_rows_skip_empty_rows_before_and_after_headers(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append([None, None])
+        worksheet.append(["№", "Цена"])
+        worksheet.append([None, None])
+        worksheet.append([1, 100])
+        worksheet["B1"].number_format = '#,##0.00 "₽"'
+        worksheet["B3"].number_format = '#,##0.00 "₽"'
+
+        headers, rows, column_count = ExportMixin._worksheet_to_visible_retrade_rows(
+            worksheet
+        )
+
+        self.assertEqual(column_count, 2)
+        self.assertEqual([cell["value"] for cell in headers], ["№", "Цена"])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], 4)
+        self.assertEqual([cell["value"] for cell in rows[0][1]], [1, 100])
+
     def test_parse_returns_empty_structure_for_empty_file(self):
         parsed = ExportMixin._parse_retrade_calculations(
             [
@@ -850,6 +895,12 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                     {"value": "1,10", "currency": None},
                     {"value": None, "currency": None},
                 ],
+                [
+                    {"value": 3, "currency": None},
+                    {"value": "0,00 ₽", "currency": "RUB"},
+                    {"value": "1,50", "currency": None},
+                    {"value": None, "currency": "RUB"},
+                ],
             ],
         )
 
@@ -943,6 +994,12 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                     {"value": None, "currency": None},
                     {"value": None, "currency": "RUB"},
                 ],
+                [
+                    {"value": 3, "currency": None},
+                    {"value": 0, "currency": "RUB"},
+                    {"value": None, "currency": None},
+                    {"value": None, "currency": "RUB"},
+                ],
             ],
         )
 
@@ -961,10 +1018,12 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         worksheet.append([None for _ in headers])
         worksheet.append([None for _ in headers])
         worksheet.cell(row=2, column=10).number_format = '#,##0.00 "₽"'
+        worksheet.cell(row=3, column=10).value = 0
+        worksheet.cell(row=3, column=11).value = "=OLD"
 
         formulas = ExportMixin._write_realization_price_formulas_to_sheet(
             worksheet,
-            [0, 2],
+            [0, 1, 2],
         )
 
         self.assertEqual(
@@ -984,6 +1043,55 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertEqual(
             worksheet.cell(row=4, column=11).number_format,
             ExportMixin._currency_format(None),
+        )
+
+    def test_write_realization_price_formulas_to_sheet_uses_first_non_empty_header_row(
+        self,
+    ):
+        workbook = Workbook()
+        worksheet = workbook.active
+        headers = [f"Колонка {index}" for index in range(1, 20)]
+        headers[9] = "Цена за ед. без НДС"
+        headers[10] = "Цена реализации за ед. без НДС"
+        headers[18] = "Скорректированный рейтинг"
+        worksheet.append([None for _ in headers])
+        worksheet.append([None for _ in headers])
+        worksheet.append(headers)
+        worksheet.append([None for _ in headers])
+
+        formulas = ExportMixin._write_realization_price_formulas_to_sheet(
+            worksheet,
+            [0],
+        )
+
+        self.assertEqual(formulas, {0: "=ROUND(J4*S4, 2)"})
+        self.assertEqual(
+            worksheet.cell(row=4, column=11).value,
+            "=ROUND(J4*S4, 2)",
+        )
+
+    def test_write_realization_price_formulas_to_sheet_accepts_excel_row_indices(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        headers = [f"Колонка {index}" for index in range(1, 20)]
+        headers[9] = "Цена за ед. без НДС"
+        headers[10] = "Цена реализации за ед. без НДС"
+        headers[18] = "Скорректированный рейтинг"
+        worksheet.append([None for _ in headers])
+        worksheet.append(headers)
+        worksheet.append([None for _ in headers])
+        worksheet.append([None for _ in headers])
+
+        formulas = ExportMixin._write_realization_price_formulas_to_sheet(
+            worksheet,
+            [4],
+            indices_are_excel_rows=True,
+        )
+
+        self.assertEqual(formulas, {4: "=ROUND(J4*S4, 2)"})
+        self.assertEqual(
+            worksheet.cell(row=4, column=11).value,
+            "=ROUND(J4*S4, 2)",
         )
 
     def test_write_update_position_formulas_to_current_file_saves_workbook(self):
@@ -1162,27 +1270,27 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=formula_col_index).value,
-                    "=Q2/J2",
+                    "=ROUND(Q2/J2, 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=3, column=formula_col_index).value,
-                    "=Q3/J3",
+                    "=ROUND(Q3/J3, 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=4, column=formula_col_index).value,
-                    "=Q4/J4",
+                    "=ROUND(Q4/J4, 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=corrected_rating_col_index).value,
-                    "=IF(R2-0.02<1.15,1.15,R2-0.02)",
+                    "=ROUND(IF(R2-0.02<1.15,1.15,R2-0.02), 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=3, column=corrected_rating_col_index).value,
-                    "=IF(R3-0.02<1.15,1.15,R3-0.02)",
+                    "=ROUND(IF(R3-0.02<1.15,1.15,R3-0.02), 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=4, column=corrected_rating_col_index).value,
-                    "=IF(R4-0.02<1.15,1.15,R4-0.02)",
+                    "=ROUND(IF(R4-0.02<1.15,1.15,R4-0.02), 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=realization_price_col_index).value,
@@ -1214,6 +1322,81 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                     result_sheet.column_dimensions[get_column_letter(real_rating_col_index)].width,
                     18,
                 )
+            finally:
+                result_workbook.close()
+        finally:
+            workbook.close()
+            Path(file_path).unlink(missing_ok=True)
+
+    def test_write_best_prices_to_calculations_file_skips_zero_source_price(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Расчет"
+        headers = [f"Колонка {index}" for index in range(1, 16)]
+        headers[9] = "Цена за ед."
+        headers[10] = "Цена реализации за ед. без НДС"
+        first_row = [None for _ in headers]
+        first_row[9] = 100
+        zero_price_row = [None for _ in headers]
+        zero_price_row[9] = 0
+        zero_price_row[10] = "=OLD"
+        worksheet.append(headers)
+        worksheet.append(first_row)
+        worksheet.append(zero_price_row)
+
+        temp_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        temp_file.close()
+        file_path = temp_file.name
+
+        try:
+            workbook.save(file_path)
+            workbook.close()
+
+            sheet_title = ExportMixin._write_best_prices_to_calculations_file(
+                file_path,
+                [1000, 500],
+                ratings=[1.236, 1.236],
+                min_margin=1.15,
+                delta_percent=2,
+            )
+
+            result_workbook = load_workbook(file_path, data_only=False)
+            try:
+                result_sheet = result_workbook[sheet_title]
+                real_rating_col_index = 16
+                best_price_col_index = 17
+                formula_col_index = 18
+                corrected_rating_col_index = 19
+                realization_price_col_index = 11
+
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=real_rating_col_index).value,
+                    1.24,
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=best_price_col_index).value,
+                    1000,
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=formula_col_index).value,
+                    "=ROUND(Q2/J2, 2)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=corrected_rating_col_index).value,
+                    "=ROUND(IF(R2-0.02<1.15,1.15,R2-0.02), 2)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=realization_price_col_index).value,
+                    "=ROUND(J2*S2, 2)",
+                )
+                for column in (
+                    real_rating_col_index,
+                    best_price_col_index,
+                    formula_col_index,
+                    corrected_rating_col_index,
+                    realization_price_col_index,
+                ):
+                    self.assertIsNone(result_sheet.cell(row=3, column=column).value)
             finally:
                 result_workbook.close()
         finally:

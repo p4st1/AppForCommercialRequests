@@ -503,27 +503,36 @@ class mainWindow(
             widget.show()
 
     def _on_main_tab_changed(self, _index):
-        show_panel = self.ui.tabWidget.currentWidget() is self.ui.tab
+        current_widget = self.ui.tabWidget.currentWidget()
+        show_panel = current_widget is self.ui.tab
         for widget in self._full_table_panel_widgets:
             widget.setVisible(show_panel)
         if show_panel:
             self._restore_full_table_painting()
             QTimer.singleShot(0, self._restore_full_table_painting)
             QTimer.singleShot(80, self._restore_full_table_painting)
+        elif current_widget is self.ui.tab_3:
+            self._restore_total_table_painting()
+            QTimer.singleShot(0, self._restore_total_table_painting)
+            QTimer.singleShot(80, self._restore_total_table_painting)
 
     def _restore_full_table_painting(self):
-        table = getattr(self.ui, "KpTable", None)
-        if table is None:
-            return
-
         if self.ui.tabWidget.currentWidget() is not self.ui.tab:
             return
+        self._restore_table_painting(getattr(self.ui, "KpTable", None))
 
+    def _restore_total_table_painting(self):
+        if self.ui.tabWidget.currentWidget() is not self.ui.tab_3:
+            return
+        self._restore_table_painting(getattr(self.ui, "tableWidget_3", None))
+
+    def _restore_table_painting(self, table):
+        if table is None:
+            return
         table.setVisible(True)
         horizontal_header = table.horizontalHeader()
         if horizontal_header is not None:
             horizontal_header.setVisible(True)
-
         refresh_table_viewport(table, force_updates_enabled=True)
 
     def _apply_main_tab_visibility(self):

@@ -2068,6 +2068,43 @@ QTableWidget::indicator {{
             data.append(parsed_row)
         return data
 
+    @classmethod
+    def _worksheet_to_visible_retrade_rows(
+        cls,
+        worksheet: Any,
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[tuple[int, list[dict[str, Any]]]],
+        int,
+    ]:
+        visible_rows: list[tuple[int, list[dict[str, Any]]]] = []
+        for row_number, row in enumerate(
+            worksheet.iter_rows(values_only=False),
+            start=1,
+        ):
+            parsed_row: list[dict[str, Any]] = []
+            for cell in row:
+                value = cell.value
+                parsed_row.append(
+                    {
+                        "value": value,
+                        "currency": cls._detect_currency(value, cell.number_format),
+                    }
+                )
+            if not cls._is_retrade_calculations_row_present(parsed_row):
+                continue
+            visible_rows.append((row_number, parsed_row))
+
+        if not visible_rows:
+            return [], [], 0
+
+        max_col = max(
+            (len(row_cells) for _row_number, row_cells in visible_rows),
+            default=0,
+        )
+        header_cells = visible_rows[0][1]
+        return header_cells, visible_rows[1:], max_col
+
     @staticmethod
     def _warn_if_retrade_calculations_formulas_unresolved(
         file_path: str,
@@ -2141,14 +2178,30 @@ QTableWidget::indicator {{
         try:
             table.clear()
 
-            max_row = sheet.max_row
-            max_col = sheet.max_column
+            header_cells, visible_data_rows, max_col = (
+                self._worksheet_to_visible_retrade_rows(sheet)
+            )
+            self._retrade_calculations_row_numbers = [
+                excel_row for excel_row, _row_cells in visible_data_rows
+            ]
 
             table.setColumnCount(max_col)
+            table.setRowCount(len(visible_data_rows))
+            if max_col == 0:
+                return
 
             headers: list[str] = []
-            for col in range(1, max_col + 1):
-                value = sheet.cell(row=1, column=col).value
+            for col_index in range(max_col):
+                cell_payload = (
+                    header_cells[col_index]
+                    if col_index < len(header_cells)
+                    else {"value": None, "currency": None}
+                )
+                value = (
+                    cell_payload.get("value")
+                    if isinstance(cell_payload, dict)
+                    else cell_payload
+                )
                 headers.append("" if value is None else str(value))
             table.setHorizontalHeaderLabels(headers)
 
@@ -2165,14 +2218,16 @@ QTableWidget::indicator {{
                 if "рейтинг" in header_text:
                     rating_columns.add(index)
 
-            data_row_count = max(max_row - 1, 0)
-            table.setRowCount(data_row_count)
-
-            for row in range(2, max_row + 1):
-                for col in range(1, max_col + 1):
-                    cell = sheet.cell(row=row, column=col)
-                    value = cell.value
-                    col_index = col - 1
+            for row_index, (excel_row, row_cells) in enumerate(visible_data_rows):
+                for col_index in range(max_col):
+                    cell_payload = (
+                        dict(row_cells[col_index])
+                        if col_index < len(row_cells)
+                        and isinstance(row_cells[col_index], dict)
+                        else {"value": None, "currency": None}
+                    )
+                    value = cell_payload.get("value")
+                    cell_payload["excel_row"] = excel_row
                     text = self._format_calculations_display_value(
                         value,
                         col_index=col_index,
@@ -2188,7 +2243,8 @@ QTableWidget::indicator {{
                                 | Qt.AlignmentFlag.AlignVCenter
                             )
                         )
-                    table.setItem(row - 2, col - 1, item)
+                    item.setData(Qt.ItemDataRole.UserRole, cell_payload)
+                    table.setItem(row_index, col_index, item)
         finally:
             table.setUpdatesEnabled(True)
 
@@ -2355,6 +2411,17 @@ QTableWidget::indicator {{
         return f"{float(value):.12g}"
 
     @classmethod
+    def _worksheet_header_row_index(cls, worksheet: Any) -> int | None:
+        for row_number, row in enumerate(
+            worksheet.iter_rows(values_only=False),
+            start=1,
+        ):
+            row_data = [{"value": cell.value, "currency": None} for cell in row]
+            if cls._is_retrade_calculations_row_present(row_data):
+                return row_number
+        return None
+
+    @classmethod
     def _find_worksheet_column_by_header(
         cls,
         worksheet: Any,
@@ -2363,7 +2430,11 @@ QTableWidget::indicator {{
         if worksheet.max_row < 1:
             return None
 
-        for header_cell in worksheet[1]:
+        header_row_index = cls._worksheet_header_row_index(worksheet)
+        if header_row_index is None:
+            return None
+
+        for header_cell in worksheet[header_row_index]:
             header_text = cls._normalize_table_header(header_cell.value)
             if predicate(header_text):
                 return int(header_cell.column)
@@ -2380,6 +2451,8 @@ QTableWidget::indicator {{
         cls,
         worksheet: Any,
         row_indices: list[int],
+        *,
+        indices_are_excel_rows: bool = False,
     ) -> dict[int, str]:
         realization_price_col = cls._find_worksheet_column_by_header(
             worksheet,
@@ -2393,6 +2466,7 @@ QTableWidget::indicator {{
         if realization_price_col is None:
             raise ValueError('Не найдена колонка "Цена реализации за ед. без НДС"')
 
+        header_row_index = cls._worksheet_header_row_index(worksheet) or 1
         formulas: dict[int, str] = {}
 
         for row_index_raw in row_indices:
@@ -2403,13 +2477,22 @@ QTableWidget::indicator {{
             if row_index < 0:
                 continue
 
-            excel_row = row_index + 2
+            excel_row = (
+                row_index
+                if indices_are_excel_rows
+                else header_row_index + 1 + row_index
+            )
+            if excel_row <= header_row_index:
+                continue
             formula = f"=ROUND(J{excel_row}*S{excel_row}, 2)"
             target_cell = worksheet.cell(
                 row=excel_row,
                 column=realization_price_col,
             )
             source_price_cell = worksheet.cell(row=excel_row, column=10)
+            if cls._is_zero_retrade_price(source_price_cell.value):
+                target_cell.value = None
+                continue
             currency = (
                 cls._detect_currency(target_cell.value, target_cell.number_format)
                 or cls._detect_currency(
@@ -2472,6 +2555,11 @@ QTableWidget::indicator {{
             index += 1
 
     @classmethod
+    def _is_zero_retrade_price(cls, value: Any) -> bool:
+        numeric_value = cls._parse_retrade_number_or_none(value)
+        return numeric_value is not None and abs(numeric_value) <= 1e-12
+
+    @classmethod
     def _write_best_prices_to_calculations_file(
         cls,
         file_path: str,
@@ -2493,6 +2581,7 @@ QTableWidget::indicator {{
             formula_col = original_max_col + 3
             corrected_rating_col = original_max_col + 4
             best_price_letter = get_column_letter(best_price_col)
+            formula_letter = get_column_letter(formula_col)
             corrected_rating_letter = get_column_letter(corrected_rating_col)
             realization_price_col = cls._find_worksheet_column_by_header(
                 sheet_copy,
@@ -2517,11 +2606,16 @@ QTableWidget::indicator {{
             )
             min_margin_text = cls._format_excel_formula_number(min_margin_value)
             delta_text = cls._format_excel_formula_number(delta_percent_value / 100)
+            header_row_index = cls._worksheet_header_row_index(sheet_copy) or 1
 
-            sheet_copy.cell(row=1, column=real_rating_col).value = "Рейтинг (таблица)"
-            sheet_copy.cell(row=1, column=best_price_col).value = "Лучшая цена за ед."
-            sheet_copy.cell(row=1, column=formula_col).value = "Рейтинг"
-            sheet_copy.cell(row=1, column=corrected_rating_col).value = (
+            sheet_copy.cell(row=header_row_index, column=real_rating_col).value = (
+                "Рейтинг (таблица)"
+            )
+            sheet_copy.cell(row=header_row_index, column=best_price_col).value = (
+                "Лучшая цена за ед."
+            )
+            sheet_copy.cell(row=header_row_index, column=formula_col).value = "Рейтинг"
+            sheet_copy.cell(row=header_row_index, column=corrected_rating_col).value = (
                 "Скорректированный рейтинг"
             )
             for column_letter in (
@@ -2534,24 +2628,39 @@ QTableWidget::indicator {{
                 get_column_letter(corrected_rating_col)
             ].width = 26
 
-            start_row = 2
+            start_row = header_row_index + 1
             rating_values = ratings or []
             for index, best_price in enumerate(best_prices):
                 excel_row = start_row + index
+                source_price_cell = sheet_copy.cell(row=excel_row, column=10)
+                if cls._is_zero_retrade_price(source_price_cell.value):
+                    for column in (
+                        real_rating_col,
+                        best_price_col,
+                        formula_col,
+                        corrected_rating_col,
+                        realization_price_col,
+                    ):
+                        sheet_copy.cell(row=excel_row, column=column).value = None
+                    continue
 
                 rating = rating_values[index] if index < len(rating_values) else None
                 if rating is not None:
-                    sheet_copy.cell(row=excel_row, column=real_rating_col).value = rating
+                    sheet_copy.cell(row=excel_row, column=real_rating_col).value = round(
+                        float(rating),
+                        2,
+                    )
 
                 if best_price is not None:
                     sheet_copy.cell(row=excel_row, column=best_price_col).value = best_price
 
-                formula = f"={best_price_letter}{excel_row}/J{excel_row}"
+                formula = f"=ROUND({best_price_letter}{excel_row}/J{excel_row}, 2)"
                 sheet_copy.cell(row=excel_row, column=formula_col).value = formula
                 corrected_formula = (
-                    f"=IF(R{excel_row}-{delta_text}<{min_margin_text},"
+                    f"=ROUND(IF({formula_letter}{excel_row}-{delta_text}<"
                     f"{min_margin_text},"
-                    f"R{excel_row}-{delta_text})"
+                    f"{min_margin_text},"
+                    f"{formula_letter}{excel_row}-{delta_text}), 2)"
                 )
                 sheet_copy.cell(
                     row=excel_row,
@@ -2853,9 +2962,15 @@ QTableWidget::indicator {{
     def _is_retrade_calculations_cell_present(cls, cell_data: Any) -> bool:
         if isinstance(cell_data, dict):
             value = cell_data.get("value")
-            currency = cell_data.get("currency")
-            return cls._is_retrade_calculations_value_present(value) or bool(currency)
+            return cls._is_retrade_calculations_value_present(value)
         return cls._is_retrade_calculations_value_present(cell_data)
+
+    @classmethod
+    def _is_retrade_calculations_row_present(cls, row_data: Any) -> bool:
+        return any(
+            cls._is_retrade_calculations_cell_present(cell)
+            for cell in row_data or []
+        )
 
     @classmethod
     def _is_retrade_position_cell(cls, value: Any) -> bool:
@@ -3023,6 +3138,8 @@ QTableWidget::indicator {{
 
             if cls._is_empty_number_value(price_raw) or cls._is_empty_number_value(coef_raw):
                 continue
+            if cls._is_zero_retrade_price(price_raw):
+                continue
 
             new_price = round(cls.parse_number(price_raw) * cls.parse_number(coef_raw), 2)
             updates.append(
@@ -3065,7 +3182,10 @@ QTableWidget::indicator {{
                 else None
             )
             price_raw = cls._cell_payload_value(price_cell)
-            if not cls._is_empty_number_value(price_raw):
+            if (
+                not cls._is_empty_number_value(price_raw)
+                and not cls._is_zero_retrade_price(price_raw)
+            ):
                 row_indices.append(row_index)
         return row_indices
 
@@ -3144,7 +3264,7 @@ QTableWidget::indicator {{
 
         for raw_row in cells_data:
             row_data = list(raw_row or [])
-            if not any(cls._is_retrade_calculations_cell_present(cell) for cell in row_data):
+            if not cls._is_retrade_calculations_row_present(row_data):
                 continue
 
             if not header_found:
@@ -3451,6 +3571,25 @@ QTableWidget::indicator {{
             return payload.get("currency")
         return None
 
+    @staticmethod
+    def _table_item_payload_excel_row(item: Any) -> int | None:
+        if item is None:
+            return None
+        data_getter = getattr(item, "data", None)
+        if not callable(data_getter):
+            return None
+        try:
+            payload = data_getter(Qt.ItemDataRole.UserRole)
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        try:
+            excel_row = int(payload.get("excel_row"))
+        except (TypeError, ValueError):
+            return None
+        return excel_row if excel_row > 0 else None
+
     @classmethod
     def _table_payload_rows(cls, table: Any) -> list[list[dict[str, Any]]]:
         try:
@@ -3464,14 +3603,54 @@ QTableWidget::indicator {{
             row: list[dict[str, Any]] = []
             for column_index in range(column_count):
                 item = table.item(row_index, column_index)
-                row.append(
-                    {
-                        "value": cls._table_item_payload_value(item),
-                        "currency": cls._table_item_payload_currency(item),
-                    }
-                )
+                cell_payload = {
+                    "value": cls._table_item_payload_value(item),
+                    "currency": cls._table_item_payload_currency(item),
+                }
+                excel_row = cls._table_item_payload_excel_row(item)
+                if excel_row is not None:
+                    cell_payload["excel_row"] = excel_row
+                row.append(cell_payload)
             rows.append(row)
         return rows
+
+    def _table_rows_to_excel_rows(
+        self,
+        table: Any,
+        row_indices: list[int],
+    ) -> dict[int, int]:
+        try:
+            column_count = int(table.columnCount())
+        except Exception:
+            column_count = 0
+
+        row_numbers = getattr(self, "_retrade_calculations_row_numbers", None)
+        result: dict[int, int] = {}
+        for row_index in row_indices:
+            try:
+                normalized_row = int(row_index)
+            except (TypeError, ValueError):
+                continue
+            if normalized_row < 0:
+                continue
+
+            excel_row: int | None = None
+            for column_index in range(column_count):
+                item = table.item(normalized_row, column_index)
+                excel_row = self._table_item_payload_excel_row(item)
+                if excel_row is not None:
+                    break
+
+            if excel_row is None and isinstance(row_numbers, list):
+                if normalized_row < len(row_numbers):
+                    try:
+                        excel_row = int(row_numbers[normalized_row])
+                    except (TypeError, ValueError):
+                        excel_row = None
+
+            if excel_row is not None and excel_row > 0:
+                result[normalized_row] = excel_row
+        return result
 
     def _set_table_numeric_item(
         self,
@@ -3484,7 +3663,11 @@ QTableWidget::indicator {{
         show_currency: bool = False,
         formula: str | None = None,
     ) -> None:
+        item = table.item(row, column)
         payload = {"value": value, "currency": currency}
+        excel_row = self._table_item_payload_excel_row(item)
+        if excel_row is not None:
+            payload["excel_row"] = excel_row
         if formula:
             payload["formula"] = formula
         if show_currency:
@@ -3492,7 +3675,6 @@ QTableWidget::indicator {{
         else:
             text = self._format_number_ru(value)
 
-        item = table.item(row, column)
         if item is None:
             item = QTableWidgetItem(text)
             table.setItem(row, column, item)
@@ -3542,6 +3724,8 @@ QTableWidget::indicator {{
     def _write_update_position_formulas_to_current_calculations_file(
         self,
         row_indices: list[int],
+        *,
+        indices_are_excel_rows: bool = False,
     ) -> dict[int, str]:
         file_path = str(getattr(self, "calculations_file_path", "") or "").strip()
         if not file_path:
@@ -3560,6 +3744,7 @@ QTableWidget::indicator {{
             formulas = self._write_realization_price_formulas_to_sheet(
                 worksheet,
                 row_indices,
+                indices_are_excel_rows=indices_are_excel_rows,
             )
             self._enable_workbook_formula_recalculation(workbook)
             workbook.save(file_path)
@@ -3617,10 +3802,22 @@ QTableWidget::indicator {{
             )
             return
 
+        excel_rows_by_table_row = self._table_rows_to_excel_rows(
+            calculations_table,
+            formula_row_indices,
+        )
+        use_excel_rows = len(excel_rows_by_table_row) == len(formula_row_indices)
+        formula_targets = (
+            [excel_rows_by_table_row[row_index] for row_index in formula_row_indices]
+            if use_excel_rows
+            else formula_row_indices
+        )
+
         try:
             formulas_by_row = (
                 self._write_update_position_formulas_to_current_calculations_file(
-                    formula_row_indices
+                    formula_targets,
+                    indices_are_excel_rows=use_excel_rows,
                 )
             )
         except Exception as exc:
@@ -3638,7 +3835,12 @@ QTableWidget::indicator {{
 
             new_price = float(update["value"])
             currency = update.get("currency")
-            formula = formulas_by_row.get(row_index)
+            formula_key = (
+                excel_rows_by_table_row.get(row_index)
+                if use_excel_rows
+                else row_index
+            )
+            formula = formulas_by_row.get(formula_key)
             self._set_table_numeric_item(
                 calculations_table,
                 row_index,

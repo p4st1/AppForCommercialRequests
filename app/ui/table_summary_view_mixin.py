@@ -1,7 +1,12 @@
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableWidgetItem
 
-from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents, table_update_guard
+from app.ui.table_autosize import (
+    configure_table_autosize,
+    refresh_table_viewport,
+    resize_table_to_contents,
+    table_update_guard,
+)
 
 
 class TableSummaryViewMixin:
@@ -39,3 +44,4 @@ class TableSummaryViewMixin:
                     table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
             del blocker
         resize_table_to_contents(table)
+        refresh_table_viewport(table, force_updates_enabled=True)
