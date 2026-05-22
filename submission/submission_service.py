@@ -129,19 +129,31 @@ class SubmissionService:
     CURRENCY_ALIASES = {
         "₽": "RUB",
         "руб": "RUB",
+        "руб.": "RUB",
+        "рубль": "RUB",
+        "рубля": "RUB",
+        "рублей": "RUB",
+        "рубли": "RUB",
         "рубл": "RUB",
         "rur": "RUB",
         "$": "USD",
         "доллар": "USD",
+        "доллара": "USD",
+        "долларов": "USD",
         "usd": "USD",
         "€": "EUR",
         "евро": "EUR",
         "eur": "EUR",
         "¥": "CNY",
         "юан": "CNY",
+        "юань": "CNY",
+        "юаня": "CNY",
+        "юаней": "CNY",
+        "юани": "CNY",
         "yuan": "CNY",
         "cny": "CNY",
         "cyn": "CNY",
+        "₸": "KZT",
         "тенге": "KZT",
         "kzt": "KZT",
     }
@@ -179,6 +191,71 @@ class SubmissionService:
         compact = re.sub(r"\s+", " ", normalized)
         for alias, code in cls.CURRENCY_ALIASES.items():
             if alias in compact:
+                return code
+        return ""
+
+    @classmethod
+    def detect_currency_from_value(cls, value: Any) -> str:
+        if isinstance(value, dict):
+            priority_keys = (
+                "currency",
+                "currency_code",
+                "price_currency",
+                "unit_price_currency",
+                "total_currency",
+            )
+            for key in priority_keys:
+                code = cls.normalize_currency_code(value.get(key))
+                if code:
+                    return code
+
+            value_keys = (
+                "unit_price",
+                "price",
+                "proposal_price",
+                "total",
+                "sum",
+                "amount",
+            )
+            for key in value_keys:
+                code = cls.detect_currency_from_value(value.get(key))
+                if code:
+                    return code
+
+            return cls.detect_currency_from_values(value.values())
+
+        if isinstance(value, SubmissionRow):
+            return cls.detect_currency_from_values(
+                (
+                    value.unit_price,
+                    value.total,
+                    value.name,
+                    value.unit,
+                    value.delivery_time,
+                    value.manufacturer,
+                    value.technical,
+                    value.supplier_status,
+                    value.warranty,
+                )
+            )
+
+        if isinstance(value, (list, tuple, set)):
+            return cls.detect_currency_from_values(value)
+
+        return cls.normalize_currency_code(value)
+
+    @classmethod
+    def detect_currency_from_values(cls, values: Any) -> str:
+        if values is None:
+            return ""
+        if isinstance(values, dict):
+            return cls.detect_currency_from_value(values)
+        if isinstance(values, (str, bytes)) or not hasattr(values, "__iter__"):
+            return cls.detect_currency_from_value(values)
+
+        for value in values:
+            code = cls.detect_currency_from_value(value)
+            if code:
                 return code
         return ""
 
@@ -273,28 +350,26 @@ class SubmissionService:
             return ""
         return ""
 
-    @staticmethod
-    def parse_number(value: Any) -> float | None:
+    @classmethod
+    def parse_number(cls, value: Any) -> float | None:
         if value is None or isinstance(value, bool):
             return None
         if isinstance(value, (int, float)):
             return float(value)
 
+        currency_tokens = sorted(
+            set(cls.CURRENCY_CODES) | set(cls.CURRENCY_ALIASES),
+            key=len,
+            reverse=True,
+        )
         text = (
             str(value)
             .strip()
             .replace("\xa0", " ")
-            .replace(" ", "")
-            .replace("₽", "")
-            .replace("руб.", "")
-            .replace("руб", "")
-            .replace("RUB", "")
-            .replace("rub", "")
-            .replace("$", "")
-            .replace("€", "")
-            .replace("¥", "")
-            .replace(",", ".")
         )
+        for token in currency_tokens:
+            text = re.sub(re.escape(token), "", text, flags=re.IGNORECASE)
+        text = text.replace(" ", "").replace(",", ".")
         if not text:
             return None
         if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", text) is None:
@@ -355,6 +430,11 @@ class SubmissionService:
         header: SubmissionHeader,
         rows: list[SubmissionRow],
     ) -> SubmissionPayload:
+        currency = (
+            cls.normalize_currency_code(header.currency)
+            or str(header.currency or "").strip()
+            or cls.detect_currency_from_values(rows)
+        )
         normalized_rows = [
             cls.normalize_row(row)
             for row in rows
@@ -369,8 +449,7 @@ class SubmissionService:
             number=str(header.number or "").strip(),
             title=str(header.title or "").strip(),
             customer=str(header.customer or "").strip(),
-            currency=cls.normalize_currency_code(header.currency)
-            or str(header.currency or "").strip(),
+            currency=currency,
             offer_validity_period=str(
                 getattr(header, "offer_validity_period", "") or ""
             ).strip(),

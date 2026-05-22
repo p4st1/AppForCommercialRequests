@@ -38,6 +38,7 @@ from retrade.retrade_service import RetradeService
 from services.excel_processor import ExcelProcessor, RowCountMismatchError
 from services.excel_recalc import force_excel_recalc
 from services.trade_exporter import TradeExporter
+from submission.submission_service import SubmissionService
 from tools import DatabaseTools as Tool
 
 
@@ -4702,6 +4703,25 @@ QTableWidget::indicator {{
         default_manufacturer_text = str(default_manufacturer or "").strip()
         default_supplier_status_text = str(default_supplier_status or "").strip()
         default_warranty_text = str(default_warranty or "").strip()
+        table_data = getattr(self, "tableData", {})
+        table_data_currencies = (
+            table_data.get("currency", [])
+            if isinstance(table_data, dict)
+            else []
+        )
+        table_currency = (
+            SubmissionService.detect_currency_from_values(table_data_currencies)
+            or SubmissionService.detect_currency_from_values(headers)
+        )
+
+        def table_data_currency(row: int) -> str:
+            if isinstance(table_data_currencies, (list, tuple)):
+                if 0 <= row < len(table_data_currencies):
+                    return SubmissionService.detect_currency_from_value(
+                        table_data_currencies[row]
+                    )
+                return ""
+            return SubmissionService.detect_currency_from_value(table_data_currencies)
 
         def cell_text(row: int, column: int | None) -> str:
             if column is None or column < 0 or column >= column_count:
@@ -4727,19 +4747,50 @@ QTableWidget::indicator {{
                 return parsed
             return text
 
+        def is_zero_amount(text: str) -> bool:
+            parsed = self._parse_retrade_number_or_none(text)
+            return parsed is not None and abs(parsed) < 1e-9
+
+        def skip_submission_defaults(
+            source_price_text: str,
+            price_text: str,
+            total_text: str,
+        ) -> bool:
+            return is_zero_amount(source_price_text) or is_zero_amount(price_text) or (
+                not price_text and is_zero_amount(total_text)
+            )
+
         for row_index in range(row_count):
+            source_price_text = first_text(row_index, base_price_col)
+            source_total_text = first_text(row_index, base_total_col)
             price_text = first_text(row_index, final_price_col)
             total_text = first_text(row_index, final_total_col)
+            row_currency = (
+                SubmissionService.detect_currency_from_values(
+                    (
+                        price_text,
+                        total_text,
+                        source_price_text,
+                        source_total_text,
+                    )
+                )
+                or table_data_currency(row_index)
+                or table_currency
+            )
             delivery_time = first_text(row_index, delivery_col, supplier_delivery_col)
             manufacturer = cell_text(row_index, manufacturer_col)
             if not manufacturer:
                 manufacturer = default_manufacturer_text
-            supplier_status = cell_text(row_index, supplier_status_col)
-            if not supplier_status:
-                supplier_status = default_supplier_status_text
-            warranty = cell_text(row_index, warranty_col)
-            if not warranty:
-                warranty = default_warranty_text
+            if skip_submission_defaults(source_price_text, price_text, total_text):
+                supplier_status = ""
+                warranty = ""
+            else:
+                supplier_status = cell_text(row_index, supplier_status_col)
+                if not supplier_status:
+                    supplier_status = default_supplier_status_text
+                warranty = cell_text(row_index, warranty_col)
+                if not warranty:
+                    warranty = default_warranty_text
 
             rows.append(
                 {
@@ -4758,6 +4809,7 @@ QTableWidget::indicator {{
                     "supplier_status": supplier_status,
                     "warranty": warranty,
                     "guarantee": warranty,
+                    "currency": row_currency,
                 }
             )
 
@@ -4930,6 +4982,12 @@ QTableWidget::indicator {{
                 default_supplier_status=default_supplier_status,
                 default_warranty=default_warranty,
             )
+            source_currency = SubmissionService.detect_currency_from_values(source_rows)
+            if source_currency:
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                metadata["currency"] = source_currency
+                self._pending_submission_export_metadata = metadata
             if not source_rows:
                 Tool.write_log(
                     "Заполнение файла приема заявок пропущено: Полная таблица пуста"

@@ -74,6 +74,34 @@ class SubmissionServiceTests(unittest.TestCase):
         self.assertEqual(payload.header.delivery_order, "Доставка до склада")
         self.assertEqual(payload.header.payment_terms, "Оплата по договору")
 
+    def test_prepare_payload_infers_currency_from_row_price(self):
+        payload = SubmissionService.prepare_payload(
+            SubmissionHeader(
+                number="REQ-1",
+                title="Заявка",
+                offer_validity_period="31.12.2026",
+            ),
+            [
+                SubmissionRow(
+                    name="Насос",
+                    qty="2",
+                    unit_price="146.36 ¥",
+                    delivery_time="30 дней",
+                    manufacturer="cat",
+                    technical="гидромотор",
+                )
+            ],
+        )
+
+        self.assertEqual(payload.header.currency, "CNY")
+        self.assertEqual(payload.rows[0].unit_price, 146.36)
+        self.assertEqual(payload.rows[0].total, 292.72)
+
+    def test_parse_number_accepts_currency_codes_and_names(self):
+        self.assertEqual(SubmissionService.parse_number("1 234,50 CNY"), 1234.5)
+        self.assertEqual(SubmissionService.parse_number("1 234,50 тенге"), 1234.5)
+        self.assertEqual(SubmissionService.parse_number("1 234,50 рублей"), 1234.5)
+
     def test_rows_from_matrix_detects_headers(self):
         rows = SubmissionService._rows_from_matrix(
             [

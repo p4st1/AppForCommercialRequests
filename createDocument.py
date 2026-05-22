@@ -234,17 +234,8 @@ QListWidget::item {
         self.submissionSupplierStatusLine = QLineEdit(self)
         self.submissionSupplierStatusLine.setObjectName("submissionSupplierStatusLine")
 
-        self.submissionWarrantyCheckBox = QCheckBox(
-            'Заполнять "Срок гарантии"',
-            self,
-        )
-        self.submissionWarrantyCheckBox.setObjectName("submissionWarrantyCheckBox")
-        self.submissionWarrantyLine = QLineEdit(self)
-        self.submissionWarrantyLine.setObjectName("submissionWarrantyLine")
         self.ui.submissionSupplierStatusCheckBox = self.submissionSupplierStatusCheckBox
         self.ui.submissionSupplierStatusLine = self.submissionSupplierStatusLine
-        self.ui.submissionWarrantyCheckBox = self.submissionWarrantyCheckBox
-        self.ui.submissionWarrantyLine = self.submissionWarrantyLine
 
         checkbox_style = """
 QCheckBox, QRadioButton {
@@ -259,7 +250,6 @@ QCheckBox::indicator, QRadioButton::indicator {
 """
         self.ui.radioButton.setStyleSheet(checkbox_style)
         self.submissionSupplierStatusCheckBox.setStyleSheet(checkbox_style)
-        self.submissionWarrantyCheckBox.setStyleSheet(checkbox_style)
         for radio in (self.docxFormatRadio, self.pdfFormatRadio, self.googleDocxFormatRadio):
             radio.setStyleSheet(checkbox_style)
 
@@ -285,10 +275,8 @@ QCheckBox::indicator, QRadioButton::indicator {
         grid.addWidget(self.ui.payLineEdit, 4, 2, 1, 1)
         grid.addWidget(self.deliveryOrderLabel, 4, 0, 1, 1)
         grid.addWidget(self.deliveryOrderLine, 5, 0, 1, 2)
-        grid.addWidget(self.submissionSupplierStatusCheckBox, 6, 0, 1, 1)
-        grid.addWidget(self.submissionWarrantyCheckBox, 6, 1, 1, 1)
-        grid.addWidget(self.submissionSupplierStatusLine, 7, 0, 1, 1)
-        grid.addWidget(self.submissionWarrantyLine, 7, 1, 1, 1)
+        grid.addWidget(self.submissionSupplierStatusCheckBox, 6, 0, 1, 2)
+        grid.addWidget(self.submissionSupplierStatusLine, 7, 0, 1, 2)
         grid.addWidget(self.offerValidityPreviewLabel, 8, 0, 1, 3)
         grid.addWidget(self.outputFormatLabel, 9, 0, 1, 1)
 
@@ -307,9 +295,6 @@ QCheckBox::indicator, QRadioButton::indicator {
         grid.setColumnStretch(2, 1)
 
         self.submissionSupplierStatusCheckBox.toggled.connect(
-            self._sync_submission_extra_fields_enabled
-        )
-        self.submissionWarrantyCheckBox.toggled.connect(
             self._sync_submission_extra_fields_enabled
         )
         self._sync_submission_extra_fields_enabled()
@@ -341,8 +326,6 @@ QCheckBox::indicator, QRadioButton::indicator {
         self.ui.payLineEdit.setPlaceholderText("Уточните условие оплаты")
         if hasattr(self, "submissionSupplierStatusLine"):
             self.submissionSupplierStatusLine.setPlaceholderText("Например: Посредник")
-        if hasattr(self, "submissionWarrantyLine"):
-            self.submissionWarrantyLine.setPlaceholderText("Например: 12 месяцев")
 
     @classmethod
     def _normalize_manufacturer_history(cls, values) -> list[str]:
@@ -435,13 +418,6 @@ QCheckBox::indicator, QRadioButton::indicator {
         ):
             self.submissionSupplierStatusLine.setEnabled(
                 self.submissionSupplierStatusCheckBox.isChecked()
-            )
-        if hasattr(self, "submissionWarrantyLine") and hasattr(
-            self,
-            "submissionWarrantyCheckBox",
-        ):
-            self.submissionWarrantyLine.setEnabled(
-                self.submissionWarrantyCheckBox.isChecked()
             )
 
     def _setup_participation_checkbox(self):
@@ -556,8 +532,15 @@ QCheckBox::indicator, QRadioButton::indicator {
             self.ui.payLineEdit.setEnabled(False)
             return
 
+        warranty_period = str(
+            fields.get("warranty_period", "")
+            or fields.get("submission_warranty", "")
+            or ""
+        )
+        if warranty_period:
+            self.ui.warrantyPeriod.setText(warranty_period)
+
         for widget, key in (
-            (self.ui.warrantyPeriod, "warranty_period"),
             (self.ui.conditionLine, "payment_terms"),
             (self.ui.deliveryTimeLine, "delivery_time"),
             (getattr(self, "deliveryOrderLine", None), "delivery_order"),
@@ -565,7 +548,6 @@ QCheckBox::indicator, QRadioButton::indicator {
                 getattr(self, "submissionSupplierStatusLine", None),
                 "submission_supplier_status",
             ),
-            (getattr(self, "submissionWarrantyLine", None), "submission_warranty"),
         ):
             if widget is None:
                 continue
@@ -583,10 +565,6 @@ QCheckBox::indicator, QRadioButton::indicator {
         if hasattr(self, "submissionSupplierStatusCheckBox"):
             self.submissionSupplierStatusCheckBox.setChecked(
                 bool(fields.get("fill_submission_supplier_status", False))
-            )
-        if hasattr(self, "submissionWarrantyCheckBox"):
-            self.submissionWarrantyCheckBox.setChecked(
-                bool(fields.get("fill_submission_warranty", False))
             )
         self._set_output_format(str(fields.get("output_format", self.FORMAT_DOCX)))
 
@@ -607,8 +585,9 @@ QCheckBox::indicator, QRadioButton::indicator {
         self._sync_submission_extra_fields_enabled()
 
     def _save_last_create_doc_fields(self):
+        warranty_period = self.ui.warrantyPeriod.text().strip()
         fields = {
-            "warranty_period": self.ui.warrantyPeriod.text().strip(),
+            "warranty_period": warranty_period,
             "payment_terms": self.ui.conditionLine.text().strip(),
             "producer": self._producer_text(),
             "delivery_time": self.ui.deliveryTimeLine.text().strip(),
@@ -618,15 +597,11 @@ QCheckBox::indicator, QRadioButton::indicator {
             "submission_supplier_status": self.submissionSupplierStatusLine.text().strip()
             if hasattr(self, "submissionSupplierStatusLine")
             else "",
-            "submission_warranty": self.submissionWarrantyLine.text().strip()
-            if hasattr(self, "submissionWarrantyLine")
-            else "",
+            "submission_warranty": warranty_period,
             "fill_submission_supplier_status": self.submissionSupplierStatusCheckBox.isChecked()
             if hasattr(self, "submissionSupplierStatusCheckBox")
             else False,
-            "fill_submission_warranty": self.submissionWarrantyCheckBox.isChecked()
-            if hasattr(self, "submissionWarrantyCheckBox")
-            else False,
+            "fill_submission_warranty": bool(warranty_period),
             "payment_template": self._current_payment_value(),
             "custom_payment": self.ui.payLineEdit.text().strip(),
             "show_delivery_column": self.ui.radioButton.isChecked(),
@@ -855,16 +830,8 @@ QCheckBox::indicator, QRadioButton::indicator {
             hasattr(self, "submissionSupplierStatusCheckBox")
             and self.submissionSupplierStatusCheckBox.isChecked()
         )
-        fill_warranty = (
-            hasattr(self, "submissionWarrantyCheckBox")
-            and self.submissionWarrantyCheckBox.isChecked()
-        )
-        submission_warranty = (
-            self.submissionWarrantyLine.text().strip()
-            if hasattr(self, "submissionWarrantyLine")
-            else ""
-        )
-        if fill_warranty and not submission_warranty:
+        submission_warranty = self.ui.warrantyPeriod.text().strip()
+        if not submission_warranty:
             submission_warranty = str(
                 extra_data[1] if len(extra_data) > 1 and extra_data[1] is not None else ""
             ).strip()
@@ -882,7 +849,7 @@ QCheckBox::indicator, QRadioButton::indicator {
             "supplier_status": self.submissionSupplierStatusLine.text().strip()
             if fill_supplier_status and hasattr(self, "submissionSupplierStatusLine")
             else "",
-            "warranty": submission_warranty if fill_warranty else "",
+            "warranty": submission_warranty,
         }
 
     def _history_summary(self):

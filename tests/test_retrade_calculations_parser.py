@@ -94,7 +94,8 @@ def _ensure_pyside_stubs() -> None:
     }.items():
         nested = getattr(qt, nested_name, type(nested_name, (), {})())
         for attr, value in values.items():
-            setattr(nested, attr, getattr(nested, attr, value))
+            if not hasattr(nested, attr):
+                setattr(nested, attr, value)
         setattr(qt, nested_name, nested)
     qtcore.Qt = qt
     pyside6.QtCore = qtcore
@@ -793,12 +794,14 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         )
         window = ExportMixin()
         window.ui = SimpleNamespace(KpTable=table)
+        window.tableData = {"currency": ["¥"]}
 
         rows = window.get_table_rows(default_manufacturer="Завод")
 
         self.assertEqual(rows[0]["name"], "Насос")
         self.assertEqual(rows[0]["price"], 150.0)
         self.assertEqual(rows[0]["total"], 300.0)
+        self.assertEqual(rows[0]["currency"], "CNY")
         self.assertEqual(rows[0]["manufacturer"], "Завод")
         self.assertEqual(rows[0]["technical_characteristics"], "Завод")
 
@@ -834,6 +837,104 @@ class RetradeCalculationsParserTests(unittest.TestCase):
 
         self.assertEqual(rows[0]["supplier_status"], "Посредник")
         self.assertEqual(rows[0]["warranty"], "12 мес.")
+
+    def test_get_table_rows_leaves_status_and_warranty_empty_for_zero_rows(self):
+        headers = [
+            "№",
+            "Наименование",
+            "Каталожный номер",
+            "Ед. изм.",
+            "Кол-во",
+            "Цена за ед. без НДС",
+            "Итого без НДС",
+            "Логистика",
+            "Таможня",
+            "Цена за ед",
+            "Цена реализации за ед. без НДС",
+            "Итого реализации без НДС",
+            "Итого реализации с НДС",
+            "Срок поставки",
+            "Срок поставщика",
+        ]
+        table = _FakeEditableTable(
+            [
+                [
+                    "1",
+                    "Насос",
+                    "P-1",
+                    "шт",
+                    32,
+                    0,
+                    0,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "0,00",
+                    "0,00",
+                    "30 дней",
+                    "20 дней",
+                ],
+                [
+                    "2",
+                    "Клапан",
+                    "V-1",
+                    "шт",
+                    1,
+                    "0,00",
+                    "0,00",
+                    "",
+                    "",
+                    "",
+                    "#ДЕЛ/0!",
+                    "#ДЕЛ/0!",
+                    "#ДЕЛ/0!",
+                    "30 дней",
+                    "20 дней",
+                ],
+            ],
+            headers=headers,
+        )
+        window = ExportMixin()
+        window.ui = SimpleNamespace(KpTable=table)
+
+        rows = window.get_table_rows(
+            default_supplier_status="Посредник",
+            default_warranty="12 мес.",
+        )
+
+        self.assertEqual(rows[0]["price"], "")
+        self.assertEqual(rows[0]["total"], 0.0)
+        self.assertEqual(rows[0]["supplier_status"], "")
+        self.assertEqual(rows[0]["warranty"], "")
+        self.assertEqual(rows[0]["guarantee"], "")
+        self.assertEqual(rows[1]["supplier_status"], "")
+        self.assertEqual(rows[1]["warranty"], "")
+        self.assertEqual(rows[1]["guarantee"], "")
+
+    def test_prepare_submission_export_for_loading_keeps_table_currency_metadata(self):
+        class _FakeExcelProcessor:
+            def __init__(self):
+                self.filled_rows = None
+
+            def can_fill_exported_excel(self, _file_path):
+                return True
+
+            def fill_exported_excel(self, _file_path, source_rows, **_kwargs):
+                self.filled_rows = source_rows
+
+        processor = _FakeExcelProcessor()
+        window = ExportMixin()
+        window.excel_processor = processor
+        window._pending_submission_export_metadata = {"number": "REQ-1"}
+        window.get_table_rows = lambda **_kwargs: [
+            {"name": "Насос", "price": "150 ¥", "currency": "CNY"}
+        ]
+
+        window._prepare_submission_export_for_loading("submission.xlsx")
+
+        self.assertEqual(window._pending_submission_export_metadata["currency"], "CNY")
+        self.assertEqual(processor.filled_rows[0]["currency"], "CNY")
 
     def test_format_missing_retrade_required_cells_message(self):
         message = ExportMixin._format_missing_retrade_required_cells_message(

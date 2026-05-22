@@ -259,6 +259,15 @@ class SubmissionTabMixin:
             for col in range(self.submission_table.columnCount())
         )
 
+    def _submission_row_has_zero_price(self, row: int) -> bool:
+        price_text = self._submission_item_text(row, 3)
+        total_text = self._submission_item_text(row, 4)
+        price = self.submission_service.parse_number(price_text)
+        total = self.submission_service.parse_number(total_text)
+        if price is not None and abs(price) < 1e-9:
+            return True
+        return not price_text and total is not None and abs(total) < 1e-9
+
     def _on_submission_item_changed(self, item: QTableWidgetItem) -> None:
         if self._updating_submission_table or item is None:
             return
@@ -293,12 +302,49 @@ class SubmissionTabMixin:
                 rows.append(row)
         return rows
 
+    def _submission_currency_from_table(self) -> str:
+        table = getattr(self, "submission_table", None)
+        if table is None:
+            return ""
+
+        priority_values: list[str] = []
+        header_values: list[str] = []
+        all_values: list[str] = []
+        priority_columns = {3, 4}
+        for col_index in range(table.columnCount()):
+            header_item = (
+                table.horizontalHeaderItem(col_index)
+                if callable(getattr(table, "horizontalHeaderItem", None))
+                else None
+            )
+            if header_item is not None:
+                header_text = str(header_item.text() or "").strip()
+                if header_text:
+                    header_values.append(header_text)
+        for row_index in range(table.rowCount()):
+            for col_index in range(table.columnCount()):
+                text = self._submission_item_text(row_index, col_index)
+                if not text:
+                    continue
+                if col_index in priority_columns:
+                    priority_values.append(text)
+                else:
+                    all_values.append(text)
+
+        return self.submission_service.detect_currency_from_values(
+            priority_values + header_values + all_values
+        )
+
     def _submission_header_from_inputs(self) -> SubmissionHeader:
+        currency = (
+            self.submission_currency_input.text().strip()
+            or self._submission_currency_from_table()
+        )
         return SubmissionHeader(
             number=self.submission_number_input.text().strip(),
             title=self.submission_title_input.text().strip(),
             customer=self.submission_customer_input.text().strip(),
-            currency=self.submission_currency_input.text().strip(),
+            currency=currency,
             offer_validity_period=self.submission_offer_validity_input.text().strip(),
             delivery_order=self.submission_delivery_order_input.text().strip(),
             payment_terms=self.submission_payment_terms_input.text().strip(),
@@ -379,8 +425,19 @@ class SubmissionTabMixin:
             row_count = max(len(rows) + 1, 10)
             table.setRowCount(row_count)
             for row_index, row in enumerate(rows):
+                unit_price = self.submission_service.parse_number(row.unit_price)
+                total = self.submission_service.parse_number(row.total)
+                zero_price_row = (
+                    unit_price == 0.0
+                    or (unit_price is None and total == 0.0)
+                )
                 for col_index, value in enumerate(row.to_cells()):
-                    text = self.submission_service.format_money(value) if col_index in {3, 4} else "" if value is None else str(value)
+                    if zero_price_row and col_index in {8, 9}:
+                        text = ""
+                    elif col_index in {3, 4}:
+                        text = self.submission_service.format_money(value)
+                    else:
+                        text = "" if value is None else str(value)
                     item = QTableWidgetItem(text)
                     if col_index in {1, 3, 4}:
                         item.setTextAlignment(
@@ -476,15 +533,30 @@ class SubmissionTabMixin:
             ).strip(),
         }
         field_values = {key: value for key, value in field_values.items() if value}
-        if not field_values:
-            return
 
         column_by_field = {field: index for index, field in enumerate(FIELD_ORDER)}
+        columns_to_clear_on_zero = (
+            column_by_field.get("supplier_status"),
+            column_by_field.get("warranty"),
+        )
+        if not field_values and not any(
+            column is not None for column in columns_to_clear_on_zero
+        ):
+            return
+
         self._updating_submission_table = True
         blocker = QSignalBlocker(self.submission_table)
         try:
             for row in range(self.submission_table.rowCount()):
                 if not self._submission_row_has_content(row):
+                    continue
+                if self._submission_row_has_zero_price(row):
+                    for column in columns_to_clear_on_zero:
+                        if column is None:
+                            continue
+                        item = self.submission_table.item(row, column)
+                        if item is not None:
+                            item.setText("")
                     continue
                 for field, value in field_values.items():
                     column = column_by_field.get(field)
@@ -505,7 +577,16 @@ class SubmissionTabMixin:
         detected_currency = str(
             getattr(self, "_submission_export_detected_currency", "") or ""
         ).strip()
-        if detected_currency:
+        metadata_currency = (
+            self.submission_service.normalize_currency_code(metadata.get("currency"))
+            or str(metadata.get("currency", "") or "").strip()
+        )
+        table_currency = self._submission_currency_from_table()
+        if metadata_currency:
+            metadata["currency"] = metadata_currency
+        elif table_currency:
+            metadata["currency"] = table_currency
+        elif detected_currency:
             metadata["currency"] = detected_currency
         lot_id = str(metadata.get("lot_id", "") or "").strip()
         if lot_id:
