@@ -1,6 +1,7 @@
 import sys
 import unittest
 from types import ModuleType
+from unittest.mock import patch
 
 
 def _ensure_pyside_stubs() -> None:
@@ -120,10 +121,44 @@ try:
     import requests  # noqa: F401
 except ModuleNotFoundError:
     requests = ModuleType("requests")
-    requests.Session = object
+
+    class _StubCookies:
+        def set(self, *_args, **_kwargs):
+            return None
+
+    class _StubSession:
+        def __init__(self):
+            self.headers = {}
+            self.cookies = _StubCookies()
+
+    requests.Session = _StubSession
     sys.modules["requests"] = requests
 
-from ui_mixins.platform_mixin import PlatformMixin
+from ui_mixins.platform_mixin import PlatformMixin, SiteStatusWorker
+
+
+class _FakeResponse:
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+
+class _FakeRequests:
+    def __init__(self, response=None, error=None):
+        self.response = response
+        self.error = error
+        self.calls = []
+
+    def get(self, url, timeout=None, allow_redirects=None):
+        self.calls.append(
+            {
+                "url": url,
+                "timeout": timeout,
+                "allow_redirects": allow_redirects,
+            }
+        )
+        if self.error is not None:
+            raise self.error
+        return self.response
 
 
 class PlatformMixinSearchTests(unittest.TestCase):
@@ -175,6 +210,55 @@ class PlatformMixinSearchTests(unittest.TestCase):
         )
 
         self.assertEqual([trade["id"] for trade in filtered], [2])
+
+
+class SiteStatusWorkerTests(unittest.TestCase):
+    def test_site_connection_returns_available_for_success_status(self):
+        fake_requests = _FakeRequests(_FakeResponse(200))
+
+        with patch("ui_mixins.platform_mixin.requests", fake_requests):
+            is_available, details = SiteStatusWorker.check_site_connection(
+                url="https://example.test",
+                timeout=1.5,
+            )
+
+        self.assertTrue(is_available)
+        self.assertEqual(details, "HTTP 200")
+        self.assertEqual(
+            fake_requests.calls,
+            [
+                {
+                    "url": "https://example.test",
+                    "timeout": 1.5,
+                    "allow_redirects": True,
+                }
+            ],
+        )
+
+    def test_site_connection_treats_client_status_as_reachable(self):
+        fake_requests = _FakeRequests(_FakeResponse(403))
+
+        with patch("ui_mixins.platform_mixin.requests", fake_requests):
+            is_available, details = SiteStatusWorker.check_site_connection()
+
+        self.assertTrue(is_available)
+        self.assertEqual(details, "HTTP 403")
+
+    def test_site_connection_marks_server_error_unavailable(self):
+        fake_requests = _FakeRequests(_FakeResponse(503))
+
+        with patch("ui_mixins.platform_mixin.requests", fake_requests):
+            is_available, details = SiteStatusWorker.check_site_connection()
+
+        self.assertFalse(is_available)
+        self.assertEqual(details, "HTTP 503")
+
+    def test_site_connection_reports_missing_requests_dependency(self):
+        with patch("ui_mixins.platform_mixin.requests", None):
+            is_available, details = SiteStatusWorker.check_site_connection()
+
+        self.assertFalse(is_available)
+        self.assertEqual(details, "requests не установлен")
 
 
 if __name__ == "__main__":

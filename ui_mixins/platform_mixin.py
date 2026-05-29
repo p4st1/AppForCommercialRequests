@@ -4,6 +4,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+try:
+    import requests
+except ModuleNotFoundError:  # pragma: no cover - dependency may be absent in test env
+    requests = None  # type: ignore[assignment]
+
 from PySide6.QtCore import QSignalBlocker, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
@@ -197,11 +202,71 @@ class AuthStatusWorker(QThread):
                 self.finished.emit(False)
 
 
+class SiteStatusWorker(QThread):
+    finished = Signal(bool, str)
+    STATUS_CHECK_TIMEOUT_SECONDS = 5.0
+
+    def __init__(
+        self,
+        *,
+        url: str = AuthService.BASE_URL,
+        timeout: float = STATUS_CHECK_TIMEOUT_SECONDS,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._url = str(url or AuthService.BASE_URL).strip() or AuthService.BASE_URL
+        self._timeout = float(timeout)
+
+    def _interruption_requested(self) -> bool:
+        is_interruption_requested = getattr(self, "isInterruptionRequested", None)
+        if not callable(is_interruption_requested):
+            return False
+        try:
+            return bool(is_interruption_requested())
+        except RuntimeError:
+            return True
+
+    @classmethod
+    def check_site_connection(
+        cls,
+        *,
+        url: str = AuthService.BASE_URL,
+        timeout: float = STATUS_CHECK_TIMEOUT_SECONDS,
+    ) -> tuple[bool, str]:
+        if requests is None:
+            return False, "requests не установлен"
+
+        response = requests.get(
+            str(url or AuthService.BASE_URL),
+            timeout=float(timeout),
+            allow_redirects=True,
+        )
+        status_code = int(getattr(response, "status_code", 0) or 0)
+        if 200 <= status_code < 500:
+            return True, f"HTTP {status_code}"
+        return False, f"HTTP {status_code}" if status_code else "Нет ответа"
+
+    def run(self) -> None:
+        try:
+            if self._interruption_requested():
+                return
+            is_available, details = self.check_site_connection(
+                url=self._url,
+                timeout=self._timeout,
+            )
+            if not self._interruption_requested():
+                self.finished.emit(bool(is_available), str(details or ""))
+        except Exception as exc:
+            if not self._interruption_requested():
+                self.finished.emit(False, str(exc or "Неизвестная ошибка"))
+
+
 class PlatformMixin:
     SEARCH_DEBOUNCE_MS = 250
     MIN_SEARCH_CHARS = 3
     TRADE_AUTOSIZE_ROW_LIMIT = 200
     AUTH_STATUS_REFRESH_DELAY_MS = 0
+    SITE_STATUS_REFRESH_DELAY_MS = 0
 
     TRADE_HEADERS = (
         "id",
@@ -221,7 +286,9 @@ class PlatformMixin:
         self._load_retrades_worker: LoadRetradesWorker | None = None
         self._auth_login_worker: AuthLoginWorker | None = None
         self._auth_status_worker: AuthStatusWorker | None = None
+        self._site_status_worker: SiteStatusWorker | None = None
         self._auth_status_refresh_timer: QTimer | None = None
+        self._site_status_refresh_timer: QTimer | None = None
         self._ensure_platform_tab()
         self._platform_search_timer = QTimer(self)
         self._platform_search_timer.setSingleShot(True)
@@ -234,7 +301,15 @@ class PlatformMixin:
         self.table_retrades.itemSelectionChanged.connect(self.on_retrade_selection_changed)
         self.search_input.textChanged.connect(self.apply_search)
         self.checkbox_active.stateChanged.connect(self.apply_filters)
+        self._schedule_site_status_refresh()
         self._schedule_auth_status_refresh()
+
+    def _schedule_site_status_refresh(self) -> None:
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self.refresh_site_status_on_startup)
+        self._site_status_refresh_timer = timer
+        timer.start(self.SITE_STATUS_REFRESH_DELAY_MS)
 
     def _schedule_auth_status_refresh(self) -> None:
         timer = QTimer(self)
@@ -256,6 +331,7 @@ class PlatformMixin:
             and hasattr(self.ui, "input_password")
             and hasattr(self, "search_input")
             and hasattr(self, "checkbox_active")
+            and hasattr(self, "label_site_status")
             and hasattr(self, "label_auth_status")
             and hasattr(self, "label_pipeline_status")
         ):
@@ -280,6 +356,14 @@ class PlatformMixin:
         self.label_auth_status.setStyleSheet("color: #666666")
         self.ui.label_auth_status = self.label_auth_status
 
+        site_status_title = QLabel("Сайт:", self.ui.webTab)
+        site_status_title.setObjectName("siteStatusTitle")
+
+        self.label_site_status = QLabel("Проверка...", self.ui.webTab)
+        self.label_site_status.setObjectName("label_site_status")
+        self.label_site_status.setStyleSheet("color: #666666")
+        self.ui.label_site_status = self.label_site_status
+
         self.input_login = QLineEdit(self.ui.webTab)
         self.input_login.setObjectName("input_login")
         self.input_login.setPlaceholderText("Логин")
@@ -297,6 +381,9 @@ class PlatformMixin:
 
         auth_layout.addWidget(auth_label)
         auth_layout.addWidget(self.label_auth_status)
+        auth_layout.addSpacing(16)
+        auth_layout.addWidget(site_status_title)
+        auth_layout.addWidget(self.label_site_status)
         auth_layout.addWidget(self.input_login)
         auth_layout.addWidget(self.input_password)
         auth_layout.addWidget(self.btn_login)
@@ -440,6 +527,44 @@ class PlatformMixin:
         status_bar = self.statusBar()
         if status_bar is not None and status_message:
             status_bar.showMessage(status_message, 4000)
+
+    def refresh_site_status_on_startup(self) -> None:
+        if bool(getattr(self, "_app_is_closing", False)):
+            return
+        if self._site_status_worker is not None and self._site_status_worker.isRunning():
+            return
+
+        self._set_site_status_checking()
+        worker = SiteStatusWorker(parent=self)
+        worker.finished.connect(self.on_site_status_checked)
+        self._site_status_worker = worker
+        worker.start()
+
+    def on_site_status_checked(self, is_available: bool, details: str = "") -> None:
+        worker = self._site_status_worker
+        self._site_status_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        if bool(getattr(self, "_app_is_closing", False)):
+            return
+        self._set_site_status(is_available=bool(is_available), details=details)
+
+    def _set_site_status_checking(self) -> None:
+        self.label_site_status.setText("Проверка...")
+        self.label_site_status.setToolTip("")
+        self.label_site_status.setStyleSheet("color: #666666")
+
+    def _set_site_status(self, *, is_available: bool, details: str = "") -> None:
+        if is_available:
+            self.label_site_status.setText("Есть связь")
+            self.label_site_status.setToolTip("")
+            self.label_site_status.setStyleSheet("color: green")
+            return
+
+        self.label_site_status.setText("Нет связи")
+        tooltip = str(details or "").strip()
+        self.label_site_status.setToolTip(tooltip)
+        self.label_site_status.setStyleSheet("color: red")
 
     def refresh_auth_status_on_startup(self) -> None:
         if bool(getattr(self, "_app_is_closing", False)):

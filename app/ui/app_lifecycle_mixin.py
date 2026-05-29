@@ -8,6 +8,7 @@ class AppLifecycleMixin:
     BACKGROUND_WORKER_STOP_TIMEOUT_MS = 7000
     BACKGROUND_WORKER_TERMINATE_TIMEOUT_MS = 1500
     BACKGROUND_WORKER_ATTRS = (
+        "_site_status_worker",
         "_auth_status_worker",
         "_auth_login_worker",
         "_load_trades_worker",
