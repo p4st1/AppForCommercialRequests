@@ -96,6 +96,8 @@ def _ensure_pyside_stubs() -> None:
     for name in (
         "QAbstractItemView",
         "QCheckBox",
+        "QFileDialog",
+        "QGridLayout",
         "QHBoxLayout",
         "QHeaderView",
         "QLabel",
@@ -103,6 +105,7 @@ def _ensure_pyside_stubs() -> None:
         "QPushButton",
         "QTableWidget",
         "QTableWidgetItem",
+        "QTabWidget",
         "QVBoxLayout",
         "QWidget",
     ):
