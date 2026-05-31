@@ -74,6 +74,20 @@ class SubmissionServiceTests(unittest.TestCase):
         self.assertEqual(payload.header.delivery_order, "Доставка до склада")
         self.assertEqual(payload.header.payment_terms, "Оплата по договору")
 
+    def test_prepare_payload_preserves_trade_and_lot_ids(self):
+        payload = SubmissionService.prepare_payload(
+            SubmissionHeader(
+                number="125475",
+                title="Заявка",
+                lot_id="557621478",
+                trade_id="123456",
+            ),
+            [SubmissionRow(name="Насос", qty=1, unit_price=100, total=100)],
+        )
+
+        self.assertEqual(payload.header.lot_id, "557621478")
+        self.assertEqual(payload.header.trade_id, "123456")
+
     def test_prepare_payload_infers_currency_from_row_price(self):
         payload = SubmissionService.prepare_payload(
             SubmissionHeader(

@@ -93,6 +93,7 @@ class SubmissionTabMixin:
         self.submission_service = SubmissionService()
         self._submission_loaded_kp_rows: list[SubmissionRow] = []
         self._submission_loaded_kp_path = ""
+        self._submission_trade_id = ""
         self._submission_lot_id = ""
         self._submission_submit_worker: SubmitSubmissionWorker | None = None
         self._updating_submission_table = False
@@ -222,6 +223,19 @@ class SubmissionTabMixin:
         )
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         table.setAlternatingRowColors(True)
+        table.setStyleSheet(
+            """
+QTableWidget::item:selected {
+    background-color: #eaf3ff;
+    color: #101828;
+}
+
+QTableWidget::item:selected:!active {
+    background-color: #f2f4f7;
+    color: #101828;
+}
+"""
+        )
         table.verticalHeader().setVisible(False)
         table.horizontalHeader().setStretchLastSection(False)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -341,6 +355,7 @@ class SubmissionTabMixin:
             or self._submission_currency_from_table()
         )
         return SubmissionHeader(
+            trade_id=str(getattr(self, "_submission_trade_id", "") or "").strip(),
             number=self.submission_number_input.text().strip(),
             title=self.submission_title_input.text().strip(),
             customer=self.submission_customer_input.text().strip(),
@@ -471,6 +486,7 @@ class SubmissionTabMixin:
 
         self._submission_loaded_kp_rows = rows
         self._submission_loaded_kp_path = file_path
+        self._submission_trade_id = ""
         self._submission_lot_id = ""
         self._set_submission_currency_from_file(file_path)
         self._set_submission_status("idle", f"КП загружено: {len(rows)} поз.")
@@ -499,6 +515,7 @@ class SubmissionTabMixin:
         rows = self.submission_service.load_kp(path)
         self._submission_loaded_kp_rows = rows
         self._submission_loaded_kp_path = str(path)
+        self._submission_trade_id = ""
         self._submission_lot_id = self._submission_lot_id_from_export_path(path)
         self._set_submission_currency_from_file(path)
         self._set_submission_rows(rows)
@@ -591,6 +608,11 @@ class SubmissionTabMixin:
         lot_id = str(metadata.get("lot_id", "") or "").strip()
         if lot_id:
             self._submission_lot_id = lot_id
+        trade_id = str(
+            metadata.get("trade_id", "") or metadata.get("id", "") or ""
+        ).strip()
+        if trade_id:
+            self._submission_trade_id = trade_id
         field_map = (
             ("number", self.submission_number_input),
             ("title", self.submission_title_input),
@@ -627,6 +649,32 @@ class SubmissionTabMixin:
                 if item is not None:
                     item.setBackground(QColor())
 
+    def _clear_submission_table_selection(self) -> None:
+        table = getattr(self, "submission_table", None)
+        if table is None:
+            return
+        clear_selection = getattr(table, "clearSelection", None)
+        if callable(clear_selection):
+            try:
+                clear_selection()
+            except Exception:
+                pass
+        selection_model_getter = getattr(table, "selectionModel", None)
+        if callable(selection_model_getter):
+            try:
+                selection_model = selection_model_getter()
+                clear_model = getattr(selection_model, "clear", None)
+                if callable(clear_model):
+                    clear_model()
+            except Exception:
+                pass
+        set_current_item = getattr(table, "setCurrentItem", None)
+        if callable(set_current_item):
+            try:
+                set_current_item(None)
+            except Exception:
+                pass
+
     def _highlight_submission_issues(self, issues: list[SubmissionValidationIssue]) -> None:
         self._clear_submission_highlight()
         row_severity: dict[int, str] = {}
@@ -647,6 +695,7 @@ class SubmissionTabMixin:
             for col in range(self.submission_table.columnCount()):
                 item = self._ensure_submission_item(row, col)
                 item.setBackground(color)
+        self._clear_submission_table_selection()
 
     @staticmethod
     def _validation_message(issues: list[SubmissionValidationIssue]) -> str:

@@ -25,6 +25,8 @@ class _FakeTable:
     def __init__(self, rows, headers=None):
         self._headers = [_FakeItem(header) for header in (headers or [])]
         self._rows = [[_FakeItem(value) for value in row] for row in rows]
+        self.selection_cleared = False
+        self.current_item = object()
 
     def rowCount(self):
         return len(self._rows)
@@ -51,6 +53,12 @@ class _FakeTable:
         while len(self._rows[row]) <= column:
             self._rows[row].append(_FakeItem(""))
         self._rows[row][column] = item
+
+    def clearSelection(self):
+        self.selection_cleared = True
+
+    def setCurrentItem(self, item):
+        self.current_item = item
 
 
 class _FakeWindow(SubmissionTabMixin):
@@ -113,6 +121,14 @@ class SubmissionTabMixinTests(unittest.TestCase):
         self.assertEqual(window._submission_item_text(1, 8), "посредник")
         self.assertEqual(window._submission_item_text(1, 9), "6 месяцев")
         self.assertEqual(window.total_updates, 1)
+
+    def test_clear_submission_table_selection_removes_current_item(self):
+        window = _FakeWindow([["Насос"]])
+
+        window._clear_submission_table_selection()
+
+        self.assertTrue(window.submission_table.selection_cleared)
+        self.assertIsNone(window.submission_table.current_item)
 
 
 if __name__ == "__main__":

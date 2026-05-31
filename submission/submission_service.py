@@ -52,6 +52,7 @@ class SubmissionHeader:
     payment_condition: str = ""
     total: float = 0.0
     lot_id: str = ""
+    trade_id: str = ""
 
 
 @dataclass
@@ -459,6 +460,7 @@ class SubmissionService:
                 getattr(header, "payment_condition", "") or ""
             ).strip(),
             lot_id=str(getattr(header, "lot_id", "") or "").strip(),
+            trade_id=str(getattr(header, "trade_id", "") or "").strip(),
             total=round(total, 2),
         )
         return SubmissionPayload(header=normalized_header, rows=normalized_rows)
