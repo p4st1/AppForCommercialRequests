@@ -9,6 +9,16 @@ from tools import DatabaseTools as Tool
 
 
 class TableImportFlowMixin:
+    def _show_table_import_status(self, message, timeout_ms=0):
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(str(message), int(timeout_ms or 0))
+
     def _show_full_table_tab(self):
         tabs = getattr(getattr(self, "ui", None), "tabWidget", None)
         full_table_tab = getattr(getattr(self, "ui", None), "tab", None)
@@ -47,6 +57,7 @@ class TableImportFlowMixin:
         if params is None:
             return
 
+        self._show_table_import_status("Загрузка КП поставщика...")
         self.closeTable()
         try:
             parsed_rows, warnings = self.proposal_import_service.load_source_rows(filename)
@@ -56,6 +67,7 @@ class TableImportFlowMixin:
                 e,
                 include_traceback=False,
             )
+            self._show_table_import_status("Ошибка загрузки КП поставщика", 5000)
             self.error("Ошибка", f"Невозможно прочитать таблицу\n{e}")
             return
         Tool.write_log(f"КП поставщика прочитано: {filename}; строк: {len(parsed_rows)}")
@@ -149,6 +161,7 @@ class TableImportFlowMixin:
             f"hidden_rows={hidden_rows}, first_row_height={first_row_height}, "
             f"viewport_updates={viewport_updates}"
         )
+        self._show_table_import_status("КП поставщика загружено", 5000)
 
         if warnings:
             trimmed = warnings[:10]

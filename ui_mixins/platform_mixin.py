@@ -37,6 +37,8 @@ class LoadTradesWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
     PAGE_LIMIT = 100
+    TRADE_LOAD_TIMEOUT_SECONDS = (10.0, 180.0)
+    TRADE_LOAD_RETRIES = 1
 
     def __init__(
         self,
@@ -84,7 +86,11 @@ class LoadTradesWorker(QThread):
         try:
             if not self._cookies:
                 raise ValueError("Не найдены cookies для авторизации")
-            client = MetalITClient(self._cookies)
+            client = MetalITClient(
+                self._cookies,
+                timeout=self.TRADE_LOAD_TIMEOUT_SECONDS,
+                retries=self.TRADE_LOAD_RETRIES,
+            )
             trades = self._load_trades_with_client(client)
             self.finished.emit(trades)
         except Exception as exc:
@@ -112,7 +118,11 @@ class LoadTradesWorker(QThread):
                 if not isinstance(refreshed_cookies, dict) or not refreshed_cookies:
                     raise RuntimeError("После переавторизации не получены cookies")
                 self._cookies = dict(refreshed_cookies)
-                client = MetalITClient(self._cookies)
+                client = MetalITClient(
+                    self._cookies,
+                    timeout=self.TRADE_LOAD_TIMEOUT_SECONDS,
+                    retries=self.TRADE_LOAD_RETRIES,
+                )
                 trades = self._load_trades_with_client(client)
                 self.finished.emit(trades)
             except Exception as retry_exc:
@@ -122,6 +132,8 @@ class LoadTradesWorker(QThread):
 class LoadRetradesWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
+    TRADE_LOAD_TIMEOUT_SECONDS = (10.0, 180.0)
+    TRADE_LOAD_RETRIES = 1
 
     def __init__(
         self,
@@ -143,7 +155,11 @@ class LoadRetradesWorker(QThread):
         try:
             if not self._cookies:
                 raise ValueError("Не найдены cookies для авторизации")
-            self.client = MetalITClient(self._cookies)
+            self.client = MetalITClient(
+                self._cookies,
+                timeout=self.TRADE_LOAD_TIMEOUT_SECONDS,
+                retries=self.TRADE_LOAD_RETRIES,
+            )
             retrades = self.client.load_retrades(limit=50)
             if self.max_items > 0:
                 retrades = retrades[: self.max_items]
@@ -210,6 +226,7 @@ class AuthStatusWorker(QThread):
             client = MetalITClient(
                 self._cookies,
                 timeout=self.STATUS_CHECK_TIMEOUT_SECONDS,
+                retries=0,
             )
             is_auth = client.is_authenticated()
             if not self._interruption_requested():
@@ -543,6 +560,8 @@ class PlatformMixin:
         self.input_login.setEnabled(not is_loading)
         self.input_password.setEnabled(not is_loading)
         self.btn_login.setText("Вход..." if is_loading else "Войти")
+        if is_loading:
+            self._show_platform_status("Авторизация на площадке...", 0)
 
     def _finish_login(self, status_message: str) -> None:
         self._set_login_loading_state(is_loading=False)
@@ -550,9 +569,7 @@ class PlatformMixin:
         self._auth_login_worker = None
         if worker is not None:
             worker.deleteLater()
-        status_bar = self.statusBar()
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 4000)
+        self._show_platform_status(status_message, 4000)
 
     def refresh_site_status_on_startup(self) -> None:
         if bool(getattr(self, "_app_is_closing", False)):
@@ -1040,12 +1057,17 @@ class PlatformMixin:
             button.setText(
                 "Загрузка всех..." if is_loading and loading_all else "Загрузить все заявки"
             )
+        if is_loading:
+            message = "Загрузка всех заявок..." if loading_all else "Загрузка заявок..."
+            self._show_platform_status(message, 0)
 
     def _set_retrades_loading_state(self, *, is_loading: bool) -> None:
         self.btn_load_retrades.setEnabled(not is_loading)
         self.btn_load_retrades.setText(
             "Загрузка..." if is_loading else "Загрузить переторжки"
         )
+        if is_loading:
+            self._show_platform_status("Загрузка переторжек...", 0)
 
     def _finish_trades_loading(self, status_message: str) -> None:
         self._set_trades_loading_state(is_loading=False)
@@ -1054,9 +1076,7 @@ class PlatformMixin:
         self._load_trades_worker = None
         if worker is not None:
             worker.deleteLater()
-        status_bar = self.statusBar()
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 4000)
+        self._show_platform_status(status_message, 4000)
 
     def _finish_retrades_loading(self, status_message: str) -> None:
         self._set_retrades_loading_state(is_loading=False)
@@ -1064,9 +1084,7 @@ class PlatformMixin:
         self._load_retrades_worker = None
         if worker is not None:
             worker.deleteLater()
-        status_bar = self.statusBar()
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 4000)
+        self._show_platform_status(status_message, 4000)
 
     def on_retrades_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
@@ -1413,6 +1431,10 @@ class PlatformMixin:
         ]
 
     def _show_platform_status(self, message: str, timeout_ms: int = 3000) -> None:
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
         status_bar_getter = getattr(self, "statusBar", None)
         status_bar = status_bar_getter() if callable(status_bar_getter) else None
         if status_bar is not None and message:

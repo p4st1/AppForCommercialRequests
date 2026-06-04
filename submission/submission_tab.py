@@ -910,6 +910,16 @@ QTableWidget::item:selected:!active {
             self.btn_submit_submission.setText("Подготовка..." if is_loading else "Подать заявку")
         if is_loading:
             self._set_submission_status("idle", "Подготовка...")
+            self._show_submission_status_bar("Подготовка заявки к подаче...")
+
+    def _show_submission_status_bar(self, message: str, timeout_ms: int = 0) -> None:
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar = self.statusBar() if callable(getattr(self, "statusBar", None)) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(message, timeout_ms)
 
     def _finish_submission_worker(self) -> None:
         self._set_submission_loading_state(is_loading=False)
@@ -922,12 +932,10 @@ QTableWidget::item:selected:!active {
         info_text = str(message or "").strip()
         Tool.write_log(f"Заявка подготовлена к ручной подаче: {info_text}")
         self._set_submission_status("warning", "Ожидание пользователя")
-        status_bar = self.statusBar() if callable(getattr(self, "statusBar", None)) else None
-        if status_bar is not None:
-            status_bar.showMessage(
-                info_text or "Таблица загружена на сайт. Ожидается ручная подача.",
-                10_000,
-            )
+        self._show_submission_status_bar(
+            info_text or "Таблица загружена на сайт. Ожидается ручная подача.",
+            10_000,
+        )
 
     def _on_submission_finished(self, message: str) -> None:
         Tool.write_log(f"Подача заявки завершена: {message}")
@@ -935,6 +943,7 @@ QTableWidget::item:selected:!active {
         status_text = "Подано" if "подан" in message_text.casefold() else "Загружено"
         self._set_submission_status("ready", status_text)
         self._finish_submission_worker()
+        self._show_submission_status_bar("Подача заявки завершена", 5_000)
         QMessageBox.information(self, "Подача заявки", message)
 
     def _on_submission_error(self, message: str) -> None:
@@ -942,4 +951,5 @@ QTableWidget::item:selected:!active {
         Tool.write_log(f"Ошибка подачи заявки: {error_text}")
         self._set_submission_status("error", "Ошибка подачи")
         self._finish_submission_worker()
+        self._show_submission_status_bar("Ошибка подачи заявки", 5_000)
         QMessageBox.warning(self, "Подача заявки", error_text)

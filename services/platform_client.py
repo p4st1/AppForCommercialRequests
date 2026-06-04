@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import requests
+
+DEFAULT_REQUEST_TIMEOUT = 30.0
+DEFAULT_REQUEST_RETRIES = 0
+DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
 
 FULL_GRAPHQL_QUERY = """
 query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
@@ -33,6 +38,41 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
 }
 """
 TRADE_DETAILS_ENDPOINT_PATTERN = "{base_url}/trades/{trade_id}"
+
+
+def _coerce_request_timeout(raw_timeout: Any) -> float | tuple[float, float]:
+    if isinstance(raw_timeout, (list, tuple)) and len(raw_timeout) == 2:
+        try:
+            connect_timeout = float(raw_timeout[0])
+            read_timeout = float(raw_timeout[1])
+        except (TypeError, ValueError):
+            return DEFAULT_REQUEST_TIMEOUT
+        return (max(0.1, connect_timeout), max(0.1, read_timeout))
+
+    try:
+        timeout = float(raw_timeout)
+    except (TypeError, ValueError):
+        return DEFAULT_REQUEST_TIMEOUT
+    return max(0.1, timeout)
+
+
+def _is_retryable_request_error(exc: Exception) -> bool:
+    request_exceptions = getattr(requests, "exceptions", None)
+    retry_types = []
+    for name in ("ReadTimeout", "Timeout", "ConnectionError"):
+        exc_type = getattr(request_exceptions, name, None)
+        if isinstance(exc_type, type):
+            retry_types.append(exc_type)
+    if retry_types and isinstance(exc, tuple(retry_types)):
+        return True
+
+    error_text = str(exc or "").casefold()
+    return (
+        "read timed out" in error_text
+        or "read timeout" in error_text
+        or "connection aborted" in error_text
+        or "connection reset" in error_text
+    )
 
 
 def _normalize_trade_json(raw_payload: Any) -> dict[str, Any]:
@@ -72,18 +112,24 @@ def get_trade_json(platform_client: Any, trade_id: int) -> dict[str, Any]:
         raise RuntimeError("У platform_client отсутствует session")
 
     headers = getattr(platform_client, "headers", None)
-    timeout = float(getattr(platform_client, "_timeout", 30.0) or 30.0)
+    timeout = _coerce_request_timeout(
+        getattr(platform_client, "_timeout", DEFAULT_REQUEST_TIMEOUT)
+    )
     base_url = str(getattr(platform_client, "BASE_URL", "https://etp.metal-it.ru"))
 
     endpoint = TRADE_DETAILS_ENDPOINT_PATTERN.format(
         base_url=base_url.rstrip("/"),
         trade_id=trade_id_int,
     )
-    response = session.get(
-        endpoint,
-        headers=headers,
-        timeout=timeout,
-    )
+    request_with_retries = getattr(platform_client, "_request_with_retries", None)
+    if callable(request_with_retries):
+        response = request_with_retries("get", endpoint, headers=headers, timeout=timeout)
+    else:
+        response = session.get(
+            endpoint,
+            headers=headers,
+            timeout=timeout,
+        )
     if response.status_code == 403:
         raise RuntimeError("Ошибка авторизации — обновите cookies")
     response.raise_for_status()
@@ -179,10 +225,20 @@ class MetalITClient:
         self,
         cookies: dict[str, str],
         *,
-        timeout: float = 30.0,
+        timeout: float | tuple[float, float] = DEFAULT_REQUEST_TIMEOUT,
+        retries: int = DEFAULT_REQUEST_RETRIES,
+        retry_backoff_seconds: float = DEFAULT_RETRY_BACKOFF_SECONDS,
         session: requests.Session | None = None,
     ) -> None:
-        self._timeout = timeout
+        self._timeout = _coerce_request_timeout(timeout)
+        try:
+            self._request_retries = max(0, int(retries))
+        except (TypeError, ValueError):
+            self._request_retries = DEFAULT_REQUEST_RETRIES
+        try:
+            self._retry_backoff_seconds = max(0.0, float(retry_backoff_seconds))
+        except (TypeError, ValueError):
+            self._retry_backoff_seconds = DEFAULT_RETRY_BACKOFF_SECONDS
         self._session = session or requests.Session()
         self.session = self._session
         self.headers = self.session.headers
@@ -217,6 +273,27 @@ class MetalITClient:
                 path="/",
             )
             self.session.cookies.set(key_text, value_text)
+
+    def _request_with_retries(self, method: str, url: str, **kwargs: Any) -> Any:
+        request_method = getattr(self.session, method)
+        kwargs.setdefault("timeout", self._timeout)
+        attempts_count = self._request_retries + 1
+        last_error: Exception | None = None
+
+        for attempt_index in range(attempts_count):
+            try:
+                return request_method(url, **kwargs)
+            except Exception as exc:
+                last_error = exc
+                is_last_attempt = attempt_index >= attempts_count - 1
+                if is_last_attempt or not _is_retryable_request_error(exc):
+                    raise
+                if self._retry_backoff_seconds > 0:
+                    time.sleep(self._retry_backoff_seconds * (attempt_index + 1))
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("HTTP-запрос не был выполнен")
 
     @staticmethod
     def _normalize_cookies(raw: Any) -> dict[str, str]:
@@ -284,11 +361,11 @@ class MetalITClient:
             ),
             "query": FULL_GRAPHQL_QUERY,
         }
-        response = self.session.post(
+        response = self._request_with_retries(
+            "post",
             self.url,
             json=payload,
             headers=self.headers,
-            timeout=self._timeout,
         )
         response.raise_for_status()
         data = response.json()
@@ -401,11 +478,11 @@ class MetalITClient:
                 ),
                 "query": FULL_GRAPHQL_QUERY,
             }
-            response = self.session.post(
+            response = self._request_with_retries(
+                "post",
                 self.url,
                 json=payload,
                 headers=self.headers,
-                timeout=self._timeout,
             )
             if response.status_code == 403:
                 message = "Ошибка авторизации — обновите cookies"

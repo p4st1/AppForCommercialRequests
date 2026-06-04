@@ -20,6 +20,16 @@ class DocExportFlowMixin:
     SUBMISSION_OFFER_VALIDITY_DAYS = Config.DEFAULT_OFFER_VALIDITY_DAYS
     PIPELINE_TRADE_SEARCH_LIMIT = 0
 
+    def _show_doc_export_status(self, message: str, timeout_ms: int = 0) -> None:
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(message, timeout_ms)
+
     def openCreateDocWindow(
         self,
         tableData,
@@ -127,7 +137,7 @@ class DocExportFlowMixin:
                 return
             self.set_pipeline_status("Готово")
 
-        if QTimer is not None:
+        if QTimer is not None and hasattr(QTimer, "singleShot"):
             QTimer.singleShot(3000, _reset_status)
             return
         _reset_status()
@@ -409,7 +419,9 @@ class DocExportFlowMixin:
             )
             return
 
+        self._show_doc_export_status("Подготовка КП в DOCX...")
         Tool.write_log("CREATING DOCX")
         table_data = self.getTableData()
         self.openCreateDocWindow((len(table_data), table_data))
         Tool.write_log("CREATING DOCX...")
+        self._show_doc_export_status("Окно создания КП открыто", 5_000)

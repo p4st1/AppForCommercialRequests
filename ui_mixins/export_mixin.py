@@ -1322,10 +1322,8 @@ QTableWidget::indicator {{
                 except Exception:
                     pass
 
-        status_bar_getter = getattr(self, "statusBar", None)
-        status_bar = status_bar_getter() if callable(status_bar_getter) else None
-        if show_success_status and status_bar is not None:
-            status_bar.showMessage("Файл сохранён", 3_000)
+        if show_success_status:
+            self._show_export_status("Файл сохранён", 3_000)
         return True
 
     def on_save_clicked(self) -> None:
@@ -1379,10 +1377,8 @@ QTableWidget::indicator {{
             import_button.setEnabled(not is_loading)
             import_button.setText("Импорт..." if is_loading else "Импорт")
 
-        status_bar_getter = getattr(self, "statusBar", None)
-        status_bar = status_bar_getter() if callable(status_bar_getter) else None
-        if status_bar is not None and is_loading:
-            status_bar.showMessage("Импорт таблицы...")
+        if is_loading:
+            self._show_export_status("Импорт таблицы...")
 
     def _finish_retrade_import(self, status_message: str) -> None:
         self._set_retrade_import_loading_state(is_loading=False)
@@ -1392,10 +1388,7 @@ QTableWidget::indicator {{
         if callable(delete_later):
             delete_later()
 
-        status_bar_getter = getattr(self, "statusBar", None)
-        status_bar = status_bar_getter() if callable(status_bar_getter) else None
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 5_000)
+        self._show_export_status(status_message, 5_000)
 
     def _on_retrade_import_finished(self, file_path: str) -> None:
         Tool.write_log(f"Импорт переторжки завершен: {file_path}")
@@ -4482,6 +4475,26 @@ QTableWidget::indicator {{
             self.btn_export_retrade.setText(
                 "Экспорт..." if is_loading else "Экспорт переторжки"
             )
+        if is_loading:
+            workflow = str(getattr(self, "_active_export_workflow", "") or "")
+            status_message = (
+                "Экспорт таблицы приема заявок..."
+                if workflow == "submission_acceptance"
+                else "Экспорт таблицы переторжки..."
+                if workflow == "retrade"
+                else "Экспорт таблицы..."
+            )
+            self._show_export_status(status_message)
+
+    def _show_export_status(self, message: str, timeout_ms: int = 0) -> None:
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(message, timeout_ms)
 
     def _finish_export(self, status_message: str) -> None:
         self._set_export_loading_state(is_loading=False)
@@ -4492,9 +4505,7 @@ QTableWidget::indicator {{
         self._pending_retrade_bid_id = None
         self._active_export_workflow = ""
         self._pending_submission_export_metadata = {}
-        status_bar = self.statusBar()
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 5_000)
+        self._show_export_status(status_message, 5_000)
 
     @staticmethod
     def _developer_skip_table_fill_errors_enabled() -> bool:

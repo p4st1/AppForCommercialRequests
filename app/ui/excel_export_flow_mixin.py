@@ -10,6 +10,16 @@ class ExcelExportFlowMixin:
     EXPORT_DESTINATION_LOCAL = "local"
     EXPORT_DESTINATION_GOOGLE_DRIVE = "google_drive"
 
+    def _show_excel_export_status(self, message, timeout_ms=0):
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(str(message), int(timeout_ms or 0))
+
     def exportExcel(self):
         if not Config.isTableOpened:
             self.error("Ошибка", "Загрузите КП поставщика")
@@ -29,6 +39,8 @@ class ExcelExportFlowMixin:
         logistic_formulas = []
         row_count = self.ui.KpTable.rowCount()
         column_count = self.ui.KpTable.columnCount()
+        item_data_role = getattr(Qt, "ItemDataRole", None)
+        user_role = getattr(item_data_role, "UserRole", 32)
 
         for row in range(row_count):
             row_data = []
@@ -37,7 +49,7 @@ class ExcelExportFlowMixin:
                 row_data.append(item.text() if item is not None else "")
             tableData.append(row_data)
             logistic_item = self.ui.KpTable.item(row, 7)
-            logistic_formula = logistic_item.data(Qt.ItemDataRole.UserRole) if logistic_item is not None else ""
+            logistic_formula = logistic_item.data(user_role) if logistic_item is not None else ""
             if isinstance(logistic_formula, dict):
                 logistic_formula = logistic_formula.get("formula", "")
             logistic_formulas.append(str(logistic_formula or ""))
@@ -55,9 +67,11 @@ class ExcelExportFlowMixin:
             self._start_google_drive_excel_export(payload)
             return
 
+        self._show_excel_export_status("Экспорт таблицы...")
         export_result = exportExcelFile(payload)
         if not getattr(export_result, "success", False):
             error_text = getattr(export_result, "error_message", "") or "Не удалось создать Excel"
+            self._show_excel_export_status("Ошибка экспорта таблицы", 5000)
             self.error("Ошибка", error_text)
             return
 
@@ -97,6 +111,7 @@ class ExcelExportFlowMixin:
         }
 
     def _start_google_drive_excel_export(self, payload):
+        self._show_excel_export_status("Подготовка экспорта таблицы в Google Drive...")
         summary_rows = self.getTableData()
         self.openCreateDocWindow(
             (len(summary_rows), summary_rows),
@@ -112,14 +127,17 @@ class ExcelExportFlowMixin:
             (docx_result if isinstance(docx_result, dict) else {}).get("remote_url", "") or ""
         ).strip()
         if not docx_remote_url:
+            self._show_excel_export_status("Ошибка экспорта таблицы", 5000)
             self.error("Ошибка", "Не удалось получить ссылку на DOCX КП в Google Drive")
             return
 
+        self._show_excel_export_status("Экспорт таблицы в Google Drive...")
         drive_payload = dict(payload)
         drive_payload["docx_remote_url"] = docx_remote_url
         export_result = exportExcelFile(drive_payload)
         if not getattr(export_result, "success", False):
             error_text = getattr(export_result, "error_message", "") or "Не удалось создать Excel"
+            self._show_excel_export_status("Ошибка экспорта таблицы", 5000)
             self.error("Ошибка", error_text)
             return
 
@@ -135,6 +153,7 @@ class ExcelExportFlowMixin:
                 output_path,
             )
         except Exception as exc:
+            self._show_excel_export_status("Ошибка загрузки Excel в Google Drive", 5000)
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -150,6 +169,7 @@ class ExcelExportFlowMixin:
         )
 
     def _finish_excel_export(self, export_result, *, remote_url: str = "", google_drive: bool = False):
+        self._show_excel_export_status("Экспорт таблицы завершен", 5000)
         total_amount, currency = self._table_column_total(12)
         self.history_service.record_excel_export(
             items_count=self.ui.KpTable.rowCount(),

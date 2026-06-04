@@ -6,6 +6,23 @@ from tools import DatabaseTools as Tool
 
 
 class UiFeedbackMixin:
+    def _show_status_message(self, message, timeout_ms=0):
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is None or not message:
+            return
+        try:
+            timeout = int(timeout_ms or 0)
+        except (TypeError, ValueError):
+            timeout = 0
+        status_bar.showMessage(str(message), timeout)
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+        except Exception:
+            pass
+
     def open_url(self, url):
         try:
             QDesktopServices.openUrl(QUrl(url))

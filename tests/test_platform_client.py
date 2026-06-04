@@ -89,6 +89,27 @@ class _PostCaptureSession(_CaptureSession):
         return self._get_responses.pop(0)
 
 
+class _FlakyPostSession(_CaptureSession):
+    def __init__(self, *, error, response):
+        super().__init__()
+        self._error = error
+        self._response = response
+        self.post_calls = []
+
+    def post(self, url, json=None, headers=None, timeout=None):
+        self.post_calls.append(
+            {
+                "url": url,
+                "json": json,
+                "headers": headers,
+                "timeout": timeout,
+            }
+        )
+        if len(self.post_calls) == 1:
+            raise self._error
+        return self._response
+
+
 class PlatformClientAuthTests(unittest.TestCase):
     def test_build_variables_uses_bid_submission_sitemap(self):
         variables = MetalITClient._build_variables(limit=20, skip=0)
@@ -215,6 +236,36 @@ class PlatformClientAuthTests(unittest.TestCase):
         self.assertEqual(trades, [{"id": 1}, {"id": 2}])
         self.assertFalse(client.last_trades_loaded_all)
         self.assertEqual(client.last_trades_total, 3)
+
+    def test_get_trades_retries_read_timeout_with_configured_timeout(self):
+        session = _FlakyPostSession(
+            error=TimeoutError("HTTPSConnectionPool: Read timed out."),
+            response=_FakeResponse(
+                status_code=200,
+                payload={
+                    "data": {
+                        "trades": {
+                            "items": [{"id": 1}],
+                            "total": 1,
+                        }
+                    }
+                },
+            ),
+        )
+        client = MetalITClient(
+            {"JSESSIONID": "session-cookie"},
+            timeout=(10.0, 180.0),
+            retries=1,
+            retry_backoff_seconds=0,
+            session=session,
+        )
+
+        trades = client.get_trades_page(limit=1, skip=0)
+
+        self.assertEqual(trades, [{"id": 1}])
+        self.assertEqual(len(session.post_calls), 2)
+        self.assertEqual(session.post_calls[0]["timeout"], (10.0, 180.0))
+        self.assertEqual(session.post_calls[1]["timeout"], (10.0, 180.0))
 
     def test_load_retrades_uses_retrading_payload_and_pagination(self):
         session = _PostCaptureSession(
