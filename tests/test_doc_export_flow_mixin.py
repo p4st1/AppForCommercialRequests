@@ -145,6 +145,7 @@ class _FakeMainWindow(DocExportFlowMixin):
         self.finish_loading_messages = []
         self.auth_status_values = []
         self.all_trades = []
+        self._trades_cache_complete = False
         self.pending_submission_metadata_calls = []
 
     def error(self, title, message):
@@ -287,7 +288,32 @@ class DocExportFlowMixinTests(unittest.TestCase):
 
         self.assertEqual(window.ui.tabWidget.indices, [1])
         self.assertEqual(window.load_trades_calls, 1)
+        self.assertEqual(window._trades_load_max_items_override, 0)
         self.assertEqual(window._web_pipeline_trade_number, "A-100")
+
+    def test_run_web_pipeline_uses_loaded_trade_without_reloading(self):
+        window = _FakeMainWindow()
+        window.all_trades = [{"registeredNumber": "A-100", "lots": [{"id": 77}]}]
+
+        window.run_web_pipeline("A-100")
+
+        self.assertEqual(window.ui.tabWidget.indices, [1])
+        self.assertEqual(window.load_trades_calls, 0)
+        self.assertEqual(window.export_trade_calls, [77])
+        self.assertEqual(window._web_pipeline_trade_number, "")
+
+    @patch("app.ui.doc_export_flow_mixin.QMessageBox.warning")
+    def test_run_web_pipeline_does_not_reload_when_full_cache_misses(self, warning):
+        window = _FakeMainWindow()
+        window._trades_cache_complete = True
+        window.all_trades = [{"registeredNumber": "A-100", "lots": [{"id": 77}]}]
+
+        window.run_web_pipeline("A-404")
+
+        warning.assert_called_once()
+        self.assertEqual(window.load_trades_calls, 0)
+        self.assertEqual(window.export_trade_calls, [])
+        self.assertEqual(window._web_pipeline_trade_number, "")
 
     def test_on_trades_loaded_continues_pipeline_and_exports_lot(self):
         window = _FakeMainWindow()

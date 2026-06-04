@@ -2025,7 +2025,7 @@ QTableWidget::indicator {{
         if sheet_names:
             main_sheet = sheet_names[0]
             if main_sheet != "Рассчеты":
-                print("⚠️ Первый лист должен называться 'Рассчеты'")
+                Tool.write_log("Первый лист должен называться 'Рассчеты'")
 
         selected_sheet_name = ""
         sheets_list.blockSignals(True)
@@ -2144,7 +2144,6 @@ QTableWidget::indicator {{
                     break
 
             if has_unresolved_formula:
-                print(warning_message)
                 Tool.write_log(warning_message)
         finally:
             try:
@@ -3283,7 +3282,6 @@ QTableWidget::indicator {{
     @staticmethod
     def _log_calc(message: str) -> None:
         text = f"[CALC] {message}"
-        print(text)
         Tool.write_log(text)
 
     @classmethod
@@ -4035,7 +4033,6 @@ QTableWidget::indicator {{
     @staticmethod
     def _log_auto_trade(message: str) -> None:
         text = f"[AUTO TRADE] {message}"
-        print(text)
         Tool.write_log(text)
 
     def _ensure_export_button(self) -> None:
@@ -4818,7 +4815,6 @@ QTableWidget::indicator {{
     @staticmethod
     def _log_ui(message: str) -> None:
         text = f"[UI] {message}"
-        print(text)
         Tool.write_log(text)
 
     def update_retrade_table(self, df: pd.DataFrame) -> None:

@@ -156,6 +156,66 @@ class PlatformClientAuthTests(unittest.TestCase):
 
         mocked.assert_called_once_with(limit=1, skip=0)
 
+    def test_get_all_trades_zero_max_items_loads_until_total(self):
+        session = _PostCaptureSession(
+            responses=[
+                _FakeResponse(
+                    status_code=200,
+                    payload={
+                        "data": {
+                            "trades": {
+                                "items": [{"id": 1}, {"id": 2}],
+                                "total": 3,
+                            }
+                        }
+                    },
+                ),
+                _FakeResponse(
+                    status_code=200,
+                    payload={
+                        "data": {
+                            "trades": {
+                                "items": [{"id": 3}],
+                                "total": 3,
+                            }
+                        }
+                    },
+                ),
+            ]
+        )
+        client = MetalITClient({"JSESSIONID": "session-cookie"}, session=session)
+
+        trades = client.get_all_trades(limit=2, max_items=0)
+
+        self.assertEqual(trades, [{"id": 1}, {"id": 2}, {"id": 3}])
+        self.assertTrue(client.last_trades_loaded_all)
+        self.assertEqual(client.last_trades_total, 3)
+        self.assertEqual(len(session.post_calls), 2)
+
+    def test_get_all_trades_positive_max_items_keeps_partial_cache_flag(self):
+        session = _PostCaptureSession(
+            responses=[
+                _FakeResponse(
+                    status_code=200,
+                    payload={
+                        "data": {
+                            "trades": {
+                                "items": [{"id": 1}, {"id": 2}],
+                                "total": 3,
+                            }
+                        }
+                    },
+                )
+            ]
+        )
+        client = MetalITClient({"JSESSIONID": "session-cookie"}, session=session)
+
+        trades = client.get_all_trades(limit=2, max_items=2)
+
+        self.assertEqual(trades, [{"id": 1}, {"id": 2}])
+        self.assertFalse(client.last_trades_loaded_all)
+        self.assertEqual(client.last_trades_total, 3)
+
     def test_load_retrades_uses_retrading_payload_and_pagination(self):
         session = _PostCaptureSession(
             responses=[

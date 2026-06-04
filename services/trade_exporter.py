@@ -293,7 +293,6 @@ query tradeWithCurrentStage($id: Int) {
     @staticmethod
     def _log_import(message: str) -> None:
         text = f"[IMPORT] {message}"
-        print(text)
         Tool.write_log(text)
 
     @staticmethod
@@ -343,7 +342,6 @@ query tradeWithCurrentStage($id: Int) {
     @staticmethod
     def _get_retrade_specification_section(page: Page) -> Locator:
         page.wait_for_selector("text=Спецификация", timeout=60_000)
-        print("[EXPORT] Блок спецификации найден")
 
         specification_section = page.locator("section, article, div").filter(
             has_text="Спецификация"
@@ -364,10 +362,8 @@ query tradeWithCurrentStage($id: Int) {
                 args=["--disable-blink-features=AutomationControlled"],
                 accept_downloads=True,
             )
-            print("[EXPORT] launched persistent headed Chrome context")
             return context
-        except Exception as chrome_exc:
-            print("[EXPORT] chrome channel launch failed, fallback to chromium:", str(chrome_exc))
+        except Exception:
             return playwright.chromium.launch_persistent_context(
                 user_data_dir=str(profile_dir),
                 headless=False,
@@ -395,7 +391,6 @@ query tradeWithCurrentStage($id: Int) {
     @staticmethod
     def _log_submission_export(message: str) -> None:
         text = f"[SUBMISSION EXPORT] {message}"
-        print(text)
         Tool.write_log(text)
 
     @staticmethod
@@ -1177,7 +1172,6 @@ query tradeWithCurrentStage($id: Int) {
             specification_section = self._get_retrade_specification_section(page)
 
             export_button = specification_section.locator("button:has-text('Экспорт')").first
-            print("[EXPORT] export_button найден:", export_button.count() > 0)
             if export_button.count() == 0:
                 self._write_page_debug_dump(
                     page,
@@ -1202,11 +1196,9 @@ query tradeWithCurrentStage($id: Int) {
                 raise RuntimeError("Не удалось получить объект скачивания после клика") from exc
 
             suggested_filename = str(download.suggested_filename or "").strip()
-            print("[EXPORT] suggested_filename:", suggested_filename or "<empty>")
 
             target_path_resolved.parent.mkdir(parents=True, exist_ok=True)
             download.save_as(str(target_path_resolved))
-            print("[EXPORT] сохранено в:", str(target_path_resolved))
 
             return str(target_path_resolved)
         except Exception:
@@ -1694,7 +1686,6 @@ query tradeWithCurrentStage($id: Int) {
                 )
             except Exception as exc:
                 last_error = exc
-                print("[EXPORT] tradeWithCurrentStage request failed:", endpoint, str(exc))
 
         if last_error is not None:
             raise last_error
@@ -1750,8 +1741,9 @@ query tradeWithCurrentStage($id: Int) {
         lot_results = self._extract_lot_results(trade_payload)
 
         if emit_logs:
-            print(f"[EXPORT] submissionStages: {stages_count}")
-            print(f"[EXPORT] lotResults: {len(lot_results)}")
+            self._log_submission_export(
+                f"submissionStages: {stages_count}; lotResults: {len(lot_results)}"
+            )
 
         bids: list[dict[str, Any]] = []
         seen_keys: set[str] = set()
@@ -1765,7 +1757,7 @@ query tradeWithCurrentStage($id: Int) {
             if bid_places:
                 has_bid_places = True
             if emit_logs:
-                print(f"[EXPORT] bidPlaces: {len(bid_places)}")
+                self._log_submission_export(f"bidPlaces: {len(bid_places)}")
 
             for place in bid_places:
                 if not isinstance(place, dict):
@@ -1809,11 +1801,13 @@ query tradeWithCurrentStage($id: Int) {
                 )
 
         if emit_logs:
-            print(f"[EXPORT] найдено заявок: {len(bids)}")
+            self._log_submission_export(f"найдено заявок: {len(bids)}")
             if not bids:
-                print("❌ нет заявок — проверить JSON")
+                self._log_submission_export("нет заявок - проверить JSON")
             if not has_bid_places:
-                print("❌ bidPlaces пустой — пользователь не участвует или нет данных")
+                self._log_submission_export(
+                    "bidPlaces пустой - пользователь не участвует или нет данных"
+                )
 
         return bids, has_bid_places
 
@@ -1844,7 +1838,6 @@ query tradeWithCurrentStage($id: Int) {
         if lot_results:
             return trade_payload
 
-        print("[EXPORT] lotResults не найдены в tradeDetail, пробуем tradeWithCurrentStage")
         try:
             graphql_payload = self._request_trade_with_current_stage(
                 session=session,
@@ -1854,7 +1847,9 @@ query tradeWithCurrentStage($id: Int) {
             if self._extract_lot_results(fallback_payload):
                 return fallback_payload
         except Exception as exc:
-            print("[EXPORT] tradeWithCurrentStage fallback error:", str(exc))
+            self._log_submission_export(
+                f"tradeWithCurrentStage fallback error: {str(exc).splitlines()[0]}"
+            )
 
         return trade_payload
 
@@ -1933,9 +1928,6 @@ query tradeWithCurrentStage($id: Int) {
         for sitemap_page in (self.DEFAULT_SITEMAP_PAGE, self.RETRADING_SITEMAP_PAGE):
             matched_trade_id = _match_in_sitemap(sitemap_page)
             if matched_trade_id is not None:
-                print(
-                    f"[EXPORT] lot_id={lot_id} найден в sitemap={sitemap_page}, trade_id={matched_trade_id}"
-                )
                 return matched_trade_id
 
         raise ValueError(f"Не удалось определить trade_id по lot_id={lot_id}")
@@ -2014,7 +2006,6 @@ query tradeWithCurrentStage($id: Int) {
                     trade_id=trade_id,
                     bid_id=bid_id,
                 ):
-                    print(f"[EXPORT] найден trade_id={trade_id} для bid_id={bid_id}")
                     return trade_id
 
             if total is not None and skip + limit >= total:

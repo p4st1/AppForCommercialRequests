@@ -36,6 +36,7 @@ from tools import DatabaseTools as Tool
 class LoadTradesWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
+    PAGE_LIMIT = 100
 
     def __init__(
         self,
@@ -47,9 +48,27 @@ class LoadTradesWorker(QThread):
     ) -> None:
         super().__init__(parent)
         self._cookies = dict(cookies)
-        self.max_items = max_items
+        try:
+            parsed_max_items = int(max_items)
+        except (TypeError, ValueError):
+            parsed_max_items = 50
+        self.max_items = parsed_max_items if parsed_max_items >= 0 else 50
         self._login = str(login or "").strip()
         self._password = str(password or "")
+        self.loaded_all = False
+        self.total_items = 0
+
+    def _load_trades_with_client(self, client: MetalITClient) -> list[dict[str, Any]]:
+        trades = client.get_all_trades(
+            limit=self.PAGE_LIMIT,
+            max_items=self.max_items,
+        )
+        self.loaded_all = bool(getattr(client, "last_trades_loaded_all", False))
+        try:
+            self.total_items = int(getattr(client, "last_trades_total", 0) or 0)
+        except (TypeError, ValueError):
+            self.total_items = 0
+        return trades
 
     @staticmethod
     def _is_auth_error(message: str) -> bool:
@@ -66,7 +85,7 @@ class LoadTradesWorker(QThread):
             if not self._cookies:
                 raise ValueError("Не найдены cookies для авторизации")
             client = MetalITClient(self._cookies)
-            trades = client.get_all_trades(max_items=self.max_items)
+            trades = self._load_trades_with_client(client)
             self.finished.emit(trades)
         except Exception as exc:
             error_text = str(exc or "Неизвестная ошибка")
@@ -85,7 +104,6 @@ class LoadTradesWorker(QThread):
                 return
 
             try:
-                print("AUTH: выполняем авто-переавторизацию из сохраненных учетных данных")
                 service = AuthService(headless=False)
                 refreshed_cookies = service.login_and_save_session(
                     self._login,
@@ -95,7 +113,7 @@ class LoadTradesWorker(QThread):
                     raise RuntimeError("После переавторизации не получены cookies")
                 self._cookies = dict(refreshed_cookies)
                 client = MetalITClient(self._cookies)
-                trades = client.get_all_trades(max_items=self.max_items)
+                trades = self._load_trades_with_client(client)
                 self.finished.emit(trades)
             except Exception as retry_exc:
                 self.error.emit(str(retry_exc))
@@ -129,7 +147,6 @@ class LoadRetradesWorker(QThread):
             retrades = self.client.load_retrades(limit=50)
             if self.max_items > 0:
                 retrades = retrades[: self.max_items]
-            print(f"Загружено переторжек: {len(retrades)}")
             self.finished.emit(retrades)
         except Exception as exc:
             error_text = str(exc or "Неизвестная ошибка")
@@ -280,6 +297,9 @@ class PlatformMixin:
     def init_platform_mixin(self) -> None:
         self.all_trades: list[dict[str, Any]] = []
         self.filtered_trades: list[dict[str, Any]] = []
+        self._trades_cache_complete = False
+        self._trades_total_count = 0
+        self._trades_load_requested_all = False
         self.retrades: list[dict[str, Any]] = []
         self.retrade_offers: list[dict[str, Any]] = []
         self._load_trades_worker: LoadTradesWorker | None = None
@@ -297,6 +317,7 @@ class PlatformMixin:
         self._apply_web_auth_autofill_if_enabled()
         self.btn_login.clicked.connect(self.login)
         self.btn_load_trades.clicked.connect(self.load_trades_clicked)
+        self.btn_load_all_trades.clicked.connect(self.load_all_trades)
         self.btn_load_retrades.clicked.connect(self.load_retrades)
         self.table_retrades.itemSelectionChanged.connect(self.on_retrade_selection_changed)
         self.search_input.textChanged.connect(self.apply_search)
@@ -324,6 +345,7 @@ class PlatformMixin:
             and hasattr(self.ui, "table_retrades")
             and hasattr(self.ui, "table_retrade_offers")
             and hasattr(self, "btn_load_trades")
+            and hasattr(self, "btn_load_all_trades")
             and hasattr(self, "btn_load_retrades")
             and hasattr(self.ui, "input_limit")
             and hasattr(self, "btn_login")
@@ -400,6 +422,10 @@ class PlatformMixin:
         self.btn_load_trades.setObjectName("btn_load_trades")
         self.ui.btn_load_trades = self.btn_load_trades
 
+        self.btn_load_all_trades = QPushButton("Загрузить все заявки", self.ui.webTab)
+        self.btn_load_all_trades.setObjectName("btn_load_all_trades")
+        self.ui.btn_load_all_trades = self.btn_load_all_trades
+
         self.btn_load_retrades = QPushButton("Загрузить переторжки", self.ui.webTab)
         self.btn_load_retrades.setObjectName("btn_load_retrades")
         self.ui.btn_load_retrades = self.btn_load_retrades
@@ -424,6 +450,7 @@ class PlatformMixin:
         header_layout.addWidget(self.search_input)
         header_layout.addWidget(self.input_limit)
         header_layout.addWidget(self.btn_load_trades)
+        header_layout.addWidget(self.btn_load_all_trades)
         header_layout.addWidget(self.btn_load_retrades)
 
         pipeline_status_layout = QHBoxLayout()
@@ -507,7 +534,6 @@ class PlatformMixin:
     def on_login_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка авторизации на площадке: {error_text}")
-        print(f"Ошибка авторизации на площадке: {error_text}")
         QMessageBox.warning(self, "Ошибка авторизации", error_text)
         self._set_auth_status(is_auth=False)
         self._finish_login("Ошибка авторизации")
@@ -875,10 +901,20 @@ class PlatformMixin:
         raise FileNotFoundError("Не найден config.json с cookies")
 
     def load_trades_clicked(self) -> None:
+        self._start_trades_loading(max_items=self._parse_max_items_input())
+
+    def load_all_trades(self) -> None:
+        self._start_trades_loading(max_items=0, requested_all=True)
+
+    def _start_trades_loading(
+        self,
+        *,
+        max_items: int,
+        requested_all: bool = False,
+    ) -> None:
         if self._load_trades_worker is not None and self._load_trades_worker.isRunning():
             return
 
-        max_items = self._parse_max_items_input()
         login, password = self._load_web_auth_credentials()
         if not login:
             login = self.input_login.text().strip()
@@ -899,11 +935,22 @@ class PlatformMixin:
                 "Будет выполнена авто-переавторизация перед загрузкой заявок."
             )
 
-        self._set_trades_loading_state(is_loading=True)
+        try:
+            max_items_value = int(max_items)
+        except (TypeError, ValueError):
+            max_items_value = 50
+        if max_items_value < 0:
+            max_items_value = 50
+
+        self._trades_load_requested_all = bool(requested_all or max_items_value == 0)
+        self._set_trades_loading_state(
+            is_loading=True,
+            loading_all=self._trades_load_requested_all,
+        )
 
         worker = LoadTradesWorker(
             cookies=cookies,
-            max_items=max_items,
+            max_items=max_items_value,
             login=login,
             password=password,
             parent=self,
@@ -940,10 +987,24 @@ class PlatformMixin:
         worker.start()
 
     def on_trades_loaded(self, trades: list[dict[str, Any]]) -> None:
+        worker = self._load_trades_worker
+        loaded_all = bool(getattr(worker, "loaded_all", False))
+        try:
+            total_items = int(getattr(worker, "total_items", 0) or 0)
+        except (TypeError, ValueError):
+            total_items = 0
+
         self.all_trades = trades if isinstance(trades, list) else []
         self.filtered_trades = list(self.all_trades)
+        self._trades_cache_complete = loaded_all
+        self._trades_total_count = total_items
         self.apply_filters()
-        self._finish_trades_loading(f"Загружено заявок: {len(self.all_trades)}")
+        status_message = f"Загружено заявок: {len(self.all_trades)}"
+        if loaded_all:
+            status_message += " (все)"
+        elif total_items > 0:
+            status_message += f" из {total_items}"
+        self._finish_trades_loading(status_message)
 
     def on_retrades_loaded(self, retrades: list[dict[str, Any]]) -> None:
         self.retrades = retrades if isinstance(retrades, list) else []
@@ -955,15 +1016,30 @@ class PlatformMixin:
     def on_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка загрузки заявок: {error_text}")
-        print(f"Ошибка загрузки заявок: {error_text}")
         if "401" in error_text or "403" in error_text:
             self._set_auth_status(is_auth=False)
         QMessageBox.warning(self, "Ошибка загрузки заявок", error_text)
         self._finish_trades_loading("Ошибка загрузки заявок")
 
-    def _set_trades_loading_state(self, *, is_loading: bool) -> None:
+    def _set_trades_loading_state(
+        self,
+        *,
+        is_loading: bool,
+        loading_all: bool | None = None,
+    ) -> None:
+        loading_all = (
+            bool(getattr(self, "_trades_load_requested_all", False))
+            if loading_all is None
+            else bool(loading_all)
+        )
         self.btn_load_trades.setEnabled(not is_loading)
         self.btn_load_trades.setText("Загрузка..." if is_loading else "Загрузить заявки")
+        button = getattr(self, "btn_load_all_trades", None)
+        if isinstance(button, QPushButton):
+            button.setEnabled(not is_loading)
+            button.setText(
+                "Загрузка всех..." if is_loading and loading_all else "Загрузить все заявки"
+            )
 
     def _set_retrades_loading_state(self, *, is_loading: bool) -> None:
         self.btn_load_retrades.setEnabled(not is_loading)
@@ -973,6 +1049,7 @@ class PlatformMixin:
 
     def _finish_trades_loading(self, status_message: str) -> None:
         self._set_trades_loading_state(is_loading=False)
+        self._trades_load_requested_all = False
         worker = self._load_trades_worker
         self._load_trades_worker = None
         if worker is not None:
@@ -994,7 +1071,6 @@ class PlatformMixin:
     def on_retrades_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка загрузки переторжек: {error_text}")
-        print(f"Ошибка загрузки переторжек: {error_text}")
         self.retrade_offers = []
         self.populate_retrade_offers_table([])
         if (
@@ -1145,7 +1221,6 @@ class PlatformMixin:
         except Exception as exc:
             error_text = str(exc or "Неизвестная ошибка")
             Tool.write_log(f"Ошибка загрузки предложений переторжки: {error_text}")
-            print(f"Ошибка загрузки предложений переторжки: {error_text}")
             offers = []
 
         retrade["offers"] = offers
@@ -1159,7 +1234,7 @@ class PlatformMixin:
                 value = int(override)
             except (TypeError, ValueError):
                 value = 50
-            return value if value > 0 else 50
+            return value if value >= 0 else 50
 
         max_items = 50
         try:
@@ -1264,9 +1339,6 @@ class PlatformMixin:
 
         if not isinstance(trade, dict):
             return
-
-        trade_id = trade.get("id")
-        print("Открываем заявку:", trade_id)
 
     def apply_search(self, _: str = "") -> None:
         timer = getattr(self, "_platform_search_timer", None)

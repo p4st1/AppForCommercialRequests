@@ -18,7 +18,7 @@ except Exception:
 
 class DocExportFlowMixin:
     SUBMISSION_OFFER_VALIDITY_DAYS = Config.DEFAULT_OFFER_VALIDITY_DAYS
-    PIPELINE_TRADE_SEARCH_LIMIT = 1000
+    PIPELINE_TRADE_SEARCH_LIMIT = 0
 
     def openCreateDocWindow(
         self,
@@ -182,7 +182,17 @@ class DocExportFlowMixin:
 
         self._set_web_pipeline_trade_number(raw_trade_number)
         try:
-            self.set_pipeline_status("📥 Загрузка заявок...")
+            cached_trade = self._find_cached_trade_for_pipeline(raw_trade_number)
+            if cached_trade is not None:
+                self.set_pipeline_status("🔍 Поиск заявки...")
+                self._continue_web_pipeline_with_trade(cached_trade)
+                return
+
+            if self._is_trades_cache_complete():
+                self._handle_pipeline_trade_not_found(raw_trade_number)
+                return
+
+            self.set_pipeline_status("📥 Догружаем заявки...")
             self._trades_load_max_items_override = self.PIPELINE_TRADE_SEARCH_LIMIT
             load_trades_method = getattr(self, "load_trades", None)
             if not callable(load_trades_method):
@@ -243,15 +253,38 @@ class DocExportFlowMixin:
                 return current_trade
         return None
 
+    def _loaded_trades_for_pipeline(self) -> list:
+        trades = getattr(self, "all_trades", [])
+        return trades if isinstance(trades, list) else []
+
+    def _is_trades_cache_complete(self) -> bool:
+        return bool(getattr(self, "_trades_cache_complete", False))
+
+    def _find_cached_trade_for_pipeline(self, trade_number: str) -> dict | None:
+        trades = self._loaded_trades_for_pipeline()
+        if not trades:
+            return None
+        return self._find_trade_for_pipeline(trades, trade_number)
+
+    def _handle_pipeline_trade_not_found(self, trade_number: str) -> None:
+        self._pop_web_pipeline_trade_number()
+        self._pop_web_pipeline_submission_context()
+        self._set_pipeline_error_status()
+        QMessageBox.warning(
+            self,
+            "Ошибка",
+            f"Заявка с номером {trade_number} не найдена",
+        )
+
     def _continue_web_pipeline_after_load(self) -> None:
         if hasattr(self, "_trades_load_max_items_override"):
             del self._trades_load_max_items_override
-        trade_number = self._pop_web_pipeline_trade_number()
+        trade_number = str(getattr(self, "_web_pipeline_trade_number", "") or "").strip()
         if not trade_number:
             return
 
         try:
-            trades = self.all_trades if isinstance(self.all_trades, list) else []
+            trades = self._loaded_trades_for_pipeline()
             trade = self._find_trade_for_pipeline(trades, trade_number)
         except Exception as exc:
             self._pop_web_pipeline_submission_context()
@@ -264,15 +297,16 @@ class DocExportFlowMixin:
             return
 
         if trade is None:
-            self._pop_web_pipeline_submission_context()
-            self._set_pipeline_error_status()
-            QMessageBox.warning(
-                self,
-                "Ошибка",
-                f"Заявка с номером {trade_number} не найдена",
-            )
+            self._handle_pipeline_trade_not_found(trade_number)
             return
 
+        self._continue_web_pipeline_with_trade(trade)
+
+    def _continue_web_pipeline_with_trade(
+        self,
+        trade: dict,
+    ) -> None:
+        self._pop_web_pipeline_trade_number()
         submission_context = self._pop_web_pipeline_submission_context()
         try:
             lots = trade.get("lots")

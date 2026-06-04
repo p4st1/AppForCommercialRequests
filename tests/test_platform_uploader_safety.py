@@ -78,14 +78,14 @@ class TradeUploaderSafetyTests(unittest.TestCase):
 
         self.assertFalse(page.submit_locator.clicked)
 
-    def test_submit_click_logs_button_text_before_click(self):
+    def test_submit_click_does_not_write_to_stdout(self):
         uploader = TradeUploader({"JSESSIONID": "session-cookie"}, allow_submit=True)
         page = _FakePage(submit_count=1)
 
         with patch("builtins.print") as mocked_print:
             uploader._click_submit_button(page)
 
-        mocked_print.assert_called_once_with("CLICK:", "Подать предложение")
+        mocked_print.assert_not_called()
         self.assertTrue(page.submit_locator.clicked)
         self.assertEqual(page.submit_locator.click_timeout, 4_000)
 

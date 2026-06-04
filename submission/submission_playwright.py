@@ -1094,7 +1094,6 @@ kendo-grid .k-grid-edit-cell {
                         candidate.click(force=True, timeout=4_000)
                     except PlaywrightTimeoutError:
                         candidate.dispatch_event("click")
-                print("CLICK:", label)
                 return True
             except PlaywrightTimeoutError:
                 continue
@@ -1174,7 +1173,7 @@ kendo-grid .k-grid-edit-cell {
                 )
             except Exception:
                 pass
-            print("DEBUG:", str(html_path.resolve()))
+            Tool.write_log(f"Submission debug saved: {html_path.resolve()}")
         except Exception:
             pass
 

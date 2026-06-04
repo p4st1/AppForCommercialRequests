@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import requests
@@ -95,8 +94,6 @@ def get_trade_json(platform_client: Any, trade_id: int) -> dict[str, Any]:
 
 def parse_retrade_bids(trade_json: dict) -> list[dict]:
     normalized_trade = _normalize_trade_json(trade_json)
-    print("[DEBUG] trade_json keys:", list(normalized_trade.keys()))
-    print("[DEBUG] submissionStages:", len(normalized_trade.get("submissionStages", [])))
 
     stages = normalized_trade.get("submissionStages", [])
     if not isinstance(stages, list):
@@ -115,7 +112,6 @@ def parse_retrade_bids(trade_json: dict) -> list[dict]:
         lot_results = trade_result.get("lotResults", [])
         if not isinstance(lot_results, list):
             lot_results = []
-        print("[DEBUG] lotResults:", len(lot_results))
 
         for lot in lot_results:
             if not isinstance(lot, dict):
@@ -123,7 +119,6 @@ def parse_retrade_bids(trade_json: dict) -> list[dict]:
             bid_places = lot.get("bidPlaces", [])
             if not isinstance(bid_places, list):
                 bid_places = []
-            print("[DEBUG] bidPlaces:", len(bid_places))
 
             for place in bid_places:
                 if not isinstance(place, dict):
@@ -160,12 +155,7 @@ def parse_retrade_bids(trade_json: dict) -> list[dict]:
                 }
                 bids.append(parsed_bid)
                 seen_bid_ids.add(bid_id)
-                print("[DEBUG] found bid:", bid_id, bid.get("number"))
 
-    print(f"[DEBUG] найдено заявок: {len(bids)}")
-    if not bids:
-        payload_preview = json.dumps(normalized_trade, ensure_ascii=False, default=str)
-        print(payload_preview[:2000])
     return bids
 
 
@@ -198,6 +188,8 @@ class MetalITClient:
         self.headers = self.session.headers
         self.url = self.ENDPOINT
         self.retrades: list[dict[str, Any]] = []
+        self.last_trades_total = 0
+        self.last_trades_loaded_all = False
         normalized_cookies = self._normalize_cookies(cookies)
         cookies_with_aliases = self._with_session_cookie_aliases(normalized_cookies)
         self.session.headers.update(
@@ -292,16 +284,12 @@ class MetalITClient:
             ),
             "query": FULL_GRAPHQL_QUERY,
         }
-        print("COOKIES:", self.session.cookies.get_dict())
-        print("HEADERS:", dict(self.session.headers))
         response = self.session.post(
             self.url,
             json=payload,
             headers=self.headers,
             timeout=self._timeout,
         )
-        print("STATUS:", response.status_code)
-        print("RESPONSE:", response.text[:500])
         response.raise_for_status()
         data = response.json()
         errors = data.get("errors")
@@ -336,7 +324,6 @@ class MetalITClient:
             raise RuntimeError("Некорректный формат items в ответе tradeSearch")
 
         total = self._normalize_total(data.get("total", 0))
-        print(f"Загружено заявок: {len(items)} (skip={skip}, limit={limit}, total={total})")
         return {
             "items": items,
             "total": total,
@@ -358,30 +345,40 @@ class MetalITClient:
                 return False
             return False
 
-    def get_all_trades(self, limit: int = 20, max_items: int = 100) -> list[dict[str, Any]]:
+    def get_all_trades(self, limit: int = 100, max_items: int = 100) -> list[dict[str, Any]]:
         if limit <= 0:
             raise ValueError("limit must be greater than 0")
+        if max_items < 0:
+            max_items = 100
 
         all_items: list[dict[str, Any]] = []
         skip = 0
         total = 0
+        limited = max_items > 0
+        self.last_trades_total = 0
+        self.last_trades_loaded_all = False
 
         while True:
             page = self.get_trades(limit=limit, skip=skip)
             items = page.get("items", [])
             total = self._normalize_total(page.get("total", total))
+            self.last_trades_total = total
             if not items:
+                self.last_trades_loaded_all = True
                 break
             all_items.extend(items)
-            if len(all_items) >= max_items:
-                return all_items[:max_items]
-            if total > 0 and skip + limit >= total:
+            if limited and len(all_items) >= max_items:
+                result = all_items[:max_items]
+                self.last_trades_loaded_all = bool(total > 0 and len(result) >= total)
+                return result
+            if total > 0 and len(all_items) >= total:
+                self.last_trades_loaded_all = True
                 break
             if len(items) < limit and total <= 0:
+                self.last_trades_loaded_all = True
                 break
             skip += limit
 
-        print(f"Загружено заявок всего: {len(all_items)}")
         return all_items
 
     def load_retrades(self, limit: int = 50, skip: int = 0) -> list[dict[str, Any]]:
@@ -412,7 +409,6 @@ class MetalITClient:
             )
             if response.status_code == 403:
                 message = "Ошибка авторизации — обновите cookies"
-                print(message)
                 raise RuntimeError(message)
 
             response.raise_for_status()
@@ -459,7 +455,6 @@ class MetalITClient:
                         "currency": trade.get("currency"),
                     }
                 )
-                print("Loaded retrade:", trade.get("id"), trade.get("registeredNumber"))
 
             if total > 0 and current_skip + limit >= total:
                 break
@@ -470,18 +465,7 @@ class MetalITClient:
             current_skip += limit
 
         self.retrades = retrades
-        print(f"Загружено переторжек: {len(retrades)}")
         return retrades
 
     def get_retrading_offers(self, trade_id: int) -> list[dict[str, Any]]:
         return get_retrading_offers(self, trade_id)
-
-
-if __name__ == "__main__":
-    cookies = {
-        "JSESSIONID": "46052C544D1BE9D019A2EE099B42C01F",
-    }
-
-    client = MetalITClient(cookies)
-    trades = client.get_all_trades()
-    print(len(trades))

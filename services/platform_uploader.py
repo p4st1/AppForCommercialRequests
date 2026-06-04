@@ -105,7 +105,6 @@ class TradeUploader:
         return f"Файл '{resolved_path.name}' загружен в заявку {trade_id_int}"
 
     def _click_with_log(self, locator: Locator, *, button_text: str, timeout_ms: int) -> None:
-        print("CLICK:", button_text)
         locator.click(timeout=timeout_ms)
 
     def _click_upload_button(self, page: Page) -> None:
