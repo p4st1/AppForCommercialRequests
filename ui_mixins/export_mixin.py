@@ -170,8 +170,13 @@ class ExportMixin:
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
         self.current_retrade_excel_path = ""
+        self.current_retrade = ""
+        self.current_retrade_context: dict[str, Any] = {}
         self.current_retrade_bid_id: int | None = None
+        self.current_retrade_trade_id: int | None = None
+        self.current_retrade_lot_id: int | None = None
         self._pending_retrade_bid_id: int | None = None
+        self._pending_retrade_context: dict[str, Any] = {}
         self._active_export_workflow = ""
         self._pending_submission_export_metadata: dict[str, str] = {}
         self.current_submission_acceptance_excel_path = ""
@@ -1345,7 +1350,7 @@ QTableWidget::indicator {{
             self._on_retrade_import_error(str(exc))
 
     def _get_retrade_bid_id_for_import(self) -> int:
-        stored_bid_id = getattr(self, "current_retrade_bid_id", None)
+        stored_bid_id = self._get_current_retrade_bid_id()
         if stored_bid_id is not None:
             try:
                 return self._parse_positive_bid_id(stored_bid_id)
@@ -1353,6 +1358,28 @@ QTableWidget::indicator {{
                 Tool.write_log(f"Некорректный сохранённый bid_id переторжки: {stored_bid_id}")
 
         return self._get_selected_retrade_bid_id_for_export()
+
+    def _get_current_retrade_bid_id(self) -> int | None:
+        context = getattr(self, "current_retrade_context", {})
+        if isinstance(context, dict):
+            raw_bid_id = context.get("bid_id")
+            if raw_bid_id is not None:
+                try:
+                    return self._parse_positive_bid_id(raw_bid_id)
+                except Exception:
+                    Tool.write_log(
+                        f"Некорректный bid_id текущей переторжки: {raw_bid_id}"
+                    )
+
+        stored_bid_id = getattr(self, "current_retrade_bid_id", None)
+        if stored_bid_id is not None:
+            try:
+                return self._parse_positive_bid_id(stored_bid_id)
+            except Exception:
+                Tool.write_log(
+                    f"Некорректный сохранённый bid_id переторжки: {stored_bid_id}"
+                )
+        return None
 
     def _start_retrade_import_worker(self, *, bid_id: int, file_path: str) -> None:
         worker = getattr(self, "_retrade_import_worker", None)
@@ -1426,7 +1453,7 @@ QTableWidget::indicator {{
             return
 
         self.current_retrade_excel_path = file_path
-        self.current_retrade_bid_id = None
+        self._clear_current_retrade_context()
         self._activate_retrade_tab()
         self._log_ui(f"Excel спецификации загружен: {file_path}")
         status_bar_getter = getattr(self, "statusBar", None)
@@ -3941,11 +3968,25 @@ QTableWidget::indicator {{
             self._log_ui("Автоматическое ведение торгов: Выключено")
             return
 
+        current_bid_id = self._get_current_retrade_bid_id()
+        if current_bid_id is None:
+            QMessageBox.warning(
+                self,
+                "Автоматическое ведение торгов",
+                "Сначала экспортируйте переторжку, чтобы закрепить текущую заявку.",
+            )
+            return
+
         if not self._confirm_auto_trade_enable_if_needed():
             return
 
         self._set_auto_trade_status(True)
         self._log_ui("Автоматическое ведение торгов: Включено")
+        current_number = str(getattr(self, "current_retrade", "") or "").strip()
+        if current_number:
+            self._log_auto_trade(
+                f"Текущая переторжка: заявка {current_number}, bid_id={current_bid_id}"
+            )
         self._start_auto_trade_timer_if_needed()
 
     def _set_auto_trade_status(self, is_enabled: bool) -> None:
@@ -4127,12 +4168,21 @@ QTableWidget::indicator {{
         try:
             trade_id = self._parse_positive_trade_id(retr.get("id"))
             lot_id = self._get_retrade_lot_id_for_export(retr)
-            bid_id = self._get_selected_retrade_bid_id_for_export()
+            selected_offer = self._get_selected_retrade_offer_for_export()
+            bid_id = self._parse_positive_bid_id(selected_offer.get("bid_id"))
+            retrade_context = self._build_current_retrade_context(
+                retrade=retr,
+                offer=selected_offer,
+                trade_id=trade_id,
+                lot_id=lot_id,
+                bid_id=bid_id,
+            )
             self._start_export_worker(
                 trade_id=trade_id,
                 lot_id=lot_id,
                 bid_id=bid_id,
                 is_retrade=True,
+                retrade_context=retrade_context,
             )
         except Exception as exc:
             self._on_export_error(str(exc))
@@ -4176,7 +4226,7 @@ QTableWidget::indicator {{
             raise ValueError(f"Некорректный bid_id для экспорта переторжки: {bid_id}")
         return bid_id
 
-    def _get_selected_retrade_bid_id_for_export(self) -> int:
+    def _get_selected_retrade_offer_for_export(self) -> dict[str, Any]:
         table_offers = getattr(self, "table_retrade_offers", None)
         if table_offers is None:
             table_offers = getattr(getattr(self, "ui", None), "table_retrade_offers", None)
@@ -4195,7 +4245,97 @@ QTableWidget::indicator {{
         if not isinstance(selected_offer, dict):
             raise Exception("Выберите предложение переторжки")
 
+        return selected_offer
+
+    def _get_selected_retrade_bid_id_for_export(self) -> int:
+        selected_offer = self._get_selected_retrade_offer_for_export()
         return self._parse_positive_bid_id(selected_offer.get("bid_id"))
+
+    @staticmethod
+    def _retrade_number_text(retrade: dict[str, Any]) -> str:
+        return str(
+            retrade.get("number")
+            or retrade.get("registeredNumber")
+            or retrade.get("id")
+            or ""
+        ).strip()
+
+    @staticmethod
+    def _retrade_offer_number_text(offer: dict[str, Any], bid_id: int) -> str:
+        number = str(
+            offer.get("number")
+            or offer.get("registeredNumber")
+            or offer.get("bidNumber")
+            or ""
+        ).strip()
+        return number or str(bid_id)
+
+    def _build_current_retrade_context(
+        self,
+        *,
+        retrade: dict[str, Any],
+        offer: dict[str, Any],
+        trade_id: int,
+        lot_id: int,
+        bid_id: int,
+    ) -> dict[str, Any]:
+        offer_number = self._retrade_offer_number_text(offer, bid_id)
+        retrade_number = self._retrade_number_text(retrade)
+        return {
+            "number": offer_number,
+            "bid_number": offer_number,
+            "bid_id": int(bid_id),
+            "trade_id": int(trade_id),
+            "lot_id": int(lot_id),
+            "retrade_number": retrade_number,
+            "title": str(retrade.get("title") or "").strip(),
+            "status": str(
+                retrade.get("status") or retrade.get("processStatus") or ""
+            ).strip(),
+            "bidder_title": str(offer.get("bidder_title") or "").strip(),
+            "price": offer.get("price"),
+        }
+
+    def _set_current_retrade_context(self, context: dict[str, Any] | None) -> None:
+        retrade_context = dict(context) if isinstance(context, dict) else {}
+        self.current_retrade_context = retrade_context
+        self.current_retrade = str(
+            retrade_context.get("number")
+            or retrade_context.get("bid_number")
+            or ""
+        ).strip()
+
+        self.current_retrade_bid_id = None
+        self.current_retrade_trade_id = None
+        self.current_retrade_lot_id = None
+
+        for attr_name, key, parser in (
+            ("current_retrade_bid_id", "bid_id", self._parse_positive_bid_id),
+            ("current_retrade_trade_id", "trade_id", self._parse_positive_trade_id),
+            ("current_retrade_lot_id", "lot_id", self._parse_positive_lot_id),
+        ):
+            raw_value = retrade_context.get(key)
+            if raw_value is None:
+                continue
+            try:
+                setattr(self, attr_name, parser(raw_value))
+            except Exception:
+                Tool.write_log(
+                    f"Некорректный {key} текущей переторжки: {raw_value}"
+                )
+
+        if self.current_retrade:
+            Tool.write_log(
+                "Текущая переторжка закреплена за заявкой "
+                f"{self.current_retrade}"
+            )
+
+    def _clear_current_retrade_context(self) -> None:
+        self._set_current_retrade_context({})
+
+    def get_current_retrade_context(self) -> dict[str, Any]:
+        context = getattr(self, "current_retrade_context", {})
+        return dict(context) if isinstance(context, dict) else {}
 
     def _get_selected_trade_for_submission_export(self) -> dict[str, Any]:
         table = getattr(self.ui, "tradesTable", None)
@@ -4358,6 +4498,7 @@ QTableWidget::indicator {{
         is_retrade: bool = False,
         is_submission_acceptance: bool = False,
         submission_search_text: str = "",
+        retrade_context: dict[str, Any] | None = None,
     ) -> None:
         if self._export_trade_worker is not None and self._export_trade_worker.isRunning():
             raise RuntimeError("Экспорт заявки уже выполняется")
@@ -4379,7 +4520,25 @@ QTableWidget::indicator {{
         if is_submission_acceptance and (lot_id is None or int(lot_id) <= 0):
             raise Exception("У выбранной заявки отсутствует lot_id")
 
-        self._pending_retrade_bid_id = int(bid_id) if is_retrade and bid_id is not None else None
+        if is_retrade and bid_id is not None:
+            self._pending_retrade_bid_id = int(bid_id)
+            pending_context = (
+                dict(retrade_context) if isinstance(retrade_context, dict) else {}
+            )
+            if not pending_context:
+                pending_context = {
+                    "number": str(bid_id),
+                    "bid_number": str(bid_id),
+                    "bid_id": int(bid_id),
+                    "trade_id": int(trade_id),
+                    "lot_id": int(lot_id),
+                }
+            self._pending_retrade_context = pending_context
+            self.current_retrade_excel_path = ""
+            self._set_current_retrade_context(pending_context)
+        else:
+            self._pending_retrade_bid_id = None
+            self._pending_retrade_context = {}
         self._active_export_workflow = (
             "retrade"
             if is_retrade
@@ -4503,6 +4662,7 @@ QTableWidget::indicator {{
         if worker is not None:
             worker.deleteLater()
         self._pending_retrade_bid_id = None
+        self._pending_retrade_context = {}
         self._active_export_workflow = ""
         self._pending_submission_export_metadata = {}
         self._show_export_status(status_message, 5_000)
@@ -5099,12 +5259,16 @@ QTableWidget::indicator {{
                     raise FileNotFoundError(f"Excel файл не найден: {export_path}")
 
                 self.current_retrade_excel_path = str(export_path.resolve())
-                pending_bid_id = getattr(self, "_pending_retrade_bid_id", None)
-                self.current_retrade_bid_id = (
-                    int(pending_bid_id)
-                    if pending_bid_id is not None
-                    else None
-                )
+                pending_context = getattr(self, "_pending_retrade_context", {})
+                if isinstance(pending_context, dict) and pending_context:
+                    self._set_current_retrade_context(pending_context)
+                else:
+                    pending_bid_id = getattr(self, "_pending_retrade_bid_id", None)
+                    self.current_retrade_bid_id = (
+                        int(pending_bid_id)
+                        if pending_bid_id is not None
+                        else None
+                    )
 
                 try:
                     dataframe = pd.read_excel(export_path)
