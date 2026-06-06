@@ -88,9 +88,7 @@ class UploadMixin:
         if self._confirm_submit_trade():
             allow_submit = True
         if not allow_submit:
-            status_bar = self.statusBar()
-            if status_bar is not None:
-                status_bar.showMessage("Отправка КП отменена пользователем", 5_000)
+            self._show_upload_status("Отправка КП отменена пользователем", 5_000)
             return
 
         try:
@@ -158,7 +156,10 @@ class UploadMixin:
             ):
                 return last_table_path.resolve()
 
-        project_dir = Path.cwd()
+        project_dir = Tool.ensure_directory(
+            Config.config.get("pathToSaveExcel") or Config.config.get("pathToSaveCP"),
+            Tool.user_data_dir("MyApp") / "imports",
+        )
         excel_candidates = sorted(
             [
                 *project_dir.glob("*.xlsx"),
@@ -177,19 +178,31 @@ class UploadMixin:
             return excel_candidates[0].resolve()
         if not excel_candidates:
             raise FileNotFoundError(
-                "Не найден Excel файл в текущем проекте. "
-                "Сначала откройте КП поставщика или положите .xlsx/.xls рядом с приложением."
+                "Не найден Excel файл в папке импорта. "
+                "Сначала откройте КП поставщика или выберите папку сохранения в настройках."
             )
 
         candidates_text = ", ".join(path.name for path in excel_candidates[:5])
         raise ValueError(
-            "Найдено несколько Excel файлов в проекте. "
+            "Найдено несколько Excel файлов в папке импорта. "
             f"Откройте нужный файл через 'Загрузить КП поставщика' (найдено: {candidates_text})."
         )
 
     def _set_upload_loading_state(self, *, is_loading: bool) -> None:
         self.btn_upload_kp.setEnabled(not is_loading)
         self.btn_upload_kp.setText("Загрузка..." if is_loading else "Загрузить КП")
+        if is_loading:
+            self._show_upload_status("Загрузка КП на площадку...")
+
+    def _show_upload_status(self, message: str, timeout_ms: int = 0) -> None:
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(message, timeout_ms)
 
     def _finish_upload(self, status_message: str) -> None:
         self._allow_submit = False
@@ -198,9 +211,7 @@ class UploadMixin:
         self._upload_trade_worker = None
         if worker is not None:
             worker.deleteLater()
-        status_bar = self.statusBar()
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 5_000)
+        self._show_upload_status(status_message, 5_000)
 
     def _on_upload_finished(self, message: str) -> None:
         info_text = str(message or "Файл успешно загружен")

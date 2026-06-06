@@ -37,11 +37,7 @@ def _resolve_config_path() -> Path:
     if cfg_path:
         return Path(cfg_path).expanduser()
 
-    root_config = Path("config.json")
-    if root_config.exists():
-        return root_config
-
-    return Path("utilities/config.json")
+    return Tool.user_config_path()
 
 
 def save_config(data: dict) -> None:
@@ -76,10 +72,15 @@ def save_config(data: dict) -> None:
 class AuthService:
     BASE_URL = "https://etp.metal-it.ru"
     TRADES_URL = f"{BASE_URL}/trades"
+    LOGIN_URL = (
+        f"{BASE_URL}/frame/index.html?"
+        "loginTarget=%2Ftrades%3Fpage%3Dpurchases.trades.search"
+    )
     TRADE_SEARCH_ENDPOINT = f"{BASE_URL}/graphql/tradeSearch"
     LOGIN_SUCCESS_SELECTOR = "text=Приём заявок"
     CAPTCHA_WAIT_TIMEOUT_MS = 120_000
     POST_LOGIN_SETTLE_TIMEOUT_MS = 3_000
+    MIN_NAVIGATION_TIMEOUT_MS = 60_000
 
     def __init__(self, *, headless: bool = False, timeout_ms: int = 30_000) -> None:
         self._headless = headless
@@ -105,24 +106,30 @@ class AuthService:
                 context = browser.new_context()
                 page = context.new_page()
 
-                page.goto(
-                    self.BASE_URL,
-                    wait_until="domcontentloaded",
-                    timeout=self._timeout_ms,
+                self._goto_with_fallback(
+                    page,
+                    self.LOGIN_URL,
+                    description="страницу входа",
                 )
-                page.get_by_role("button", name="Войти").first.click(timeout=self._timeout_ms)
-                page.get_by_role("textbox", name="Логин").fill(login_text)
-                page.get_by_role("textbox", name="Пароль").fill(password_text)
-                page.get_by_role("button", name="ДАЛЕЕ").click(timeout=self._timeout_ms)
+                form_timeout_ms = self._navigation_timeout_ms()
+                page.get_by_role("textbox", name="Логин").fill(
+                    login_text,
+                    timeout=form_timeout_ms,
+                )
+                page.get_by_role("textbox", name="Пароль").fill(
+                    password_text,
+                    timeout=form_timeout_ms,
+                )
+                page.get_by_role("button", name="ДАЛЕЕ").click(timeout=form_timeout_ms)
 
                 print("Введите капчу вручную в браузере...")
                 self._wait_for_login_success(page)
                 page.wait_for_timeout(self.POST_LOGIN_SETTLE_TIMEOUT_MS)
 
-                page.goto(
+                self._goto_with_fallback(
+                    page,
                     self.TRADES_URL,
-                    wait_until="domcontentloaded",
-                    timeout=self._timeout_ms,
+                    description="страницу торгов",
                 )
                 page.wait_for_timeout(self.POST_LOGIN_SETTLE_TIMEOUT_MS)
 
@@ -146,6 +153,33 @@ class AuthService:
                 return cookies
             finally:
                 browser.close()
+
+    def _navigation_timeout_ms(self) -> int:
+        return max(self.MIN_NAVIGATION_TIMEOUT_MS, int(self._timeout_ms))
+
+    def _goto_with_fallback(self, page, url: str, *, description: str) -> None:
+        timeout_ms = self._navigation_timeout_ms()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            return
+        except (PlaywrightTimeoutError, TimeoutError):
+            try:
+                page.goto(
+                    url,
+                    wait_until="commit",
+                    timeout=max(15_000, timeout_ms // 2),
+                )
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=10_000)
+                except Exception:
+                    pass
+                return
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    f"Не удалось открыть {description}: площадка не ответила за "
+                    f"{timeout_ms // 1000} сек. Проверьте доступность "
+                    f"{self.BASE_URL} в браузере и попробуйте снова."
+                ) from fallback_exc
 
     def _wait_for_login_success(self, page) -> None:
         try:
@@ -175,7 +209,7 @@ class AuthService:
         if not cookies:
             return
 
-        config_path = Path("config.json")
+        config_path = _resolve_config_path()
         payload: dict[str, Any] = {}
         if config_path.exists():
             try:

@@ -39,6 +39,37 @@ class _FakeDb:
         self.close_calls += 1
 
 
+class _FakeWorker:
+    def __init__(self):
+        self.running = True
+        self.request_interruption_calls = 0
+        self.quit_calls = 0
+        self.wait_calls = []
+        self.terminate_calls = 0
+        self.delete_later_calls = 0
+
+    def isRunning(self):
+        return self.running
+
+    def requestInterruption(self):
+        self.request_interruption_calls += 1
+
+    def quit(self):
+        self.quit_calls += 1
+
+    def wait(self, timeout_ms=None):
+        self.wait_calls.append(timeout_ms)
+        self.running = False
+        return True
+
+    def terminate(self):
+        self.terminate_calls += 1
+        self.running = False
+
+    def deleteLater(self):
+        self.delete_later_calls += 1
+
+
 class _BaseCloseRecorder:
     def __init__(self):
         self.base_close_events = []
@@ -106,6 +137,22 @@ class AppLifecycleMixinTests(unittest.TestCase):
         self.assertEqual(window.ensure_output_dirs_calls, 1)
         self.assertEqual(window.save_config_calls, 1)
         self.assertEqual(window.db.close_calls, 1)
+        self.assertEqual(window.base_close_events, [event])
+
+    def test_close_event_stops_background_workers_before_destroying_window(self):
+        window = _FakeWindow()
+        worker = _FakeWorker()
+        window._auth_status_worker = worker
+        event = object()
+
+        window.closeEvent(event)
+
+        self.assertEqual(worker.request_interruption_calls, 1)
+        self.assertEqual(worker.quit_calls, 1)
+        self.assertEqual(worker.wait_calls, [window.BACKGROUND_WORKER_STOP_TIMEOUT_MS])
+        self.assertEqual(worker.terminate_calls, 0)
+        self.assertEqual(worker.delete_later_calls, 1)
+        self.assertIsNone(window._auth_status_worker)
         self.assertEqual(window.base_close_events, [event])
 
 

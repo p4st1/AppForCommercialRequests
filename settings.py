@@ -2,12 +2,17 @@ from functools import partial
 
 from PySide6.QtCore import QSettings, Signal
 from PySide6.QtGui import QColor
+try:
+    from PySide6.QtUiTools import loadUiType
+except Exception:  # pragma: no cover - optional in some packaged environments
+    loadUiType = None
 from PySide6.QtWidgets import (
     QMainWindow,
     QFileDialog,
     QAbstractItemView,
     QCheckBox,
     QColorDialog,
+    QFrame,
     QHBoxLayout,
     QVBoxLayout,
     QLabel,
@@ -16,9 +21,10 @@ from PySide6.QtWidgets import (
     QPushButton,
     QInputDialog,
     QSpinBox,
+    QLineEdit,
 )
 from tools import DatabaseTools as Tool
-from ui_settingsAppGui import Ui_MainWindow
+from ui_settingsAppGui import Ui_MainWindow as GeneratedSettingsUi
 from config import Config
 from ui_theme import apply_unified_theme
 from pathlib import Path
@@ -26,6 +32,7 @@ from pathlib import Path
 
 class mainWindow(QMainWindow):
     windowClosed = Signal()
+    SETTINGS_UI_FILE = "ui/settingsAppGui.ui"
     AUTO_TRADE_TIMER_MIN_MINUTES = 1
     AUTO_TRADE_TIMER_MAX_MINUTES = 1440
     TABLE_SETTINGS_ORG = "MyApp"
@@ -44,8 +51,7 @@ class mainWindow(QMainWindow):
     def __init__(self, parent=None):
         super(mainWindow, self).__init__(parent)
 
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self)
+        self.ui = self._load_designer_ui()
         apply_unified_theme(self)
 
 
@@ -61,6 +67,7 @@ class mainWindow(QMainWindow):
         self._setup_auto_trade_settings_block()
         self._setup_table_settings_block()
         self._setup_offer_validity_settings_block()
+        self._setup_google_drive_settings_block()
         self._setup_tab_visibility_settings_block()
         self.developer_skip_table_fill_errors_checkbox.setChecked(
             bool(Config.settings.get('developer_skip_table_fill_errors', False))
@@ -128,6 +135,324 @@ class mainWindow(QMainWindow):
 
         self.ui.excelIndent.setValue(int(Config.config['ExcelIndent']))
         self.ui.excelIndent.valueChanged.connect(self.ExcelIndentChange)
+        self._rebuild_settings_layout()
+        self._apply_settings_window_style()
+
+    @classmethod
+    def _get_settings_ui_path(cls):
+        candidate_paths = [
+            Path(Tool.resourcePath(cls.SETTINGS_UI_FILE)),
+            Tool.app_dir() / cls.SETTINGS_UI_FILE,
+            Path(__file__).resolve().parent / cls.SETTINGS_UI_FILE,
+        ]
+        for candidate_path in candidate_paths:
+            if candidate_path.exists():
+                return candidate_path
+        return None
+
+    def _load_designer_ui(self):
+        ui_path = self._get_settings_ui_path()
+        if loadUiType is not None and ui_path is not None:
+            form_class, _base_class = loadUiType(str(ui_path))
+            ui = form_class()
+            ui.setupUi(self)
+            return ui
+
+        ui = GeneratedSettingsUi()
+        ui.setupUi(self)
+        return ui
+
+    def _first_ui_attr(self, *attr_names):
+        for attr_name in attr_names:
+            value = getattr(self.ui, attr_name, None)
+            if value is not None:
+                return value
+        return None
+
+    @staticmethod
+    def _clear_layout(layout):
+        while layout.count():
+            layout.takeAt(0)
+
+    def _new_section_title(self, text: str):
+        label = QLabel(text, self.ui.scrollAreaWidgetContents)
+        label.setProperty("settingsSectionTitle", True)
+        return label
+
+    def _new_field_label(self, text: str):
+        label = QLabel(text, self.ui.scrollAreaWidgetContents)
+        label.setProperty("settingsFieldLabel", True)
+        return label
+
+    def _new_card(self, title: str):
+        card = QFrame(self.ui.scrollAreaWidgetContents)
+        card.setProperty("settingsCard", True)
+        layout = QVBoxLayout(card)
+        layout.setSpacing(10)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.addWidget(self._new_section_title(title))
+        return card, layout
+
+    def _new_form_row(self, label_text: str, field, action=None):
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.setContentsMargins(0, 0, 0, 0)
+        label = self._new_field_label(label_text)
+        label.setMinimumWidth(152)
+        row.addWidget(label)
+        row.addWidget(field, 1)
+        if action is not None:
+            row.addWidget(action)
+        return row
+
+    def _new_compact_row(self, label_text: str, field):
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self._new_field_label(label_text))
+        row.addWidget(field)
+        row.addStretch(1)
+        return row
+
+    def _add_checkboxes(self, layout, checkboxes):
+        for checkbox in checkboxes:
+            checkbox.setProperty("settingsCheckbox", True)
+            layout.addWidget(checkbox)
+
+    def _rebuild_settings_layout(self):
+        self.setMinimumSize(980, 760)
+        self.resize(1040, 780)
+        self.ui.scrollArea.setFrameShape(QFrame.Shape.NoFrame)
+        self.ui.scrollAreaWidgetContents.setMinimumWidth(920)
+
+        for label in self.ui.scrollAreaWidgetContents.findChildren(QLabel):
+            label.hide()
+
+        self._clear_layout(self.ui.verticalLayout)
+        self._clear_layout(self.ui.verticalLayout_3)
+
+        page_layout = QVBoxLayout()
+        page_layout.setSpacing(14)
+        page_layout.setContentsMargins(18, 16, 18, 18)
+
+        page_title = QLabel("Настройки", self.ui.scrollAreaWidgetContents)
+        page_title.setProperty("settingsPageTitle", True)
+        page_layout.addWidget(page_title)
+
+        columns_layout = QHBoxLayout()
+        columns_layout.setSpacing(14)
+        columns_layout.setContentsMargins(0, 0, 0, 0)
+        left_column = QVBoxLayout()
+        left_column.setSpacing(14)
+        left_column.setContentsMargins(0, 0, 0, 0)
+        right_column = QVBoxLayout()
+        right_column.setSpacing(14)
+        right_column.setContentsMargins(0, 0, 0, 0)
+
+        general_card, general_layout = self._new_card("Общие")
+        self._add_checkboxes(
+            general_layout,
+            (
+                self.ui.autoFillCheckBox,
+                self.ui.closeTableCheckBox,
+                self.ui.openLastTable,
+                self.ui.openUpdateTab,
+                self.webAuthAutoFillCheckBox,
+            ),
+        )
+
+        auto_trade_card, auto_trade_layout = self._new_card("Автоматические торги")
+        self._add_checkboxes(
+            auto_trade_layout,
+            (
+                self.skip_auto_trade_warning_checkbox,
+                self.use_auto_trade_timer_checkbox,
+            ),
+        )
+        auto_trade_layout.addLayout(
+            self._new_compact_row(
+                "Длительность таймера:",
+                self.auto_trade_timer_minutes_spinbox,
+            )
+        )
+
+        proposal_card, proposal_layout = self._new_card("Коммерческие предложения")
+        proposal_layout.addLayout(
+            self._new_form_row(
+                "Папка сохранения:",
+                self.ui.CPdirLine,
+                self.ui.dirOpenButton,
+            )
+        )
+        proposal_layout.addLayout(
+            self._new_compact_row(
+                "Срок действия КП:",
+                self.offer_validity_days_spinbox,
+            )
+        )
+
+        google_card, google_layout = self._new_card("Google Drive")
+        google_layout.addLayout(
+            self._new_form_row(
+                "OAuth JSON:",
+                self.googleDriveCredentialsLine,
+                self.googleDriveCredentialsBrowseButton,
+            )
+        )
+        google_layout.addLayout(
+            self._new_form_row(
+                "ID папки:",
+                self.googleDriveFolderIdLine,
+            )
+        )
+
+        excel_card, excel_layout = self._new_card("Excel")
+        excel_layout.addLayout(
+            self._new_form_row(
+                "Папка сохранения:",
+                self.ui.ExcelDirLine,
+                self.ui.dirOpenButton_2,
+            )
+        )
+        excel_layout.addLayout(
+            self._new_compact_row(
+                "Отступ сверху:",
+                self.ui.excelIndent,
+            )
+        )
+
+        tables_card, tables_layout = self._new_card("Таблицы")
+        tables_layout.addLayout(
+            self._new_compact_row("Размер шрифта:", self.table_font_size_spinbox)
+        )
+        table_color_labels = (
+            ("Фон ячеек:", "bg_color"),
+            ("Текст:", "text_color"),
+            ("Заголовок:", "header_color"),
+            ("Выделение:", "selection_color"),
+        )
+        for label_text, key in table_color_labels:
+            tables_layout.addLayout(
+                self._new_compact_row(label_text, self.table_color_buttons[key])
+            )
+        self._add_checkboxes(
+            tables_layout,
+            (
+                self.table_alternating_rows_checkbox,
+                self.developer_skip_table_fill_errors_checkbox,
+            ),
+        )
+        tables_layout.addWidget(self.table_settings_reset_button)
+
+        visibility_card, visibility_layout = self._new_card("Вкладки")
+        self._add_checkboxes(
+            visibility_layout,
+            tuple(self.tab_visibility_checkboxes.values()),
+        )
+
+        payment_card, payment_layout = self._new_card("Шаблоны оплаты")
+        payment_layout.addWidget(self.paymentTemplatesList)
+        payment_buttons = QHBoxLayout()
+        payment_buttons.setSpacing(8)
+        payment_buttons.setContentsMargins(0, 0, 0, 0)
+        payment_buttons.addWidget(self.addPaymentTemplateButton)
+        payment_buttons.addWidget(self.editPaymentTemplateButton)
+        payment_buttons.addWidget(self.deletePaymentTemplateButton)
+        payment_buttons.addStretch(1)
+        payment_layout.addLayout(payment_buttons)
+
+        left_column.addWidget(general_card)
+        left_column.addWidget(proposal_card)
+        left_column.addWidget(google_card)
+        left_column.addWidget(payment_card)
+        left_column.addStretch(1)
+        right_column.addWidget(auto_trade_card)
+        right_column.addWidget(excel_card)
+        right_column.addWidget(tables_card)
+        right_column.addWidget(visibility_card)
+        right_column.addStretch(1)
+        columns_layout.addLayout(left_column, 1)
+        columns_layout.addLayout(right_column, 1)
+
+        page_layout.addLayout(columns_layout)
+        page_layout.addStretch(1)
+        self.ui.verticalLayout_3.addLayout(page_layout)
+
+        for widget in (
+            self.ui.label_6,
+            self.ui.label_3,
+            self.ui.label_4,
+            self.ui.line,
+            self.ui.line_2,
+            self.auto_trade_settings_label,
+            self.table_settings_label,
+            self.offer_validity_settings_label,
+            self.google_drive_settings_label,
+            self.tab_visibility_settings_label,
+            self.paymentTemplatesLabel,
+        ):
+            if widget is not None:
+                widget.hide()
+
+    def _apply_settings_window_style(self):
+        self.setStyleSheet(
+            self.styleSheet()
+            + """
+QLabel[settingsPageTitle="true"] {
+    color: #172330;
+    font-size: 22px;
+    font-weight: 700;
+    padding: 0;
+}
+
+QFrame[settingsCard="true"] {
+    background-color: #ffffff;
+    border: 1px solid #cfd6df;
+    border-radius: 8px;
+}
+
+QFrame[settingsCard="true"] QLabel,
+QFrame[settingsCard="true"] QCheckBox {
+    background-color: transparent;
+}
+
+QLabel[settingsSectionTitle="true"] {
+    color: #172330;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 0 0 2px 0;
+}
+
+QLabel[settingsFieldLabel="true"] {
+    color: #445264;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 0;
+}
+
+QCheckBox[settingsCheckbox="true"] {
+    color: #243242;
+    font-size: 13px;
+    padding: 2px 0;
+}
+
+QFrame[settingsCard="true"] QLineEdit {
+    min-height: 30px;
+}
+
+QFrame[settingsCard="true"] QSpinBox {
+    min-width: 110px;
+}
+
+QFrame[settingsCard="true"] QListWidget {
+    min-height: 120px;
+}
+
+QFrame[settingsCard="true"] QPushButton {
+    min-height: 32px;
+}
+"""
+        )
 
     def ExcelIndentChange(self, value):
         Config.config['ExcelIndent'] = str(value)
@@ -335,6 +660,16 @@ class mainWindow(QMainWindow):
         )
 
     def _setup_web_auth_autofill_checkbox(self):
+        existing_checkbox = self._first_ui_attr(
+            "webAuthAutoFillCheckBox",
+            "webAuthAutoFillCheckbox",
+            "web_auth_auto_fill_checkbox",
+        )
+        if isinstance(existing_checkbox, QCheckBox):
+            self.webAuthAutoFillCheckBox = existing_checkbox
+            self.ui.webAuthAutoFillCheckBox = existing_checkbox
+            return
+
         checkbox = QCheckBox(
             "Автоматически заполнять логин и пароль",
             self.ui.scrollAreaWidgetContents,
@@ -351,6 +686,39 @@ class mainWindow(QMainWindow):
         self.ui.webAuthAutoFillCheckBox = checkbox
 
     def _setup_auto_trade_settings_block(self):
+        skip_checkbox = self._first_ui_attr(
+            "skipAutoTradeWarningCheckbox",
+            "skip_auto_trade_warning_checkbox",
+        )
+        timer_checkbox = self._first_ui_attr(
+            "useAutoTradeTimerCheckbox",
+            "use_auto_trade_timer_checkbox",
+        )
+        timer_spinbox = self._first_ui_attr(
+            "autoTradeTimerMinutesSpinBox",
+            "auto_trade_timer_minutes_spinbox",
+        )
+        if (
+            isinstance(skip_checkbox, QCheckBox)
+            and isinstance(timer_checkbox, QCheckBox)
+            and isinstance(timer_spinbox, QSpinBox)
+        ):
+            timer_spinbox.setMinimum(self.AUTO_TRADE_TIMER_MIN_MINUTES)
+            timer_spinbox.setMaximum(self.AUTO_TRADE_TIMER_MAX_MINUTES)
+            if not timer_spinbox.suffix():
+                timer_spinbox.setSuffix(" мин")
+            self.auto_trade_settings_label = self._first_ui_attr(
+                "autoTradeSettingsLabel",
+                "auto_trade_settings_label",
+            )
+            self.skip_auto_trade_warning_checkbox = skip_checkbox
+            self.use_auto_trade_timer_checkbox = timer_checkbox
+            self.auto_trade_timer_minutes_spinbox = timer_spinbox
+            self.ui.skip_auto_trade_warning_checkbox = skip_checkbox
+            self.ui.use_auto_trade_timer_checkbox = timer_checkbox
+            self.ui.auto_trade_timer_minutes_spinbox = timer_spinbox
+            return
+
         section_label = QLabel(
             "Настройки автоматических торгов",
             self.ui.scrollAreaWidgetContents,
@@ -414,6 +782,53 @@ class mainWindow(QMainWindow):
         self.ui.auto_trade_timer_minutes_spinbox = timer_spinbox
 
     def _setup_table_settings_block(self):
+        font_spinbox = self._first_ui_attr("tableFontSizeSpinBox", "table_font_size_spinbox")
+        alternating_checkbox = self._first_ui_attr(
+            "tableAlternatingRowsCheckBox",
+            "table_alternating_rows_checkbox",
+        )
+        developer_skip_checkbox = self._first_ui_attr(
+            "developerSkipTableFillErrorsCheckBox",
+            "developer_skip_table_fill_errors_checkbox",
+        )
+        reset_button = self._first_ui_attr(
+            "resetTableSettingsButton",
+            "table_settings_reset_button",
+        )
+        color_buttons = {
+            "bg_color": self._first_ui_attr("tableBgColorButton"),
+            "text_color": self._first_ui_attr("tableTextColorButton"),
+            "header_color": self._first_ui_attr("tableHeaderColorButton"),
+            "selection_color": self._first_ui_attr("tableSelectionColorButton"),
+        }
+        if (
+            isinstance(font_spinbox, QSpinBox)
+            and isinstance(alternating_checkbox, QCheckBox)
+            and isinstance(developer_skip_checkbox, QCheckBox)
+            and isinstance(reset_button, QPushButton)
+            and all(isinstance(button, QPushButton) for button in color_buttons.values())
+        ):
+            font_spinbox.setMinimum(self.TABLE_FONT_MIN)
+            font_spinbox.setMaximum(self.TABLE_FONT_MAX)
+            self.table_color_buttons = color_buttons
+            for key, button in self.table_color_buttons.items():
+                button.clicked.connect(partial(self.selectTableColor, key))
+            self.table_settings_label = self._first_ui_attr(
+                "tableSettingsLabel",
+                "table_settings_label",
+            )
+            self.table_font_size_spinbox = font_spinbox
+            self.table_alternating_rows_checkbox = alternating_checkbox
+            self.developer_skip_table_fill_errors_checkbox = developer_skip_checkbox
+            self.table_settings_reset_button = reset_button
+            self.table_settings_values = self.TABLE_SETTINGS_DEFAULTS.copy()
+            self.ui.table_settings_label = self.table_settings_label
+            self.ui.table_font_size_spinbox = font_spinbox
+            self.ui.table_alternating_rows_checkbox = alternating_checkbox
+            self.ui.developer_skip_table_fill_errors_checkbox = developer_skip_checkbox
+            self.ui.table_settings_reset_button = reset_button
+            return
+
         section_widget = QLabel("Настройки таблиц", self.ui.scrollAreaWidgetContents)
         section_widget.setStyleSheet(
             "color: #2c3e50;\n"
@@ -512,6 +927,21 @@ class mainWindow(QMainWindow):
         self.ui.table_settings_reset_button = reset_button
 
     def _setup_offer_validity_settings_block(self):
+        spinbox = self._first_ui_attr("offerValidityDaysSpinBox", "offer_validity_days_spinbox")
+        if isinstance(spinbox, QSpinBox):
+            spinbox.setMinimum(Config.OFFER_VALIDITY_MIN_DAYS)
+            spinbox.setMaximum(Config.OFFER_VALIDITY_MAX_DAYS)
+            if not spinbox.suffix():
+                spinbox.setSuffix(" дн.")
+            self.offer_validity_settings_label = self._first_ui_attr(
+                "offerValiditySettingsLabel",
+                "offer_validity_settings_label",
+            )
+            self.offer_validity_days_spinbox = spinbox
+            self.ui.offer_validity_settings_label = self.offer_validity_settings_label
+            self.ui.offer_validity_days_spinbox = spinbox
+            return
+
         section_label = QLabel("Настройки КП", self.ui.scrollAreaWidgetContents)
         section_label.setStyleSheet(
             "color: #2c3e50;\n"
@@ -547,7 +977,125 @@ class mainWindow(QMainWindow):
         self.ui.offer_validity_settings_label = section_label
         self.ui.offer_validity_days_spinbox = spinbox
 
+    def _setup_google_drive_settings_block(self):
+        section_label = QLabel("Google Drive", self.ui.scrollAreaWidgetContents)
+        section_label.setStyleSheet(
+            "color: #2c3e50;\n"
+            "font-size: 16px;\n"
+            "font-weight: 600;\n"
+            "padding: 2px;"
+        )
+
+        controls = QVBoxLayout()
+        controls.setSpacing(8)
+        controls.setContentsMargins(0, 0, 0, 0)
+
+        credentials_row = QHBoxLayout()
+        credentials_row.setSpacing(10)
+        credentials_row.setContentsMargins(7, 0, -1, -1)
+        credentials_label = QLabel("OAuth JSON:", self.ui.scrollAreaWidgetContents)
+        self.googleDriveCredentialsLine = QLineEdit(self.ui.scrollAreaWidgetContents)
+        self.googleDriveCredentialsLine.setObjectName("googleDriveCredentialsLine")
+        self.googleDriveCredentialsLine.setText(
+            str(Config.config.get("googleDriveCredentialsPath", "") or "")
+        )
+        self.googleDriveCredentialsLine.setPlaceholderText("Путь к OAuth client JSON")
+        self.googleDriveCredentialsBrowseButton = QPushButton(
+            "Выбрать",
+            self.ui.scrollAreaWidgetContents,
+        )
+        self.googleDriveCredentialsBrowseButton.setMinimumSize(108, 32)
+        self.googleDriveCredentialsBrowseButton.setStyleSheet(
+            self.ui.dirOpenButton.styleSheet()
+        )
+        credentials_row.addWidget(credentials_label)
+        credentials_row.addWidget(self.googleDriveCredentialsLine, 1)
+        credentials_row.addWidget(self.googleDriveCredentialsBrowseButton)
+        controls.addLayout(credentials_row)
+
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(10)
+        folder_row.setContentsMargins(7, 0, -1, -1)
+        folder_label = QLabel("ID папки:", self.ui.scrollAreaWidgetContents)
+        self.googleDriveFolderIdLine = QLineEdit(self.ui.scrollAreaWidgetContents)
+        self.googleDriveFolderIdLine.setObjectName("googleDriveFolderIdLine")
+        self.googleDriveFolderIdLine.setText(
+            str(Config.config.get("googleDriveFolderId", "") or "")
+        )
+        self.googleDriveFolderIdLine.setPlaceholderText(
+            "Необязательно: оставить пустым для корня My Drive"
+        )
+        folder_row.addWidget(folder_label)
+        folder_row.addWidget(self.googleDriveFolderIdLine, 1)
+        controls.addLayout(folder_row)
+
+        self.googleDriveCredentialsLine.textChanged.connect(
+            self.googleDriveCredentialsPathChange
+        )
+        self.googleDriveFolderIdLine.textChanged.connect(self.googleDriveFolderIdChange)
+        self.googleDriveCredentialsBrowseButton.clicked.connect(
+            self.selectGoogleDriveCredentialsFile
+        )
+
+        insert_index = self.ui.verticalLayout.indexOf(self.ui.line_2)
+        if insert_index < 0:
+            insert_index = self.ui.verticalLayout.count()
+        self.ui.verticalLayout.insertLayout(insert_index, controls)
+        self.ui.verticalLayout.insertWidget(insert_index, section_label)
+
+        self.google_drive_settings_label = section_label
+        self.ui.google_drive_settings_label = section_label
+        self.ui.googleDriveCredentialsLine = self.googleDriveCredentialsLine
+        self.ui.googleDriveFolderIdLine = self.googleDriveFolderIdLine
+        self.ui.googleDriveCredentialsBrowseButton = self.googleDriveCredentialsBrowseButton
+
+    def googleDriveCredentialsPathChange(self, value):
+        Config.config["googleDriveCredentialsPath"] = str(value or "").strip()
+
+    def googleDriveFolderIdChange(self, value):
+        Config.config["googleDriveFolderId"] = str(value or "").strip()
+
+    def selectGoogleDriveCredentialsFile(self):
+        current_path = str(Config.config.get("googleDriveCredentialsPath", "") or "").strip()
+        start_dir = str(Path(current_path).expanduser().parent) if current_path else str(Path.home())
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите OAuth JSON Google Drive",
+            start_dir,
+            "JSON (*.json)",
+        )
+        if not file_path:
+            return
+        self.googleDriveCredentialsLine.setText(file_path)
+
     def _setup_tab_visibility_settings_block(self):
+        items = (
+            ("show_retrade_tab", "Показывать вкладку «Переторжка»"),
+            ("show_platform_tab", "Показывать вкладку «Прием заявок»"),
+            ("show_submission_tab", "Показывать вкладку «Подача заявки»"),
+            ("show_history_tab", "Показывать вкладку «История»"),
+            ("show_updates_tab", "Показывать вкладку «Обновления»"),
+        )
+        existing_checkboxes = {}
+        for key, _caption in items:
+            checkbox = self._first_ui_attr(f"{key}CheckBox", f"{key}_checkbox")
+            if not isinstance(checkbox, QCheckBox):
+                existing_checkboxes = {}
+                break
+            existing_checkboxes[key] = checkbox
+
+        if existing_checkboxes:
+            self.tab_visibility_checkboxes = existing_checkboxes
+            for key, checkbox in self.tab_visibility_checkboxes.items():
+                checkbox.setChecked(bool(Config.settings.get(key, True)))
+                setattr(self.ui, f"{key}_checkbox", checkbox)
+            self.tab_visibility_settings_label = self._first_ui_attr(
+                "tabVisibilitySettingsLabel",
+                "tab_visibility_settings_label",
+            )
+            self.ui.tab_visibility_settings_label = self.tab_visibility_settings_label
+            return
+
         section_label = QLabel("Видимость вкладок", self.ui.scrollAreaWidgetContents)
         section_label.setStyleSheet(
             "color: #2c3e50;\n"
@@ -560,13 +1108,6 @@ class mainWindow(QMainWindow):
         controls.setSpacing(6)
         controls.setContentsMargins(7, 0, -1, -1)
 
-        items = (
-            ("show_retrade_tab", "Показывать вкладку «Переторжка»"),
-            ("show_platform_tab", "Показывать вкладку «Прием заявок»"),
-            ("show_submission_tab", "Показывать вкладку «Подача заявки»"),
-            ("show_history_tab", "Показывать вкладку «История»"),
-            ("show_updates_tab", "Показывать вкладку «Обновления»"),
-        )
         self.tab_visibility_checkboxes = {}
         for key, caption in items:
             checkbox = QCheckBox(caption, self.ui.scrollAreaWidgetContents)
@@ -588,6 +1129,25 @@ class mainWindow(QMainWindow):
         self.ui.tab_visibility_settings_label = section_label
 
     def _setup_payment_templates_editor(self):
+        payment_label = self._first_ui_attr("paymentTemplatesLabel")
+        payment_list = self._first_ui_attr("paymentTemplatesList")
+        add_button = self._first_ui_attr("addPaymentTemplateButton")
+        edit_button = self._first_ui_attr("editPaymentTemplateButton")
+        delete_button = self._first_ui_attr("deletePaymentTemplateButton")
+        if (
+            isinstance(payment_list, QListWidget)
+            and isinstance(add_button, QPushButton)
+            and isinstance(edit_button, QPushButton)
+            and isinstance(delete_button, QPushButton)
+        ):
+            self.paymentTemplatesLabel = payment_label
+            self.paymentTemplatesList = payment_list
+            self.addPaymentTemplateButton = add_button
+            self.editPaymentTemplateButton = edit_button
+            self.deletePaymentTemplateButton = delete_button
+            self.paymentTemplatesList.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+            return
+
         self.paymentTemplatesLabel = QLabel("Шаблоны оплаты", self.ui.scrollAreaWidgetContents)
         self.paymentTemplatesLabel.setStyleSheet(
             "color: #2c3e50;\n"

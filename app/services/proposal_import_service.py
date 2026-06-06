@@ -1,9 +1,31 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 import re
 
 from tools import DatabaseTools as Tool
+
+
+class _IatAccessor:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def __getitem__(self, key):
+        row, col = key
+        return self._rows[row][col]
+
+
+class _SourceTable:
+    def __init__(self, rows):
+        max_cols = max((len(row) for row in rows), default=0)
+        self._rows = [
+            list(row) + [""] * (max_cols - len(row))
+            for row in rows
+        ]
+        self.index = range(len(self._rows))
+        self.columns = range(max_cols)
+        self.iat = _IatAccessor(self._rows)
 
 
 class ProposalImportService:
@@ -32,11 +54,61 @@ class ProposalImportService:
                 return match.group(0)
         return ""
 
+    @staticmethod
+    def _cell_to_text(value):
+        return "" if value is None else str(value)
+
+    def _read_excel_table(self, filename):
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(filename, read_only=True, data_only=True)
+        try:
+            sheet = workbook.active
+            rows = [
+                [self._cell_to_text(value) for value in row]
+                for row in sheet.iter_rows(values_only=True)
+            ]
+        finally:
+            workbook.close()
+        return _SourceTable(rows)
+
+    def _read_csv_table(self, filename):
+        errors = []
+        for encoding in ("utf-8-sig", "utf-16", "cp1251", "utf-8"):
+            try:
+                with open(filename, newline="", encoding=encoding) as file:
+                    sample = file.read(4096)
+                    file.seek(0)
+                    delimiter = ";"
+                    try:
+                        dialect = csv.Sniffer().sniff(sample, delimiters=";,\t")
+                        delimiter = dialect.delimiter
+                    except csv.Error:
+                        pass
+                    reader = csv.reader(file, delimiter=delimiter)
+                    return _SourceTable(
+                        [[self._cell_to_text(value) for value in row] for row in reader]
+                    )
+            except Exception as error:
+                errors.append(str(error))
+        raise ValueError("Не удалось прочитать файл. Проверьте кодировку и формат CSV")
+
     def read_source_table(self, filename):
+        ext = Path(filename).suffix.lower()
+        if ext in {".xlsx", ".xlsm", ".xltx", ".xltm"}:
+            return self._read_excel_table(filename)
+        if ext == ".xls":
+            import pandas as pd
+
+            return pd.read_excel(filename, header=None, dtype=str).fillna("")
+
+        return self._read_csv_table(filename)
+
+    def _read_source_table_with_pandas(self, filename):
         import pandas as pd
 
         ext = Path(filename).suffix.lower()
-        if ext in {".xls", ".xlsx"}:
+        if ext in {".xls", ".xlsx", ".xlsm", ".xltx", ".xltm"}:
             return pd.read_excel(filename, header=None, dtype=str).fillna("")
 
         errors = []
@@ -45,7 +117,7 @@ class ProposalImportService:
                 return pd.read_csv(
                     filename,
                     header=None,
-                    sep=";",
+                    sep=None,
                     dtype=str,
                     encoding=encoding,
                     engine="python",
@@ -208,5 +280,12 @@ class ProposalImportService:
         return parsed_rows, warnings
 
     def load_source_rows(self, filename):
-        df = self.read_source_table(filename)
-        return self.parse_source_rows(df)
+        try:
+            df = self.read_source_table(filename)
+            return self.parse_source_rows(df)
+        except Exception as fast_error:
+            try:
+                df = self._read_source_table_with_pandas(filename)
+                return self.parse_source_rows(df)
+            except Exception:
+                raise fast_error

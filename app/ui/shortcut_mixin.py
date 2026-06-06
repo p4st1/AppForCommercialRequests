@@ -28,6 +28,18 @@ class ShortcutMixin:
         )
         _bind(
             "Delete",
+            self._clear_selected_cells,
+            parent=self.ui.KpTable,
+            context=Qt.ShortcutContext.WidgetShortcut,
+        )
+        _bind(
+            "Backspace",
+            self._clear_selected_cells,
+            parent=self.ui.KpTable,
+            context=Qt.ShortcutContext.WidgetShortcut,
+        )
+        _bind(
+            "Ctrl+Delete",
             self._delete_selected_rows,
             parent=self.ui.KpTable,
             context=Qt.ShortcutContext.WidgetWithChildrenShortcut,

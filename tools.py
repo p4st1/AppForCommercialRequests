@@ -10,6 +10,15 @@ import time
 import traceback
 from pathlib import Path
 from config import Config
+from utilities.paths import (
+    APP_NAME,
+    app_dir as _app_dir,
+    bundled_path,
+    legacy_user_file_candidates,
+    migrate_legacy_user_files as _migrate_legacy_user_files,
+    user_data_dir as _user_data_dir,
+    user_path,
+)
 
 class DatabaseTools:
     def __init__(self):
@@ -156,6 +165,10 @@ class DatabaseTools:
         config["lastTable"] = str(config.get("lastTable", "")).strip()
         config["pathToSaveCP"] = str(config.get("pathToSaveCP", "")).strip()
         config["pathToSaveExcel"] = str(config.get("pathToSaveExcel", "")).strip()
+        config["googleDriveCredentialsPath"] = str(
+            config.get("googleDriveCredentialsPath", "")
+        ).strip()
+        config["googleDriveFolderId"] = str(config.get("googleDriveFolderId", "")).strip()
         config["offerValidityDays"] = str(
             Config.normalize_offer_validity_days(config.get("offerValidityDays"))
         )
@@ -235,8 +248,7 @@ class DatabaseTools:
 
     @staticmethod
     def resourcePath(relativePath):
-        base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
-        return os.path.join(base_path, relativePath)
+        return str(bundled_path(relativePath))
 
     @staticmethod
     def getCalc(value):
@@ -356,34 +368,55 @@ class DatabaseTools:
 
     @staticmethod
     def _preferred_user_data_dir(app_name: str) -> Path:
-        if sys.platform.startswith("win"):
-            return Path(os.environ["APPDATA"]) / app_name
-        if sys.platform == "darwin":
-            return Path.home() / "Library" / "Application Support" / app_name
-        return Path.home() / ".local" / "share" / app_name
+        return _user_data_dir(app_name)
 
     @staticmethod
     def user_data_dir(app_name: str) -> Path:
-        preferred = DatabaseTools._preferred_user_data_dir(app_name)
-        fallback = Path.cwd() / ".appdata" / app_name
-        for candidate in (preferred, fallback):
-            try:
-                candidate.mkdir(parents=True, exist_ok=True)
-                probe = candidate / ".write_probe"
-                with open(probe, "w", encoding="utf-8") as f:
-                    f.write("ok")
-                probe.unlink(missing_ok=True)
-                return candidate
-            except Exception as e:
-                DatabaseTools.log_exception(
-                    f"Не удалось создать директорию данных: {candidate}",
-                    e,
-                    include_traceback=False,
-                )
-                continue
+        return _user_data_dir(app_name)
 
-        fallback.mkdir(parents=True, exist_ok=True)
-        return fallback
+    @staticmethod
+    def app_dir() -> Path:
+        return _app_dir()
+
+    @staticmethod
+    def migrate_legacy_user_files(app_name: str = APP_NAME) -> dict[str, Path]:
+        return _migrate_legacy_user_files(
+            {
+                "config.json": ("config.json",),
+                "database/database.db": ("database.db", "database/database.db"),
+                "variables.json": ("variables.json",),
+            },
+            app_name=app_name,
+        )
+
+    @staticmethod
+    def user_config_path(app_name: str = APP_NAME) -> Path:
+        return user_path("config.json", app_name=app_name)
+
+    @staticmethod
+    def config_candidate_paths(include_bundled_default: bool = True) -> list[Path]:
+        candidates: list[Path] = []
+        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
+        if cfg_path:
+            candidates.append(Path(cfg_path).expanduser())
+
+        candidates.append(DatabaseTools.user_config_path())
+
+        if include_bundled_default:
+            candidates.append(bundled_path("utilities/config.json"))
+
+        result: list[Path] = []
+        seen: set[Path] = set()
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                resolved = candidate
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            result.append(candidate)
+        return result
 
     @staticmethod
     def _source_versions_path(app_name: str) -> Path:
@@ -467,19 +500,24 @@ class DatabaseTools:
         f=0,
         sync_mode: str = "if_missing",
     ) -> Path:
-        dst_dir = DatabaseTools.user_data_dir(app_name)
-        dst_dir.mkdir(parents=True, exist_ok=True)
-
-        dst = dst_dir / target_name
+        dst = DatabaseTools.user_data_dir(app_name) / target_name
+        dst.parent.mkdir(parents=True, exist_ok=True)
         src = Path(DatabaseTools.resourcePath(template_rel_path))
-        legacy = DatabaseTools._preferred_user_data_dir(app_name) / target_name
 
         if not dst.exists():
             copied = False
-            if legacy.exists() and legacy != dst:
+            for legacy in legacy_user_file_candidates(
+                target_name,
+                bundled_rel_path=template_rel_path,
+            ):
+                if not legacy.exists() or not legacy.is_file():
+                    continue
                 try:
+                    if legacy.resolve() == dst.resolve():
+                        continue
                     shutil.copy2(legacy, dst)
                     copied = True
+                    break
                 except Exception as e:
                     DatabaseTools.log_exception(
                         f"Не удалось скопировать legacy-файл {legacy} -> {dst}",
@@ -535,7 +573,7 @@ class DatabaseTools:
             target = Path(log_path)
         else:
             configured = str(getattr(Config, "log_path", "") or "").strip()
-            target = Path(configured) if configured else Path.cwd() / "logs.txt"
+            target = Path(configured) if configured else user_path("logs", "logs.log")
         target.parent.mkdir(parents=True, exist_ok=True)
         return target
 

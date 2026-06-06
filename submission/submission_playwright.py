@@ -5,7 +5,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from .submission_service import FIELD_LABELS, FIELD_ORDER, SubmissionPayload
+from tools import DatabaseTools as Tool
+
+from .submission_service import (
+    FIELD_LABELS,
+    FIELD_ORDER,
+    SubmissionPayload,
+    SubmissionService,
+)
 
 try:
     from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
@@ -79,6 +86,13 @@ class SubmissionPlaywright:
         return cls._positive_int_from_value(match.group(0), name="trade_id")
 
     @classmethod
+    def _trade_id_from_payload(cls, payload: SubmissionPayload) -> int | None:
+        trade_id = str(getattr(payload.header, "trade_id", "") or "").strip()
+        if not trade_id:
+            return None
+        return cls._positive_int_from_value(trade_id, name="trade_id")
+
+    @classmethod
     def _lot_id_from_payload(cls, payload: SubmissionPayload) -> int:
         header = payload.header
         lot_id = str(getattr(header, "lot_id", "") or "").strip()
@@ -107,6 +121,10 @@ class SubmissionPlaywright:
     def _submission_url_from_payload(cls, payload: SubmissionPayload) -> str:
         lot_id = cls._lot_id_from_payload(payload)
         return cls.SUBMISSION_URL_TEMPLATE.format(lot_id=lot_id)
+
+    @classmethod
+    def _trade_url_from_trade_id(cls, trade_id: int) -> str:
+        return cls.TRADE_URL_TEMPLATE.format(trade_id=trade_id)
 
     @staticmethod
     def _page_has_submission_import(page: Page) -> bool:
@@ -151,6 +169,117 @@ class SubmissionPlaywright:
                     "Площадка не ответила вовремя."
                 ) from exc
 
+    def _click_submission_entry_from_trade_page(
+        self,
+        page: Page,
+        *,
+        lot_id: int,
+    ) -> bool:
+        lot_id_text = str(lot_id)
+        selectors = (
+            f"a[href*='/bids/new'][href*='lot={lot_id_text}']",
+            f"[role='link'][href*='/bids/new'][href*='lot={lot_id_text}']",
+            "a[href*='/bids/new']",
+            "button:has-text('Подать заявку')",
+            "button:has-text('Подать предложение')",
+            "button:has-text('Создать заявку')",
+            "button:has-text('Редактировать заявку')",
+            "button:has-text('Изменить')",
+            "button:has-text('Моя заявка')",
+            "a:has-text('Подать заявку')",
+            "a:has-text('Подать предложение')",
+            "a:has-text('Создать заявку')",
+            "a:has-text('Редактировать заявку')",
+            "a:has-text('Изменить')",
+            "a:has-text('Моя заявка')",
+            "[role='button']:has-text('Подать заявку')",
+            "[role='button']:has-text('Подать предложение')",
+            "[role='button']:has-text('Создать заявку')",
+            "[role='button']:has-text('Редактировать')",
+            "[role='button']:has-text('Изменить')",
+            "[role='button']:has-text('Моя заявка')",
+        )
+        for selector in selectors:
+            locator = page.locator(selector)
+            try:
+                count = locator.count()
+            except Exception:
+                continue
+            for index in range(count):
+                try:
+                    candidate = locator.nth(index)
+                    if not candidate.is_visible(timeout=1_000):
+                        continue
+                    if not candidate.is_enabled(timeout=1_000):
+                        continue
+                    candidate.scroll_into_view_if_needed(timeout=3_000)
+                    candidate.click(timeout=4_000)
+                    try:
+                        page.wait_for_load_state("domcontentloaded", timeout=10_000)
+                    except Exception:
+                        pass
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=10_000)
+                    except Exception:
+                        pass
+                    if self._page_has_submission_import(page):
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def _goto_submission_page_via_trade(
+        self,
+        page: Page,
+        *,
+        trade_id: int,
+        lot_id: int,
+    ) -> bool:
+        page.goto(
+            self._trade_url_from_trade_id(trade_id),
+            wait_until="domcontentloaded",
+            timeout=self._timeout_ms,
+        )
+        try:
+            page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception:
+            pass
+
+        if self._page_has_submission_import(page):
+            return True
+        return self._click_submission_entry_from_trade_page(page, lot_id=lot_id)
+
+    def _goto_submission_page_for_payload(
+        self,
+        page: Page,
+        payload: SubmissionPayload,
+    ) -> None:
+        lot_id = self._lot_id_from_payload(payload)
+        try:
+            trade_id = self._trade_id_from_payload(payload)
+        except Exception as exc:
+            Tool.write_log(
+                "Некорректный trade_id в данных заявки, используем прямую ссылку: "
+                f"{str(exc).splitlines()[0]}"
+            )
+            trade_id = None
+        if trade_id is not None:
+            try:
+                if self._goto_submission_page_via_trade(
+                    page,
+                    trade_id=trade_id,
+                    lot_id=lot_id,
+                ):
+                    return
+            except Exception as exc:
+                Tool.write_log(
+                    "Открытие формы заявки через страницу торгов не удалось: "
+                    f"{str(exc).splitlines()[0]}"
+                )
+
+        submission_url = self.SUBMISSION_URL_TEMPLATE.format(lot_id=lot_id)
+        self._goto_submission_page(page, submission_url)
+
     @staticmethod
     def _validate_import_file_path(import_file_path: str | Path | None) -> Path:
         if import_file_path is None:
@@ -164,6 +293,23 @@ class SubmissionPlaywright:
         if not source_path.exists() or not source_path.is_file():
             raise FileNotFoundError(f"Excel файл для импорта не найден: {source_path}")
         return source_path.resolve()
+
+    def _launch_persistent_context(self, playwright: Any) -> Any:
+        profile_dir = Tool.user_data_dir("MyApp") / "playwright_profile"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        launch_kwargs = {
+            "user_data_dir": str(profile_dir),
+            "headless": self._headless,
+            "args": ["--disable-blink-features=AutomationControlled"],
+            "accept_downloads": True,
+        }
+        try:
+            return playwright.chromium.launch_persistent_context(
+                channel="chrome",
+                **launch_kwargs,
+            )
+        except Exception:
+            return playwright.chromium.launch_persistent_context(**launch_kwargs)
 
     def submit(
         self,
@@ -182,19 +328,19 @@ class SubmissionPlaywright:
                 "Подтвердите действие в интерфейсе перед отправкой."
             )
 
-        submission_url = self._submission_url_from_payload(payload)
         import_path = self._validate_import_file_path(import_file_path)
 
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=self._headless)
+            context = self._launch_persistent_context(playwright)
             try:
-                context = browser.new_context()
                 context.add_cookies(self._build_playwright_cookies())
                 page = context.new_page()
-                self._goto_submission_page(page, submission_url)
+                self._goto_submission_page_for_payload(page, payload)
 
                 self._wait_for_submission_import_ready(page)
+                self._select_submission_currency_or_log(page, payload)
                 self._import_submission_file(page, import_path)
+                self._select_submission_currency_or_log(page, payload)
                 self._fill_offer_validity_period(
                     page,
                     getattr(payload.header, "offer_validity_period", ""),
@@ -208,20 +354,21 @@ class SubmissionPlaywright:
                     getattr(payload.header, "payment_terms", "")
                     or getattr(payload.header, "payment_condition", ""),
                 )
+                self._clear_submission_position_selection(page)
                 if should_click_final_submit:
                     self._click_submit(page)
                     self._wait_for_success(page)
                     return f"Заявка {payload.header.number} подана"
 
                 ready_message = (
-                    "Таблица, срок действия КП, порядок доставки и условие оплаты загружены на сайт. "
+                    "Валюта, таблица, срок действия КП, порядок доставки и условие оплаты загружены на сайт. "
                     "Проверьте заявку и нажмите финальную кнопку на сайте вручную."
                 )
                 if callable(on_manual_confirmation_ready):
                     on_manual_confirmation_ready(ready_message)
                 return self._wait_for_manual_submission_or_close(page, payload)
             finally:
-                browser.close()
+                context.close()
 
     def _open_submission_form(self, page: Page) -> None:
         candidates = (
@@ -253,6 +400,255 @@ class SubmissionPlaywright:
         for labels, value in header_fields:
             if str(value or "").strip():
                 self._fill_first_matching_field(page, labels, value)
+
+    @staticmethod
+    def _currency_code_for_site(value: Any) -> str:
+        return (
+            SubmissionService.normalize_currency_code(value)
+            or str(value or "").strip().upper()
+        )
+
+    @staticmethod
+    def _locator_text(locator: Any) -> str:
+        for getter_name in ("inner_text", "text_content"):
+            getter = getattr(locator, getter_name, None)
+            if not callable(getter):
+                continue
+            try:
+                return str(getter(timeout=500) or "").strip()
+            except TypeError:
+                try:
+                    return str(getter() or "").strip()
+                except Exception:
+                    continue
+            except Exception:
+                continue
+        return ""
+
+    @staticmethod
+    def _currency_selectors() -> tuple[str, ...]:
+        return (
+            "um-select-field.field_currency mat-select",
+            "um-select-field[class*='field_currency'] mat-select",
+            "mat-form-field:has-text('Валюта предложения') mat-select",
+            "mat-form-field:has-text('Валюта') mat-select",
+        )
+
+    def _currency_select_locators(self, page: Page) -> list[Any]:
+        locators: list[Any] = []
+        locator_getter = getattr(page, "locator", None)
+        if callable(locator_getter):
+            for selector in self._currency_selectors():
+                try:
+                    locators.append(locator_getter(selector))
+                except Exception:
+                    pass
+
+        label_pattern = re.compile("Валюта предложения|Валюта", re.IGNORECASE)
+        role_getter = getattr(page, "get_by_role", None)
+        if callable(role_getter):
+            try:
+                locators.append(role_getter("combobox", name=label_pattern))
+            except Exception:
+                pass
+        label_getter = getattr(page, "get_by_label", None)
+        if callable(label_getter):
+            try:
+                locators.append(label_getter(label_pattern))
+            except Exception:
+                pass
+        return locators
+
+    def _currency_option_locators(self, page: Page, code: str) -> list[Any]:
+        locators: list[Any] = []
+        exact_pattern = re.compile(rf"^\s*{re.escape(code)}\s*$", re.IGNORECASE)
+        role_getter = getattr(page, "get_by_role", None)
+        if callable(role_getter):
+            try:
+                locators.append(role_getter("option", name=exact_pattern))
+            except Exception:
+                pass
+
+        locator_getter = getattr(page, "locator", None)
+        if callable(locator_getter):
+            for selector in (
+                f".cdk-overlay-container mat-option:has-text('{code}')",
+                f".cdk-overlay-container [role='option']:has-text('{code}')",
+                f"mat-option:has-text('{code}')",
+                f".mat-option:has-text('{code}')",
+                f"[role='option']:has-text('{code}')",
+            ):
+                try:
+                    locators.append(locator_getter(selector))
+                except Exception:
+                    pass
+        return locators
+
+    def _select_native_currency(self, page: Page, code: str) -> bool:
+        locator_getter = getattr(page, "locator", None)
+        if not callable(locator_getter):
+            return False
+
+        for selector in (
+            "select[name*='currency' i]",
+            "select[formcontrolname*='currency' i]",
+            "select[aria-label*='Валюта' i]",
+            "select:has(option)",
+        ):
+            try:
+                locator = locator_getter(selector)
+                count = locator.count()
+            except Exception:
+                continue
+            for index in range(count):
+                try:
+                    candidate = locator.nth(index)
+                    if hasattr(candidate, "is_visible") and not candidate.is_visible(
+                        timeout=700
+                    ):
+                        continue
+                    selector_method = getattr(candidate, "select_option", None)
+                    if not callable(selector_method):
+                        continue
+                    for option in ({"label": code}, {"value": code}):
+                        try:
+                            selector_method(**option, timeout=3_000)
+                            return True
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+        return False
+
+    @classmethod
+    def _locator_has_currency(cls, locator: Any, code: str) -> bool:
+        text = cls._locator_text(locator).upper()
+        return bool(text and re.search(rf"(?<![A-Z]){re.escape(code)}(?![A-Z])", text))
+
+    def _select_submission_currency(self, page: Page, value: Any) -> bool:
+        code = self._currency_code_for_site(value)
+        if not code:
+            return False
+
+        select_locators = self._currency_select_locators(page)
+        for locator in select_locators:
+            try:
+                count = locator.count()
+            except Exception:
+                continue
+            for index in range(count):
+                try:
+                    candidate = locator.nth(index)
+                    if self._locator_has_currency(candidate, code):
+                        return True
+                except Exception:
+                    continue
+
+        if self._select_native_currency(page, code):
+            return True
+
+        for locator in select_locators:
+            try:
+                count = locator.count()
+            except Exception:
+                continue
+            for index in range(count):
+                try:
+                    candidate = locator.nth(index)
+                    if not candidate.is_visible(timeout=700):
+                        continue
+                    if not candidate.is_enabled(timeout=700):
+                        continue
+                    candidate.scroll_into_view_if_needed(timeout=3_000)
+                    candidate.click(timeout=4_000)
+                    page.wait_for_timeout(300)
+                    for option_locator in self._currency_option_locators(page, code):
+                        if self._click_first_visible_enabled(
+                            option_locator,
+                            label=f"Валюта {code}",
+                        ):
+                            page.wait_for_timeout(500)
+                            return True
+                except PlaywrightTimeoutError:
+                    continue
+                except Exception:
+                    continue
+        return False
+
+    def _select_submission_currency_or_log(
+        self,
+        page: Page,
+        payload: SubmissionPayload,
+    ) -> bool:
+        currency = getattr(payload.header, "currency", "")
+        code = self._currency_code_for_site(currency)
+        if not code:
+            return False
+        try:
+            if self._select_submission_currency(page, code):
+                return True
+        except Exception as exc:
+            Tool.write_log(
+                "Не удалось выбрать валюту предложения на сайте: "
+                f"{str(exc).splitlines()[0]}"
+            )
+            return False
+        Tool.write_log(f"Валюта предложения не выбрана автоматически: {code}")
+        return False
+
+    @staticmethod
+    def _clear_submission_position_selection(page: Page) -> None:
+        try:
+            page.evaluate(
+                """
+() => {
+  const styleId = 'codex-submission-no-black-selection';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+kendo-grid .k-selected,
+kendo-grid .k-state-selected,
+kendo-grid tr[aria-selected="true"],
+kendo-grid td[aria-selected="true"] {
+  background-color: inherit !important;
+  color: inherit !important;
+}
+kendo-grid .k-focus,
+kendo-grid .k-state-focused,
+kendo-grid .k-grid-edit-cell {
+  box-shadow: none !important;
+  outline: none !important;
+}
+`;
+    document.head.appendChild(style);
+  }
+  const selected = document.querySelectorAll(
+    'kendo-grid .k-selected, kendo-grid .k-state-selected, '
+    + 'kendo-grid [aria-selected="true"]'
+  );
+  for (const element of selected) {
+    element.classList.remove('k-selected', 'k-state-selected');
+    element.setAttribute('aria-selected', 'false');
+  }
+  const focused = document.querySelectorAll(
+    'kendo-grid .k-focus, kendo-grid .k-state-focused, kendo-grid .k-grid-edit-cell'
+  );
+  for (const element of focused) {
+    element.classList.remove('k-focus', 'k-state-focused', 'k-grid-edit-cell');
+  }
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+  const selection = window.getSelection && window.getSelection();
+  if (selection) {
+    selection.removeAllRanges();
+  }
+}
+"""
+            )
+        except Exception:
+            pass
 
     def _fill_rows(self, page: Page, payload: SubmissionPayload) -> None:
         for row_index, row in enumerate(payload.rows):
@@ -296,6 +692,22 @@ class SubmissionPlaywright:
         for label in labels:
             pattern = re.compile(re.escape(label), re.IGNORECASE)
             locators = []
+            locator_getter = getattr(page, "locator", None)
+            if callable(locator_getter):
+                for selector in (
+                    f"mat-form-field:has-text('{label}') input:not([type='checkbox']):not([type='radio']):not([type='file'])",
+                    f"mat-form-field:has-text('{label}') textarea",
+                    f"um-string-field:has-text('{label}') input:not([type='checkbox']):not([type='radio']):not([type='file'])",
+                    f"um-string-field:has-text('{label}') textarea",
+                    f"um-text-field:has-text('{label}') input:not([type='checkbox']):not([type='radio']):not([type='file'])",
+                    f"um-text-field:has-text('{label}') textarea",
+                    f"input[name*='{label}' i]:not([type='checkbox']):not([type='radio']):not([type='file'])",
+                    f"textarea[name*='{label}' i]",
+                ):
+                    try:
+                        locators.append(locator_getter(selector))
+                    except Exception:
+                        pass
             for getter_name in ("get_by_label", "get_by_placeholder"):
                 getter = getattr(page, getter_name, None)
                 if callable(getter):
@@ -303,36 +715,52 @@ class SubmissionPlaywright:
                         locators.append(getter(pattern))
                     except Exception:
                         pass
-            locator_getter = getattr(page, "locator", None)
-            if callable(locator_getter):
-                for selector in (
-                    f"mat-form-field:has-text('{label}') input",
-                    f"mat-form-field:has-text('{label}') textarea",
-                    f"um-string-field:has-text('{label}') input",
-                    f"um-string-field:has-text('{label}') textarea",
-                    f"um-text-field:has-text('{label}') input",
-                    f"um-text-field:has-text('{label}') textarea",
-                    f"input[name*='{label}' i]",
-                    f"textarea[name*='{label}' i]",
-                ):
-                    try:
-                        locators.append(locator_getter(selector))
-                    except Exception:
-                        pass
             for locator in locators:
-                try:
-                    if locator.count() == 0:
-                        continue
-                    candidate = locator.first if hasattr(locator, "first") else locator
-                    if not candidate.is_visible(timeout=500):
-                        continue
-                    candidate.fill(text_value, timeout=3_000)
+                if self._fill_text_locator(locator, text_value):
                     return True
-                except PlaywrightTimeoutError:
-                    continue
-                except AttributeError:
-                    continue
         return False
+
+    @staticmethod
+    def _locator_attribute(locator: Any, name: str) -> str:
+        getter = getattr(locator, "get_attribute", None)
+        if not callable(getter):
+            return ""
+        try:
+            return str(getter(name) or "").strip()
+        except Exception:
+            return ""
+
+    @classmethod
+    def _is_text_fillable_locator(cls, locator: Any) -> bool:
+        input_type = cls._locator_attribute(locator, "type").casefold()
+        role = cls._locator_attribute(locator, "role").casefold()
+        aria_checked = cls._locator_attribute(locator, "aria-checked").casefold()
+        if input_type in {"checkbox", "radio", "file", "button", "submit", "reset"}:
+            return False
+        if role in {"switch", "checkbox", "radio", "button"}:
+            return False
+        if aria_checked in {"true", "false", "mixed"}:
+            return False
+        return True
+
+    @classmethod
+    def _fill_text_locator(cls, locator: Any, text_value: str) -> bool:
+        try:
+            if locator.count() == 0:
+                return False
+            candidate = locator.first if hasattr(locator, "first") else locator
+            if not candidate.is_visible(timeout=500):
+                return False
+            if not cls._is_text_fillable_locator(candidate):
+                return False
+            candidate.fill(text_value, timeout=3_000)
+            return True
+        except PlaywrightTimeoutError:
+            return False
+        except Exception as exc:
+            if "cannot be filled" in str(exc).casefold():
+                return False
+            return False
 
     def _fill_position_field(
         self,
@@ -359,14 +787,14 @@ class SubmissionPlaywright:
                     re.compile(re.escape(label), re.IGNORECASE)
                 ).first
                 if field.count() > 0:
-                    field.fill(text_value, timeout=3_000)
-                    return True
+                    if self._fill_text_locator(field, text_value):
+                        return True
                 placeholder = row_locator.get_by_placeholder(
                     re.compile(re.escape(label), re.IGNORECASE)
                 ).first
                 if placeholder.count() > 0:
-                    placeholder.fill(text_value, timeout=3_000)
-                    return True
+                    if self._fill_text_locator(placeholder, text_value):
+                        return True
             except PlaywrightTimeoutError:
                 continue
 
@@ -666,7 +1094,6 @@ class SubmissionPlaywright:
                         candidate.click(force=True, timeout=4_000)
                     except PlaywrightTimeoutError:
                         candidate.dispatch_event("click")
-                print("CLICK:", label)
                 return True
             except PlaywrightTimeoutError:
                 continue
@@ -734,7 +1161,7 @@ class SubmissionPlaywright:
     @staticmethod
     def _save_debug_artifacts(page: Page, prefix: str) -> None:
         try:
-            target_dir = Path("temp") / "submission"
+            target_dir = Tool.user_data_dir("MyApp") / "debug" / "submission"
             target_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             html_path = target_dir / f"{prefix}_{timestamp}.html"
@@ -746,7 +1173,7 @@ class SubmissionPlaywright:
                 )
             except Exception:
                 pass
-            print("DEBUG:", str(html_path.resolve()))
+            Tool.write_log(f"Submission debug saved: {html_path.resolve()}")
         except Exception:
             pass
 

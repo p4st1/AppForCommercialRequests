@@ -61,6 +61,7 @@ class Database:
                 total_amount REAL,
                 currency TEXT NOT NULL DEFAULT '',
                 file_path TEXT NOT NULL DEFAULT '',
+                remote_url TEXT NOT NULL DEFAULT '',
                 notes TEXT NOT NULL DEFAULT '',
                 payload_json TEXT NOT NULL DEFAULT ''
             )
@@ -132,6 +133,7 @@ class Database:
             "total_amount": "REAL",
             "currency": "TEXT NOT NULL DEFAULT ''",
             "file_path": "TEXT NOT NULL DEFAULT ''",
+            "remote_url": "TEXT NOT NULL DEFAULT ''",
             "notes": "TEXT NOT NULL DEFAULT ''",
             "payload_json": "TEXT NOT NULL DEFAULT ''",
         }
@@ -233,6 +235,7 @@ class Database:
         total_amount: float | None = None,
         currency: str = "",
         file_path: str = "",
+        remote_url: str = "",
         notes: str = "",
         payload_json: str = "",
     ) -> int:
@@ -258,9 +261,10 @@ class Database:
                 total_amount,
                 currency,
                 file_path,
+                remote_url,
                 notes,
                 payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 offer_number,
@@ -273,6 +277,7 @@ class Database:
                 total_value,
                 str(currency or "").strip(),
                 str(file_path or "").strip(),
+                str(remote_url or "").strip(),
                 str(notes or "").strip(),
                 str(payload_json or ""),
             ),
@@ -287,6 +292,7 @@ class Database:
         total_amount: float | None = None,
         currency: str = "",
         file_path: str = "",
+        remote_url: str = "",
         notes: str = "",
         payload_json: str = "",
     ) -> int:
@@ -298,15 +304,64 @@ class Database:
             total_amount=total_amount,
             currency=currency,
             file_path=file_path,
+            remote_url=remote_url,
             notes=notes,
             payload_json=payload_json,
         )
 
-    def getOffersHistory(self, limit: int = 500):
+    def getOffersHistory(
+        self,
+        limit: int = 500,
+        *,
+        customer_query: str = "",
+        event_type: str = "",
+        date_from: str = "",
+        date_to: str = "",
+        search_text: str = "",
+    ):
         cursor = self._require_cursor()
         safe_limit = max(1, int(limit))
+        clauses = []
+        params = []
+
+        normalized_customer_query = str(customer_query or "").strip()
+        if normalized_customer_query:
+            pattern = f"%{normalized_customer_query}%"
+            clauses.append("(customer_company LIKE ? OR customer_name LIKE ?)")
+            params.extend((pattern, pattern))
+
+        normalized_event_type = str(event_type or "").strip().lower()
+        if normalized_event_type:
+            clauses.append("event_type = ?")
+            params.append(normalized_event_type)
+
+        normalized_date_from = str(date_from or "").strip()
+        if normalized_date_from:
+            clauses.append("date >= ?")
+            params.append(normalized_date_from)
+
+        normalized_date_to = str(date_to or "").strip()
+        if normalized_date_to:
+            clauses.append("date <= ?")
+            params.append(normalized_date_to)
+
+        normalized_search_text = str(search_text or "").strip()
+        if normalized_search_text:
+            pattern = f"%{normalized_search_text}%"
+            clauses.append(
+                """
+                (
+                    CAST(offer_number AS TEXT) LIKE ?
+                    OR file_path LIKE ?
+                    OR notes LIKE ?
+                )
+                """
+            )
+            params.extend((pattern, pattern, pattern))
+
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         cursor.execute(
-            """
+            f"""
             SELECT
                 id,
                 offer_number,
@@ -319,13 +374,15 @@ class Database:
                 total_amount,
                 currency,
                 file_path,
+                remote_url,
                 notes,
                 payload_json
             FROM offers
+            {where_sql}
             ORDER BY datetime(created_at) DESC, id DESC
             LIMIT ?
             """,
-            (safe_limit,),
+            (*params, safe_limit),
         )
         return cursor.fetchall()
 

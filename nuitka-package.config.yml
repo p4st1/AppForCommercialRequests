@@ -1,0 +1,6 @@
+# nuitka-package.config.yml
+
+- module-name: 'docx'
+  data-files:
+    patterns:
+      - 'templates/*'

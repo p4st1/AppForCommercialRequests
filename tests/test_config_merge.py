@@ -93,6 +93,22 @@ class ConfigMergeTests(unittest.TestCase):
             Config.DEFAULT_SETTINGS["auto_trade_timer_minutes"],
         )
 
+    def test_google_drive_fields_are_normalized(self):
+        merged = Tool.merge_config_with_defaults(
+            {
+                "config": {
+                    "googleDriveCredentialsPath": "  /tmp/client.json  ",
+                    "googleDriveFolderId": "  folder-123  ",
+                },
+                "settings": {},
+            }
+        )
+        self.assertEqual(
+            merged["config"]["googleDriveCredentialsPath"],
+            "/tmp/client.json",
+        )
+        self.assertEqual(merged["config"]["googleDriveFolderId"], "folder-123")
+
 
 if __name__ == "__main__":
     unittest.main()

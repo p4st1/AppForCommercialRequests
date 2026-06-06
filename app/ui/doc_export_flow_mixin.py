@@ -18,11 +18,35 @@ except Exception:
 
 class DocExportFlowMixin:
     SUBMISSION_OFFER_VALIDITY_DAYS = Config.DEFAULT_OFFER_VALIDITY_DAYS
-    PIPELINE_TRADE_SEARCH_LIMIT = 1000
+    PIPELINE_TRADE_SEARCH_LIMIT = 0
 
-    def openCreateDocWindow(self, tableData):
+    def _show_doc_export_status(self, message: str, timeout_ms: int = 0) -> None:
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(message, timeout_ms)
+
+    def openCreateDocWindow(
+        self,
+        tableData,
+        *,
+        force_google_docx: bool = False,
+        on_document_created=None,
+    ):
         window = createDocWindow(self, tableData=tableData)
         window.ui.numLine.setText(self.ui.requestNumberLine.text().strip())
+        if force_google_docx and hasattr(window, "googleDocxFormatRadio"):
+            window.googleDocxFormatRadio.setChecked(True)
+            if hasattr(window, "docxFormatRadio"):
+                window.docxFormatRadio.setEnabled(False)
+            if hasattr(window, "pdfFormatRadio"):
+                window.pdfFormatRadio.setEnabled(False)
+        if callable(on_document_created) and hasattr(window, "documentCreated"):
+            window.documentCreated.connect(on_document_created)
         window.show()
         window.windowClosed.connect(self.updateHistoryTable)
         if Config.settings["closeTable"]:
@@ -72,6 +96,12 @@ class DocExportFlowMixin:
             "payment_condition": str(
                 context.get("payment_condition", "") or ""
             ).strip(),
+            "supplier_status": str(context.get("supplier_status", "") or "").strip(),
+            "warranty": str(
+                context.get("warranty", "")
+                or context.get("guarantee", "")
+                or ""
+            ).strip(),
         }
         if not result["offer_validity_period"]:
             result["offer_validity_period"] = cls._default_submission_offer_validity_period()
@@ -107,7 +137,7 @@ class DocExportFlowMixin:
                 return
             self.set_pipeline_status("Готово")
 
-        if QTimer is not None:
+        if QTimer is not None and hasattr(QTimer, "singleShot"):
             QTimer.singleShot(3000, _reset_status)
             return
         _reset_status()
@@ -162,7 +192,17 @@ class DocExportFlowMixin:
 
         self._set_web_pipeline_trade_number(raw_trade_number)
         try:
-            self.set_pipeline_status("📥 Загрузка заявок...")
+            cached_trade = self._find_cached_trade_for_pipeline(raw_trade_number)
+            if cached_trade is not None:
+                self.set_pipeline_status("🔍 Поиск заявки...")
+                self._continue_web_pipeline_with_trade(cached_trade)
+                return
+
+            if self._is_trades_cache_complete():
+                self._handle_pipeline_trade_not_found(raw_trade_number)
+                return
+
+            self.set_pipeline_status("📥 Догружаем заявки...")
             self._trades_load_max_items_override = self.PIPELINE_TRADE_SEARCH_LIMIT
             load_trades_method = getattr(self, "load_trades", None)
             if not callable(load_trades_method):
@@ -223,15 +263,38 @@ class DocExportFlowMixin:
                 return current_trade
         return None
 
+    def _loaded_trades_for_pipeline(self) -> list:
+        trades = getattr(self, "all_trades", [])
+        return trades if isinstance(trades, list) else []
+
+    def _is_trades_cache_complete(self) -> bool:
+        return bool(getattr(self, "_trades_cache_complete", False))
+
+    def _find_cached_trade_for_pipeline(self, trade_number: str) -> dict | None:
+        trades = self._loaded_trades_for_pipeline()
+        if not trades:
+            return None
+        return self._find_trade_for_pipeline(trades, trade_number)
+
+    def _handle_pipeline_trade_not_found(self, trade_number: str) -> None:
+        self._pop_web_pipeline_trade_number()
+        self._pop_web_pipeline_submission_context()
+        self._set_pipeline_error_status()
+        QMessageBox.warning(
+            self,
+            "Ошибка",
+            f"Заявка с номером {trade_number} не найдена",
+        )
+
     def _continue_web_pipeline_after_load(self) -> None:
         if hasattr(self, "_trades_load_max_items_override"):
             del self._trades_load_max_items_override
-        trade_number = self._pop_web_pipeline_trade_number()
+        trade_number = str(getattr(self, "_web_pipeline_trade_number", "") or "").strip()
         if not trade_number:
             return
 
         try:
-            trades = self.all_trades if isinstance(self.all_trades, list) else []
+            trades = self._loaded_trades_for_pipeline()
             trade = self._find_trade_for_pipeline(trades, trade_number)
         except Exception as exc:
             self._pop_web_pipeline_submission_context()
@@ -244,15 +307,16 @@ class DocExportFlowMixin:
             return
 
         if trade is None:
-            self._pop_web_pipeline_submission_context()
-            self._set_pipeline_error_status()
-            QMessageBox.warning(
-                self,
-                "Ошибка",
-                f"Заявка с номером {trade_number} не найдена",
-            )
+            self._handle_pipeline_trade_not_found(trade_number)
             return
 
+        self._continue_web_pipeline_with_trade(trade)
+
+    def _continue_web_pipeline_with_trade(
+        self,
+        trade: dict,
+    ) -> None:
+        self._pop_web_pipeline_trade_number()
         submission_context = self._pop_web_pipeline_submission_context()
         try:
             lots = trade.get("lots")
@@ -355,7 +419,9 @@ class DocExportFlowMixin:
             )
             return
 
+        self._show_doc_export_status("Подготовка КП в DOCX...")
         Tool.write_log("CREATING DOCX")
         table_data = self.getTableData()
         self.openCreateDocWindow((len(table_data), table_data))
         Tool.write_log("CREATING DOCX...")
+        self._show_doc_export_status("Окно создания КП открыто", 5_000)

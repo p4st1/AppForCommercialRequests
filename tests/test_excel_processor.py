@@ -51,6 +51,7 @@ class ExcelProcessorTests(unittest.TestCase):
                     "Срок поставки": None,
                     ExcelProcessor.MANUFACTURER_COLUMN: None,
                     ExcelProcessor.TECH_COLUMN: None,
+                    "Статус поставщика": None,
                     "Условия гарантий качества": "12 мес.",
                 },
                 {
@@ -62,6 +63,7 @@ class ExcelProcessorTests(unittest.TestCase):
                     "Срок поставки": None,
                     ExcelProcessor.MANUFACTURER_COLUMN: None,
                     ExcelProcessor.TECH_COLUMN: None,
+                    "Статус поставщика": None,
                     "Условия гарантий качества": "24 мес.",
                 },
             ]
@@ -76,6 +78,8 @@ class ExcelProcessorTests(unittest.TestCase):
                     "delivery_time": "30 дней",
                     "manufacturer": "ООО Ромашка",
                     "tech_characteristics": "IP65",
+                    "supplier_status": "Посредник",
+                    "warranty": "18 мес.",
                 },
                 {
                     "price": 200,
@@ -83,6 +87,8 @@ class ExcelProcessorTests(unittest.TestCase):
                     "delivery_time": "10 дней",
                     "manufacturer": "АО Лотос",
                     "tech_characteristics": "220V",
+                    "supplier_status": "Производитель",
+                    "warranty": "36 мес.",
                 },
             ],
         )
@@ -96,12 +102,14 @@ class ExcelProcessorTests(unittest.TestCase):
         self.assertEqual(result.at[0, "Срок поставки"], "30 дней")
         self.assertEqual(result.at[0, ExcelProcessor.MANUFACTURER_COLUMN], "ООО Ромашка")
         self.assertEqual(result.at[0, ExcelProcessor.TECH_COLUMN], "ООО Ромашка")
+        self.assertEqual(result.at[0, "Статус поставщика"], "Посредник")
         self.assertEqual(result.at[0, "Условия гарантий качества"], "12 мес.")
         self.assertEqual(result.at[1, ExcelProcessor.PRICE_COLUMN], 200)
         self.assertEqual(result.at[1, "Сумма, RUB (без учета НДС)"], 200)
         self.assertEqual(result.at[1, "Срок поставки"], "10 дней")
         self.assertEqual(result.at[1, ExcelProcessor.MANUFACTURER_COLUMN], "АО Лотос")
         self.assertEqual(result.at[1, ExcelProcessor.TECH_COLUMN], "АО Лотос")
+        self.assertEqual(result.at[1, "Статус поставщика"], "Производитель")
 
     def test_fill_exported_excel_uses_real_name_not_alternative_name(self):
         path = self._create_excel(

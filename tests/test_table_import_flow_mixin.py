@@ -55,6 +55,9 @@ class _FakeKpTable:
     def setRowCount(self, value):
         self.row_counts.append(value)
 
+    def rowCount(self):
+        return self.row_counts[-1] if self.row_counts else 0
+
     def resizeColumnsToContents(self):
         self.resize_calls += 1
 
@@ -62,15 +65,20 @@ class _FakeKpTable:
 class _FakeTabWidget:
     def __init__(self):
         self.indices = []
+        self.widgets = []
 
     def setCurrentIndex(self, index):
         self.indices.append(index)
+
+    def setCurrentWidget(self, widget):
+        self.widgets.append(widget)
 
 
 class _FakeUi:
     def __init__(self):
         self.KpTable = _FakeKpTable()
         self.tabWidget = _FakeTabWidget()
+        self.tab = object()
 
 
 class _FakeProposalImportService:
@@ -131,10 +139,10 @@ class _FakeWindow(TableImportFlowMixin):
     def _clear_undo_history(self):
         self.clear_undo_calls += 1
 
-    def logisticCalculate(self):
+    def logisticCalculate(self, **_kwargs):
         self.logistic_calls += 1
 
-    def calculating(self):
+    def calculating(self, **_kwargs):
         self.calculating_calls += 1
 
     def _apply_table_filters(self):
@@ -225,7 +233,8 @@ class TableImportFlowMixinTests(unittest.TestCase):
         Config.isTableOpened = False
         Config.config["lastTable"] = ""
 
-        window.openTable(file="/tmp/input.csv")
+        with patch("app.ui.table_import_flow_mixin.QSignalBlocker", lambda _obj: SimpleNamespace()):
+            window.openTable(file="/tmp/input.csv")
 
         self.assertEqual(window.proposal_import_service.calls, ["/tmp/input.csv"])
         self.assertEqual(window.ui.KpTable.row_counts, [1])
@@ -242,11 +251,14 @@ class TableImportFlowMixinTests(unittest.TestCase):
         self.assertEqual(window.calculating_calls, 1)
         self.assertEqual(window.ui.KpTable.resize_calls, 1)
         self.assertEqual(window.apply_filters_calls, 1)
+        self.assertFalse(window._table_filter_all_visible)
+        self.assertIsNone(window._table_filter_row_count)
         self.assertEqual(window.save_calls, 1)
         self.assertFalse(window.mixedCurrencyWarningShown)
         self.assertEqual(Config.config["lastTable"], "/tmp/input.csv")
         self.assertTrue(Config.isTableOpened)
-        self.assertEqual(window.ui.tabWidget.indices, [1])
+        self.assertEqual(window.ui.tabWidget.widgets, [window.ui.tab])
+        self.assertEqual(window.ui.tabWidget.indices, [])
         self.assertEqual(len(window.set_item_calls), 8)
         warning.assert_called_once()
 

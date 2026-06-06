@@ -124,6 +124,33 @@ class AuthServiceTests(unittest.TestCase):
         ):
             service._wait_for_login_success(_Page())
 
+    def test_goto_with_fallback_retries_on_domcontentloaded_timeout(self):
+        service = AuthService(timeout_ms=30_000)
+
+        class _Page:
+            def __init__(self):
+                self.goto_calls = []
+                self.load_state_calls = []
+
+            def goto(self, url, **kwargs):
+                self.goto_calls.append((url, kwargs))
+                if len(self.goto_calls) == 1:
+                    raise TimeoutError("timeout")
+                return None
+
+            def wait_for_load_state(self, state, timeout=None):
+                self.load_state_calls.append((state, timeout))
+
+        page = _Page()
+
+        service._goto_with_fallback(page, "https://example.test", description="тест")
+
+        self.assertEqual(page.goto_calls[0][1]["wait_until"], "domcontentloaded")
+        self.assertEqual(page.goto_calls[0][1]["timeout"], 60_000)
+        self.assertEqual(page.goto_calls[1][1]["wait_until"], "commit")
+        self.assertEqual(page.goto_calls[1][1]["timeout"], 30_000)
+        self.assertEqual(page.load_state_calls, [("domcontentloaded", 10_000)])
+
 
 if __name__ == "__main__":
     unittest.main()

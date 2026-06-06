@@ -58,6 +58,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QGridLayout,
+    QSizePolicy,
 )
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QSignalBlocker, QTimer
@@ -91,7 +92,7 @@ from app.ui.table_item_mixin import TableItemMixin
 from app.ui.vat_mixin import VatMixin
 from app.ui.history_flow_mixin import HistoryFlowMixin
 from app.ui.maintenance_actions_mixin import MaintenanceActionsMixin
-from app.ui.table_autosize import resize_table_to_contents
+from app.ui.table_autosize import refresh_table_viewport, resize_table_to_contents
 from app.ui.ui_feedback_mixin import UiFeedbackMixin
 from app.ui.window_navigation_mixin import WindowNavigationMixin
 from ui_mixins.excel_viewer_mixin import ExcelViewerMixin
@@ -185,9 +186,11 @@ class mainWindow(
         "Позиций",
         "Сумма",
         "Файл",
+        "Ссылка",
     )
     HISTORY_META_COLUMN = 0
     HISTORY_FILE_COLUMN = 7
+    HISTORY_LINK_COLUMN = 8
 
     def __init__(self):
         super().__init__()
@@ -294,6 +297,7 @@ class mainWindow(
         )
         resize_table_to_contents(self.ui.KpTable)
         self._setup_table_quick_search()
+        self._setup_main_table_area_layout()
         self._setup_shortcuts()
         self._init_table_filters()
         self._setup_total_tab_table()
@@ -362,6 +366,28 @@ class mainWindow(
             if child_layout is not None:
                 self._clear_layout_items(child_layout)
 
+    def _setup_main_table_area_layout(self):
+        full_table_tab = getattr(self.ui, "tab", None)
+        table = getattr(self.ui, "KpTable", None)
+        table_layout = getattr(self.ui, "verticalLayout_2", None)
+
+        if full_table_tab is not None:
+            full_table_tab.setMaximumHeight(16777215)
+            full_table_tab.setSizePolicy(
+                QSizePolicy.Policy.Preferred,
+                QSizePolicy.Policy.Expanding,
+            )
+        if table is not None:
+            table.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
+        if table_layout is not None and table is not None:
+            for index in range(table_layout.count()):
+                item = table_layout.itemAt(index)
+                widget = item.widget() if item is not None else None
+                table_layout.setStretch(index, 1 if widget is table else 0)
+
     @staticmethod
     def _input_block(label_widget, *input_widgets):
         block = QVBoxLayout()
@@ -374,6 +400,8 @@ class mainWindow(
 
     def _setup_full_table_input_layout(self):
         self.ui.verticalLayout.setSpacing(0)
+        self.ui.verticalLayout.setStretch(0, 1)
+        self.ui.verticalLayout.setStretch(1, 0)
         root_layout = self.ui.funcButtons
         self._clear_layout_items(root_layout)
         root_layout.setContentsMargins(8, 0, 8, 8)
@@ -475,9 +503,37 @@ class mainWindow(
             widget.show()
 
     def _on_main_tab_changed(self, _index):
-        show_panel = self.ui.tabWidget.currentWidget() is self.ui.tab
+        current_widget = self.ui.tabWidget.currentWidget()
+        show_panel = current_widget is self.ui.tab
         for widget in self._full_table_panel_widgets:
             widget.setVisible(show_panel)
+        if show_panel:
+            self._restore_full_table_painting()
+            QTimer.singleShot(0, self._restore_full_table_painting)
+            QTimer.singleShot(80, self._restore_full_table_painting)
+        elif current_widget is self.ui.tab_3:
+            self._restore_total_table_painting()
+            QTimer.singleShot(0, self._restore_total_table_painting)
+            QTimer.singleShot(80, self._restore_total_table_painting)
+
+    def _restore_full_table_painting(self):
+        if self.ui.tabWidget.currentWidget() is not self.ui.tab:
+            return
+        self._restore_table_painting(getattr(self.ui, "KpTable", None))
+
+    def _restore_total_table_painting(self):
+        if self.ui.tabWidget.currentWidget() is not self.ui.tab_3:
+            return
+        self._restore_table_painting(getattr(self.ui, "tableWidget_3", None))
+
+    def _restore_table_painting(self, table):
+        if table is None:
+            return
+        table.setVisible(True)
+        horizontal_header = table.horizontalHeader()
+        if horizontal_header is not None:
+            horizontal_header.setVisible(True)
+        refresh_table_viewport(table, force_updates_enabled=True)
 
     def _apply_main_tab_visibility(self):
         tabs = getattr(getattr(self, "ui", None), "tabWidget", None)

@@ -1,5 +1,7 @@
 from docx import Document
 from docx.shared import Pt
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from decimal import Decimal, ROUND_HALF_UP
 from tools import DatabaseTools as Tools
 from tools import Tools as ExtraTools
@@ -16,6 +18,191 @@ import os
 import re
 from pathlib import Path
 
+
+FULL_PRODUCTS_TABLE_WIDTHS = (420, 1800, 1550, 560, 700, 1080, 1220, 1220, 1139)
+SHORT_PRODUCTS_TABLE_WIDTHS = (430, 2600, 1600, 600, 650, 1250, 1279, 1279)
+MULTIPAGE_TABLE_TOP_MARGIN_PT = 92
+
+
+def _length_to_dxa(length) -> int:
+    return int(round(int(length) / 635))
+
+
+def _section_text_width_dxa(section) -> int:
+    page_width = section.page_width
+    left_margin = section.left_margin
+    right_margin = section.right_margin
+    return max(1, _length_to_dxa(page_width - left_margin - right_margin))
+
+
+def _scaled_widths(base_widths: tuple[int, ...], target_width: int) -> list[int]:
+    if target_width <= 0:
+        return list(base_widths)
+
+    base_total = sum(base_widths)
+    if base_total <= 0:
+        return list(base_widths)
+
+    scaled = [max(1, int(round(width * target_width / base_total))) for width in base_widths]
+    delta = target_width - sum(scaled)
+    if delta:
+        widest_idx = max(range(len(scaled)), key=scaled.__getitem__)
+        scaled[widest_idx] = max(1, scaled[widest_idx] + delta)
+    return scaled
+
+
+def _set_or_append(parent, tag: str):
+    child = parent.find(qn(tag))
+    if child is None:
+        child = OxmlElement(tag)
+        parent.append(child)
+    return child
+
+
+def _cell_grid_span(tc) -> int:
+    tc_pr = tc.tcPr
+    if tc_pr is None:
+        return 1
+    grid_span = tc_pr.find(qn("w:gridSpan"))
+    if grid_span is None:
+        return 1
+    try:
+        return max(1, int(grid_span.get(qn("w:val"), "1")))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _set_tc_width(tc, width: int) -> None:
+    tc_pr = tc.get_or_add_tcPr()
+    tc_w = tc_pr.tcW
+    if tc_w is None:
+        tc_w = OxmlElement("w:tcW")
+        tc_pr.append(tc_w)
+    tc_w.set(qn("w:type"), "dxa")
+    tc_w.set(qn("w:w"), str(max(1, int(width))))
+
+
+def _set_table_grid_widths(table, widths: list[int]) -> None:
+    tbl = table._tbl
+    tbl_pr = tbl.tblPr
+    if tbl_pr is None:
+        tbl_pr = OxmlElement("w:tblPr")
+        tbl.insert(0, tbl_pr)
+
+    total_width = sum(widths)
+    tbl_w = _set_or_append(tbl_pr, "w:tblW")
+    tbl_w.set(qn("w:type"), "dxa")
+    tbl_w.set(qn("w:w"), str(total_width))
+
+    tbl_layout = _set_or_append(tbl_pr, "w:tblLayout")
+    tbl_layout.set(qn("w:type"), "fixed")
+
+    old_grid = tbl.tblGrid
+    if old_grid is not None:
+        tbl.remove(old_grid)
+    tbl_grid = OxmlElement("w:tblGrid")
+    for width in widths:
+        grid_col = OxmlElement("w:gridCol")
+        grid_col.set(qn("w:w"), str(width))
+        tbl_grid.append(grid_col)
+    insert_idx = 1 if tbl.tblPr is not None else 0
+    tbl.insert(insert_idx, tbl_grid)
+
+    for row in table.rows:
+        col_idx = 0
+        for tc in row._tr.tc_lst:
+            span = _cell_grid_span(tc)
+            width = sum(widths[col_idx: col_idx + span]) if col_idx < len(widths) else widths[-1]
+            _set_tc_width(tc, width)
+            col_idx += span
+
+
+def _clear_repeat_table_header(row) -> None:
+    tr_pr = row._tr.get_or_add_trPr()
+    tbl_header = tr_pr.find(qn("w:tblHeader"))
+    if tbl_header is not None:
+        tr_pr.remove(tbl_header)
+
+
+def _set_row_bold(row) -> None:
+    for cell in row.cells:
+        for paragraph in cell.paragraphs:
+            if not paragraph.runs:
+                paragraph.add_run("")
+            for run in paragraph.runs:
+                run.bold = True
+
+
+def _optimize_products_table_layout(table, section, *, include_days: bool, header_idx: int = 0) -> None:
+    base_widths = FULL_PRODUCTS_TABLE_WIDTHS if include_days else SHORT_PRODUCTS_TABLE_WIDTHS
+    widths = _scaled_widths(base_widths, _section_text_width_dxa(section))
+    table.autofit = False
+    _set_table_grid_widths(table, widths)
+    if 0 <= header_idx < len(table.rows):
+        _clear_repeat_table_header(table.rows[header_idx])
+
+
+def _parse_delivery_days(value) -> int:
+    match = re.search(r"-?\d+", str(value or ""))
+    if match is None:
+        return 0
+    try:
+        return int(match.group())
+    except ValueError:
+        return 0
+
+
+def _format_delivery_days_text(value) -> str:
+    return str(value or "").strip() if _parse_delivery_days(value) > 0 else ""
+
+
+def _format_delivery_period(values) -> str:
+    days_values = [_parse_delivery_days(value) for value in values]
+    positive_days = [days for days in days_values if days > 0]
+    if not positive_days:
+        return ""
+
+    min_days = min(positive_days)
+    max_days = max(positive_days)
+    if min_days == max_days:
+        return f"до {min_days}"
+    return f"от {min_days} до {max_days}"
+
+
+def _estimate_table_visual_rows(items: list[dict], *, include_days: bool) -> int:
+    if not items:
+        return 0
+
+    name_chars_per_line = 34 if include_days else 42
+    sku_chars_per_line = 24 if include_days else 28
+    days_chars_per_line = 11
+
+    visual_rows = 0
+    for item in items:
+        name_lines = max(1, math.ceil(len(str(item.get("name", "")).strip()) / name_chars_per_line))
+        sku_lines = max(1, math.ceil(len(str(item.get("sku", "")).strip()) / sku_chars_per_line))
+        days_lines = 1
+        if include_days:
+            days_lines = max(1, math.ceil(len(str(item.get("days", "")).strip()) / days_chars_per_line))
+        visual_rows += max(name_lines, sku_lines, days_lines)
+    return visual_rows
+
+
+def _table_spans_multiple_pages(items: list[dict], *, include_days: bool) -> bool:
+    capacity = 15 if include_days else 20
+    return _estimate_table_visual_rows(items, include_days=include_days) > capacity
+
+
+def _apply_top_indent_for_multipage_table(doc: Document, items: list[dict], *, include_days: bool) -> None:
+    if not _table_spans_multiple_pages(items, include_days=include_days):
+        return
+
+    for section in doc.sections:
+        current_margin = section.top_margin if section.top_margin is not None else Pt(0)
+        if current_margin < Pt(MULTIPAGE_TABLE_TOP_MARGIN_PT):
+            section.top_margin = Pt(MULTIPAGE_TABLE_TOP_MARGIN_PT)
+
+
 class createTextFile:
     def __init__(self, docxData):
         self.output_path = ""
@@ -23,7 +210,13 @@ class createTextFile:
         self.error_message = ""
 
         Tools.write_log(f"test feature: {Config.settings['testFeature']}")
-        Tools.write_log(f"Docx path to save: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
+        documents_dir = Path.home() / "Documents"
+        docx_output_dir = Tools.ensure_directory(
+            Config.config.get("pathToSaveCP"),
+            documents_dir,
+        )
+        Config.config["pathToSaveCP"] = str(docx_output_dir)
+        Tools.write_log(f"Docx path to save: {docx_output_dir}")
         Tools.write_log('INIT DOCX...')
 
         tableData = docxData[0][1]
@@ -40,7 +233,7 @@ class createTextFile:
 
         tool = ExtraTools()
 
-        minDays, maxDays = 10 ** 4, 0
+        delivery_days_values = []
 
         for i in tableData:
             currency1, amount1 = Tools.parsePrice(i[6].replace(',', '.'))
@@ -48,20 +241,12 @@ class createTextFile:
             sum1 += Decimal(amount1.replace(' ', '').replace(',', '.'))
             sum2 += Decimal(amount2.replace(' ', '').replace(',', '.'))
             symbCurrency = currency1
-            if int(i[8].split()[0]) > maxDays:
-                maxDays = int(i[8].split()[0])
-            if int(i[8].split()[0]) < minDays:
-                minDays = int(i[8].split()[0])
+            delivery_days_values.append(i[8])
 
         def _round_money(v: Decimal) -> Decimal:
             return Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-        if minDays <= 0 and maxDays > 0:
-            period = f'до {maxDays}'
-        elif minDays == maxDays:
-            period = f'до {minDays}'
-        else:
-            period = f'от {minDays} до {maxDays}'
+        period = _format_delivery_period(delivery_days_values)
 
         currency = Config.currency[symbCurrency]
 
@@ -72,7 +257,7 @@ class createTextFile:
 
         lot_number = str(extraData[0]).strip() if len(extraData) > 0 else ""
         today_date = datetime.now().strftime('%d_%m_%Y')
-        OUTPUT_PATH = f"{Tools.resourcePath(Config.config['pathToSaveCP'])}/КП_{lot_number}_{today_date}.docx"
+        OUTPUT_PATH = str(docx_output_dir / f"КП_{lot_number}_{today_date}.docx")
         self.output_path = OUTPUT_PATH
 
         VAT_RATE = Decimal("0.20")
@@ -156,7 +341,7 @@ class createTextFile:
                           "price": Decimal(Tools.parsePrice(item[5])[1].replace(',', '.').replace(' ', '')),
                           "sum_wo": Decimal(Tools.parsePrice(item[6])[1].replace(',', '.').replace(' ', '')),
                           "sum_w": Decimal(Tools.parsePrice(item[7])[1].replace(',', '.').replace(' ', '')),
-                          "days": item[8]})
+                          "days": _format_delivery_days_text(item[8])})
 
         ROW_TOKENS = {
             "<<I>>": None,
@@ -188,44 +373,6 @@ class createTextFile:
 
         def fmt_money_no_symbol(v) -> str:
             return _fmt_dec_comma(Decimal(str(v)))
-
-
-        def _estimate_table_visual_rows(items: list[dict]) -> int:
-            # Word page layout недоступен в python-docx, поэтому оцениваем высоту
-            # строки по самым "узким" колонкам (наименование/артикул/срок).
-            if not items:
-                return 0
-
-            name_chars_per_line = 28 if docxData[4] else 34
-            sku_chars_per_line = 22 if docxData[4] else 26
-            days_chars_per_line = 10
-
-            visual_rows = 0
-            for it in items:
-                name_lines = max(1, math.ceil(len(str(it.get("name", "")).strip()) / name_chars_per_line))
-                sku_lines = max(1, math.ceil(len(str(it.get("sku", "")).strip()) / sku_chars_per_line))
-                days_lines = 1
-                if docxData[4]:
-                    days_lines = max(1, math.ceil(len(str(it.get("days", "")).strip()) / days_chars_per_line))
-                visual_rows += max(name_lines, sku_lines, days_lines)
-            return visual_rows
-
-
-        def _table_spans_multiple_pages(items: list[dict]) -> bool:
-            # Эмпирическая емкость первой страницы с учетом текста до таблицы.
-            # Для "полного" шаблона (с колонкой срока) емкость ниже, т.к. колонки уже.
-            capacity = 14 if docxData[4] else 18
-            return _estimate_table_visual_rows(items) > capacity
-
-
-        def _apply_top_indent_for_multipage_table(doc: Document, items: list[dict]) -> None:
-            if not _table_spans_multiple_pages(items):
-                return
-
-            extra_top_indent_pt = 14
-            for sec in doc.sections:
-                current_margin = sec.top_margin if sec.top_margin is not None else Pt(0)
-                sec.top_margin = current_margin + Pt(extra_top_indent_pt)
 
 
         def _replace_in_paragraph_runs(paragraph, mapping: dict[str, str]) -> bool:
@@ -424,6 +571,7 @@ class createTextFile:
                         "<<SUM_WO>>": currency[0] + _fmt_dec_comma(sum_wo),
                         "<<SUM_W>>": currency[0] + _fmt_dec_comma(sum_w),
                         "<<DAYS>>": it["days"],
+                        "<<Days>>": it["days"],
                         "{{I}}": str(n),
                         "{{NAME}}": it["name"],
                         "{{SKU}}": it["sku"],
@@ -435,6 +583,7 @@ class createTextFile:
                     }
                     if docxData[4]:
                         row_map["{{DAYS}}"] = it["days"]
+                        row_map["{{Days}}"] = it["days"]
                     _fill_row_by_tokens(row, row_map)
                 else:
                     _fill_row_by_indices(row, n, it, sum_wo, sum_w)
@@ -459,13 +608,25 @@ class createTextFile:
                 _set_cell_text_keep_style(total_row.cells[6], currency[0] + _fmt_dec_comma(total_wo))
                 _set_cell_text_keep_style(total_row.cells[7], currency[0] + _fmt_dec_comma(total_w))
 
+            _set_row_bold(total_row)
+            _optimize_products_table_layout(
+                table,
+                doc.sections[0],
+                include_days=bool(docxData[4]),
+                header_idx=header_idx,
+            )
+
             vat_sum = (total_w - total_wo).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             return total_wo, vat_sum, total_w
 
 
         def main():
             doc = Document(TEMPLATE_PATH)
-            _apply_top_indent_for_multipage_table(doc, ITEMS)
+            _apply_top_indent_for_multipage_table(
+                doc,
+                ITEMS,
+                include_days=bool(docxData[4]),
+            )
 
             total_wo, vat_sum, total_w = fill_products_table(doc, ITEMS)
             mapping = dict(PLACEHOLDERS)
@@ -488,7 +649,7 @@ class createTextFile:
             else:
                 self.output_path = OUTPUT_PATH
             Tools.write_log("creating docx File...")
-            Tools.write_log(f"saving docx to: {Tools.resourcePath(Config.config['pathToSaveCP'])}")
+            Tools.write_log(f"saving docx to: {docx_output_dir}")
             self.success = True
 
         except Exception as e:
@@ -701,6 +862,7 @@ class createExcelFile:
             named_parameters = self._normalize_named_parameters(data.get("named_parameters", {}))
             if not named_parameters:
                 named_parameters = self._load_named_parameters()
+            docx_remote_url = str(data.get("docx_remote_url", "") or "").strip()
         else:
             table_rows = [list(row) for row in (data[0] if len(data) > 0 else [])]
             request_number = (
@@ -720,6 +882,7 @@ class createExcelFile:
             formula_expressions = {}
             logistic_formulas = []
             named_parameters = self._load_named_parameters()
+            docx_remote_url = ""
 
         if not table_rows:
             raise ValueError("Нет данных для экспорта Excel")
@@ -736,6 +899,7 @@ class createExcelFile:
             "logistic_formulas": logistic_formulas,
             "formula_expressions": formula_expressions,
             "named_parameters": named_parameters,
+            "docx_remote_url": docx_remote_url,
         }
 
     def _row_value(self, row_values, preferred_index, fallback_index=None):
@@ -868,12 +1032,87 @@ class createExcelFile:
         excel_expression = self.TOKEN_PATTERN.sub(_replace_token, formula_text)
         return f"={excel_expression}"
 
+    REMOTE_LINK_LABEL_COLUMN = "D"
+    REMOTE_LINK_URL_COLUMN = "E"
+
+    @classmethod
+    def _append_remote_link(
+        cls,
+        work_sheet,
+        row: int,
+        label: str,
+        remote_url: str,
+    ) -> None:
+        url = str(remote_url or "").strip()
+        if not url:
+            return
+        work_sheet[f"{cls.REMOTE_LINK_LABEL_COLUMN}{row}"] = label
+        work_sheet[f"{cls.REMOTE_LINK_URL_COLUMN}{row}"] = url
+        work_sheet[f"{cls.REMOTE_LINK_URL_COLUMN}{row}"].hyperlink = url
+        work_sheet[f"{cls.REMOTE_LINK_URL_COLUMN}{row}"].style = "Hyperlink"
+
+    @classmethod
+    def _append_docx_remote_link(cls, work_sheet, row: int, remote_url: str) -> None:
+        cls._append_remote_link(work_sheet, row, "Ссылка на КП DOCX", remote_url)
+
+    @classmethod
+    def _append_calculations_remote_link(cls, work_sheet, row: int, remote_url: str) -> None:
+        cls._append_remote_link(work_sheet, row, "Ссылка на расчеты", remote_url)
+
+    @classmethod
+    def append_calculations_remote_link_to_file(
+        cls,
+        file_path: str,
+        remote_url: str,
+    ) -> None:
+        workbook = load_workbook(file_path)
+        try:
+            worksheet = workbook.active
+            target_row = None
+            for row in range(1, worksheet.max_row + 1):
+                labels = (
+                    worksheet[f"{cls.REMOTE_LINK_LABEL_COLUMN}{row}"].value,
+                    worksheet[f"A{row}"].value,
+                )
+                if any(str(label or "").strip() == "Ссылка на КП DOCX" for label in labels):
+                    existing_url = ""
+                    for column in (cls.REMOTE_LINK_URL_COLUMN, "B"):
+                        value = str(worksheet[f"{column}{row}"].value or "").strip()
+                        if value:
+                            existing_url = value
+                            break
+                    cls._append_docx_remote_link(
+                        worksheet,
+                        row,
+                        existing_url,
+                    )
+                    worksheet[f"A{row}"] = None
+                    worksheet[f"B{row}"] = None
+                    target_row = row + 1
+                    break
+            if target_row is None:
+                target_row = worksheet.max_row + 1
+            cls._append_calculations_remote_link(
+                worksheet,
+                target_row,
+                remote_url,
+            )
+            workbook.save(file_path)
+        finally:
+            workbook.close()
+
     def _build_excel(self, payload):
         indent = int(Config.config["ExcelIndent"])
         request_number = payload["request_number"]
         today_date = datetime.now().strftime("%d_%m_%Y")
+        documents_dir = Path.home() / "Documents"
+        excel_output_dir = Tools.ensure_directory(
+            Config.config.get("pathToSaveExcel") or Config.config.get("pathToSaveCP"),
+            documents_dir,
+        )
+        Config.config["pathToSaveExcel"] = str(excel_output_dir)
         new_file_path = self.save_with_number(
-            f"{Tools.resourcePath(Config.config['pathToSaveExcel'])}/Расчеты_{request_number}_{today_date}_.xlsx"
+            str(excel_output_dir / f"Расчеты_{request_number}_{today_date}_.xlsx")
         )
         self.output_path = new_file_path
         shutil.copy2(Config.template_path, new_file_path)
@@ -981,6 +1220,14 @@ class createExcelFile:
         work_sheet[f"L{total_row + 3}"].number_format = self._currency_format(currency)
         work_sheet[f"L{total_row + 4}"] = f"=L{total_row + 3}/I{total_row}"
         work_sheet[f"L{total_row + 4}"].number_format = "0%"
+
+        docx_remote_url = str(payload.get("docx_remote_url", "") or "").strip()
+        if docx_remote_url:
+            self._append_docx_remote_link(
+                work_sheet,
+                total_row + 5,
+                docx_remote_url,
+            )
 
         border = Border(
             left=Side(style="thin"),

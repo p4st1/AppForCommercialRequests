@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-import json
+import time
 from typing import Any
 
 import requests
+
+DEFAULT_REQUEST_TIMEOUT = 30.0
+DEFAULT_REQUEST_RETRIES = 0
+DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
 
 FULL_GRAPHQL_QUERY = """
 query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
@@ -34,6 +38,41 @@ query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
 }
 """
 TRADE_DETAILS_ENDPOINT_PATTERN = "{base_url}/trades/{trade_id}"
+
+
+def _coerce_request_timeout(raw_timeout: Any) -> float | tuple[float, float]:
+    if isinstance(raw_timeout, (list, tuple)) and len(raw_timeout) == 2:
+        try:
+            connect_timeout = float(raw_timeout[0])
+            read_timeout = float(raw_timeout[1])
+        except (TypeError, ValueError):
+            return DEFAULT_REQUEST_TIMEOUT
+        return (max(0.1, connect_timeout), max(0.1, read_timeout))
+
+    try:
+        timeout = float(raw_timeout)
+    except (TypeError, ValueError):
+        return DEFAULT_REQUEST_TIMEOUT
+    return max(0.1, timeout)
+
+
+def _is_retryable_request_error(exc: Exception) -> bool:
+    request_exceptions = getattr(requests, "exceptions", None)
+    retry_types = []
+    for name in ("ReadTimeout", "Timeout", "ConnectionError"):
+        exc_type = getattr(request_exceptions, name, None)
+        if isinstance(exc_type, type):
+            retry_types.append(exc_type)
+    if retry_types and isinstance(exc, tuple(retry_types)):
+        return True
+
+    error_text = str(exc or "").casefold()
+    return (
+        "read timed out" in error_text
+        or "read timeout" in error_text
+        or "connection aborted" in error_text
+        or "connection reset" in error_text
+    )
 
 
 def _normalize_trade_json(raw_payload: Any) -> dict[str, Any]:
@@ -73,18 +112,24 @@ def get_trade_json(platform_client: Any, trade_id: int) -> dict[str, Any]:
         raise RuntimeError("У platform_client отсутствует session")
 
     headers = getattr(platform_client, "headers", None)
-    timeout = float(getattr(platform_client, "_timeout", 30.0) or 30.0)
+    timeout = _coerce_request_timeout(
+        getattr(platform_client, "_timeout", DEFAULT_REQUEST_TIMEOUT)
+    )
     base_url = str(getattr(platform_client, "BASE_URL", "https://etp.metal-it.ru"))
 
     endpoint = TRADE_DETAILS_ENDPOINT_PATTERN.format(
         base_url=base_url.rstrip("/"),
         trade_id=trade_id_int,
     )
-    response = session.get(
-        endpoint,
-        headers=headers,
-        timeout=timeout,
-    )
+    request_with_retries = getattr(platform_client, "_request_with_retries", None)
+    if callable(request_with_retries):
+        response = request_with_retries("get", endpoint, headers=headers, timeout=timeout)
+    else:
+        response = session.get(
+            endpoint,
+            headers=headers,
+            timeout=timeout,
+        )
     if response.status_code == 403:
         raise RuntimeError("Ошибка авторизации — обновите cookies")
     response.raise_for_status()
@@ -95,8 +140,6 @@ def get_trade_json(platform_client: Any, trade_id: int) -> dict[str, Any]:
 
 def parse_retrade_bids(trade_json: dict) -> list[dict]:
     normalized_trade = _normalize_trade_json(trade_json)
-    print("[DEBUG] trade_json keys:", list(normalized_trade.keys()))
-    print("[DEBUG] submissionStages:", len(normalized_trade.get("submissionStages", [])))
 
     stages = normalized_trade.get("submissionStages", [])
     if not isinstance(stages, list):
@@ -115,7 +158,6 @@ def parse_retrade_bids(trade_json: dict) -> list[dict]:
         lot_results = trade_result.get("lotResults", [])
         if not isinstance(lot_results, list):
             lot_results = []
-        print("[DEBUG] lotResults:", len(lot_results))
 
         for lot in lot_results:
             if not isinstance(lot, dict):
@@ -123,7 +165,6 @@ def parse_retrade_bids(trade_json: dict) -> list[dict]:
             bid_places = lot.get("bidPlaces", [])
             if not isinstance(bid_places, list):
                 bid_places = []
-            print("[DEBUG] bidPlaces:", len(bid_places))
 
             for place in bid_places:
                 if not isinstance(place, dict):
@@ -160,12 +201,7 @@ def parse_retrade_bids(trade_json: dict) -> list[dict]:
                 }
                 bids.append(parsed_bid)
                 seen_bid_ids.add(bid_id)
-                print("[DEBUG] found bid:", bid_id, bid.get("number"))
 
-    print(f"[DEBUG] найдено заявок: {len(bids)}")
-    if not bids:
-        payload_preview = json.dumps(normalized_trade, ensure_ascii=False, default=str)
-        print(payload_preview[:2000])
     return bids
 
 
@@ -189,15 +225,27 @@ class MetalITClient:
         self,
         cookies: dict[str, str],
         *,
-        timeout: float = 30.0,
+        timeout: float | tuple[float, float] = DEFAULT_REQUEST_TIMEOUT,
+        retries: int = DEFAULT_REQUEST_RETRIES,
+        retry_backoff_seconds: float = DEFAULT_RETRY_BACKOFF_SECONDS,
         session: requests.Session | None = None,
     ) -> None:
-        self._timeout = timeout
+        self._timeout = _coerce_request_timeout(timeout)
+        try:
+            self._request_retries = max(0, int(retries))
+        except (TypeError, ValueError):
+            self._request_retries = DEFAULT_REQUEST_RETRIES
+        try:
+            self._retry_backoff_seconds = max(0.0, float(retry_backoff_seconds))
+        except (TypeError, ValueError):
+            self._retry_backoff_seconds = DEFAULT_RETRY_BACKOFF_SECONDS
         self._session = session or requests.Session()
         self.session = self._session
         self.headers = self.session.headers
         self.url = self.ENDPOINT
         self.retrades: list[dict[str, Any]] = []
+        self.last_trades_total = 0
+        self.last_trades_loaded_all = False
         normalized_cookies = self._normalize_cookies(cookies)
         cookies_with_aliases = self._with_session_cookie_aliases(normalized_cookies)
         self.session.headers.update(
@@ -225,6 +273,27 @@ class MetalITClient:
                 path="/",
             )
             self.session.cookies.set(key_text, value_text)
+
+    def _request_with_retries(self, method: str, url: str, **kwargs: Any) -> Any:
+        request_method = getattr(self.session, method)
+        kwargs.setdefault("timeout", self._timeout)
+        attempts_count = self._request_retries + 1
+        last_error: Exception | None = None
+
+        for attempt_index in range(attempts_count):
+            try:
+                return request_method(url, **kwargs)
+            except Exception as exc:
+                last_error = exc
+                is_last_attempt = attempt_index >= attempts_count - 1
+                if is_last_attempt or not _is_retryable_request_error(exc):
+                    raise
+                if self._retry_backoff_seconds > 0:
+                    time.sleep(self._retry_backoff_seconds * (attempt_index + 1))
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("HTTP-запрос не был выполнен")
 
     @staticmethod
     def _normalize_cookies(raw: Any) -> dict[str, str]:
@@ -292,16 +361,12 @@ class MetalITClient:
             ),
             "query": FULL_GRAPHQL_QUERY,
         }
-        print("COOKIES:", self.session.cookies.get_dict())
-        print("HEADERS:", dict(self.session.headers))
-        response = self.session.post(
+        response = self._request_with_retries(
+            "post",
             self.url,
             json=payload,
             headers=self.headers,
-            timeout=self._timeout,
         )
-        print("STATUS:", response.status_code)
-        print("RESPONSE:", response.text[:500])
         response.raise_for_status()
         data = response.json()
         errors = data.get("errors")
@@ -336,7 +401,6 @@ class MetalITClient:
             raise RuntimeError("Некорректный формат items в ответе tradeSearch")
 
         total = self._normalize_total(data.get("total", 0))
-        print(f"Загружено заявок: {len(items)} (skip={skip}, limit={limit}, total={total})")
         return {
             "items": items,
             "total": total,
@@ -358,30 +422,40 @@ class MetalITClient:
                 return False
             return False
 
-    def get_all_trades(self, limit: int = 20, max_items: int = 100) -> list[dict[str, Any]]:
+    def get_all_trades(self, limit: int = 100, max_items: int = 100) -> list[dict[str, Any]]:
         if limit <= 0:
             raise ValueError("limit must be greater than 0")
+        if max_items < 0:
+            max_items = 100
 
         all_items: list[dict[str, Any]] = []
         skip = 0
         total = 0
+        limited = max_items > 0
+        self.last_trades_total = 0
+        self.last_trades_loaded_all = False
 
         while True:
             page = self.get_trades(limit=limit, skip=skip)
             items = page.get("items", [])
             total = self._normalize_total(page.get("total", total))
+            self.last_trades_total = total
             if not items:
+                self.last_trades_loaded_all = True
                 break
             all_items.extend(items)
-            if len(all_items) >= max_items:
-                return all_items[:max_items]
-            if total > 0 and skip + limit >= total:
+            if limited and len(all_items) >= max_items:
+                result = all_items[:max_items]
+                self.last_trades_loaded_all = bool(total > 0 and len(result) >= total)
+                return result
+            if total > 0 and len(all_items) >= total:
+                self.last_trades_loaded_all = True
                 break
             if len(items) < limit and total <= 0:
+                self.last_trades_loaded_all = True
                 break
             skip += limit
 
-        print(f"Загружено заявок всего: {len(all_items)}")
         return all_items
 
     def load_retrades(self, limit: int = 50, skip: int = 0) -> list[dict[str, Any]]:
@@ -404,15 +478,14 @@ class MetalITClient:
                 ),
                 "query": FULL_GRAPHQL_QUERY,
             }
-            response = self.session.post(
+            response = self._request_with_retries(
+                "post",
                 self.url,
                 json=payload,
                 headers=self.headers,
-                timeout=self._timeout,
             )
             if response.status_code == 403:
                 message = "Ошибка авторизации — обновите cookies"
-                print(message)
                 raise RuntimeError(message)
 
             response.raise_for_status()
@@ -459,7 +532,6 @@ class MetalITClient:
                         "currency": trade.get("currency"),
                     }
                 )
-                print("Loaded retrade:", trade.get("id"), trade.get("registeredNumber"))
 
             if total > 0 and current_skip + limit >= total:
                 break
@@ -470,18 +542,7 @@ class MetalITClient:
             current_skip += limit
 
         self.retrades = retrades
-        print(f"Загружено переторжек: {len(retrades)}")
         return retrades
 
     def get_retrading_offers(self, trade_id: int) -> list[dict[str, Any]]:
         return get_retrading_offers(self, trade_id)
-
-
-if __name__ == "__main__":
-    cookies = {
-        "JSESSIONID": "46052C544D1BE9D019A2EE099B42C01F",
-    }
-
-    client = MetalITClient(cookies)
-    trades = client.get_all_trades()
-    print(len(trades))

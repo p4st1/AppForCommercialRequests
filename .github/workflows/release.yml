@@ -11,6 +11,7 @@ permissions:
 
 env:
   APP_NAME: MyApp
+  PYTHON_VERSION: "3.11"
 
 jobs:
   verify:
@@ -24,7 +25,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
       - name: Install test deps
@@ -32,7 +33,7 @@ jobs:
         run: |
           set -eux
           python -m pip install -U pip
-          python -m pip install pandas openpyxl python-docx requests packaging playwright
+          pip install -r requirements.txt
 
       - name: Run tests
         shell: bash
@@ -43,6 +44,12 @@ jobs:
   build:
     name: Build (${{ matrix.name }})
     needs: verify
+    env:
+      MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
     strategy:
       fail-fast: false
       matrix:
@@ -65,7 +72,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
       - name: Sanity check files
@@ -75,6 +82,7 @@ jobs:
           test -f run.py
           test -f main.py
           test -f requirements.txt
+          test -f retrade.ui
           test -d utilities
           test -d database
           test -d templates
@@ -88,6 +96,7 @@ jobs:
           test -f assets/app.jpg
           test -f assets/print.png
           test -f assets/sign.png
+          test -f assets/updates.txt
 
       - name: Install deps
         shell: bash
@@ -96,6 +105,51 @@ jobs:
           python -m pip install -U pip
           pip install -r requirements.txt
           pip install -U pyinstaller PySide6 python-docx
+
+      - name: Install Playwright Chromium (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -eux
+
+          PW_SITE_BROWSERS="$(python -c "from pathlib import Path; import playwright; print(Path(playwright.__file__).resolve().parent / 'driver' / 'package' / '.local-browsers')")"
+          python -c "from pathlib import Path; import shutil, sys; shutil.rmtree(Path(sys.argv[1]), ignore_errors=True)" "$PW_SITE_BROWSERS"
+
+          PW_BROWSERS="$(python -c "from pathlib import Path; import os; print(Path(os.environ['RUNNER_TEMP']) / 'playwright-browsers')")"
+          python -c "from pathlib import Path; import shutil, sys; shutil.rmtree(Path(sys.argv[1]), ignore_errors=True); Path(sys.argv[1]).mkdir(parents=True, exist_ok=True)" "$PW_BROWSERS"
+          PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS" python -m playwright install --no-shell chromium
+          python -c "from pathlib import Path; import shutil, sys; root=Path(sys.argv[1]); [shutil.rmtree(path, ignore_errors=True) for path in root.glob('ffmpeg-*')]" "$PW_BROWSERS"
+
+          echo "PW_BROWSERS=$PW_BROWSERS" >> "$GITHUB_ENV"
+          test -d "$PW_BROWSERS"
+          test ! -d "$PW_SITE_BROWSERS"
+          test -n "$(find "$PW_BROWSERS" -path "*/chrome.exe" -type f -print -quit)"
+          test -z "$(find "$PW_BROWSERS" -path "*/chromium_headless_shell-*" -print -quit)"
+          test -z "$(find "$PW_BROWSERS" -path "*/ffmpeg-*" -print -quit)"
+          python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); [print(path) for _, path in zip(range(20), (p for p in root.rglob('*') if p.is_file()))]" "$PW_BROWSERS"
+          python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); print('Playwright browsers size MB:', round(sum(p.stat().st_size for p in root.rglob('*') if p.is_file()) / 1024 / 1024, 1))" "$PW_BROWSERS"
+
+      - name: Install Playwright Chromium (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -eux
+          PW_SITE_BROWSERS="$(python -c "from pathlib import Path; import playwright; print(Path(playwright.__file__).resolve().parent / 'driver' / 'package' / '.local-browsers')")"
+          rm -rf "$PW_SITE_BROWSERS"
+
+          PW_BROWSERS="$RUNNER_TEMP/playwright-browsers"
+          rm -rf "$PW_BROWSERS"
+          mkdir -p "$PW_BROWSERS"
+          PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS" python -m playwright install --no-shell chromium
+          rm -rf "$PW_BROWSERS"/ffmpeg-*
+
+          echo "PW_BROWSERS=$PW_BROWSERS" >> "$GITHUB_ENV"
+          test -d "$PW_BROWSERS"
+          test ! -d "$PW_SITE_BROWSERS"
+          test -z "$(find "$PW_BROWSERS" -path "*/chromium_headless_shell-*" -print -quit)"
+          test -z "$(find "$PW_BROWSERS" -path "*/ffmpeg-*" -print -quit)"
+          python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); [print(path) for _, path in zip(range(20), (p for p in root.rglob('*') if p.is_file()))]" "$PW_BROWSERS"
+          python -c "from pathlib import Path; import sys; root=Path(sys.argv[1]); print('Playwright browsers size MB:', round(sum(p.stat().st_size for p in root.rglob('*') if p.is_file()) / 1024 / 1024, 1))" "$PW_BROWSERS"
 
       - name: Verify import main
         shell: bash
@@ -110,7 +164,30 @@ jobs:
           DOCX_TPL="$(python -c "import docx, os; print(os.path.join(os.path.dirname(docx.__file__), 'templates'))")"
           echo "DOCX_TPL=$DOCX_TPL" >> $GITHUB_ENV
           test -d "$DOCX_TPL"
-          ls -la "$DOCX_TPL" | head -n 20
+          python -c "from pathlib import Path; import sys; [print(path.name) for _, path in zip(range(20), Path(sys.argv[1]).iterdir())]" "$DOCX_TPL"
+
+      - name: Import Apple signing certificate (macOS)
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE_BASE64 != ''
+        shell: bash
+        run: |
+          set -eux
+          CERT_PATH="$RUNNER_TEMP/developer_id_application.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+
+          printf '%s' "$MACOS_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
+          printf '%s\n' "$IDENTITIES"
+          CERT_ID="$(printf '%s\n' "$IDENTITIES" | awk -F '"' '/Developer ID Application:/ { print $2; exit }')"
+          test -n "$CERT_ID"
+          echo "MACOS_CODESIGN_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
 
       # ---------------- WINDOWS ----------------
 
@@ -125,14 +202,36 @@ jobs:
             --add-data=utilities:utilities `
             --add-data=database:database `
             --add-data=retrade.ui:. `
+            --add-data="$env:PW_BROWSERS;playwright/driver/package/.local-browsers" `
+            --add-data=assets/app.ico:assets `
             --add-data=assets/app.jpg:assets `
             --add-data=assets/print.png:assets `
             --add-data=assets/sign.png:assets `
+            --add-data=assets/updates.txt:assets `
             --add-data=templates/template.xlsx:templates `
             --add-data=templates/template.docx:templates `
             --add-data=templates/template_short.docx:templates `
             --add-data=templates/logs.log:templates `
             run.py
+
+          if (-not (Test-Path "dist\$env:APP_NAME\_internal\retrade.ui") -and -not (Test-Path "dist\$env:APP_NAME\retrade.ui")) {
+            throw "Missing bundled retrade.ui"
+          }
+          $pwRoot = "dist\$env:APP_NAME\_internal\playwright\driver\package\.local-browsers"
+          if (-not (Test-Path $pwRoot)) {
+            $pwRoot = "dist\$env:APP_NAME\playwright\driver\package\.local-browsers"
+          }
+          if (-not (Test-Path $pwRoot)) {
+            throw "Missing bundled Playwright browsers"
+          }
+          $chromeExe = Get-ChildItem -Path $pwRoot -Recurse -Filter "chrome.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -eq $chromeExe) {
+            throw "Missing bundled Playwright Chromium executable"
+          }
+          & "dist\$env:APP_NAME\$env:APP_NAME.exe" --smoke-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Application smoke test failed"
+          }
 
       - name: Fix python-docx templates (Windows)
         if: runner.os == 'Windows'
@@ -140,16 +239,13 @@ jobs:
         run: |
           $root = "dist\$env:APP_NAME"
 
-          # 1) Место рядом с exe
           $dstTpl1 = Join-Path $root "docx\templates"
           Remove-Item -Recurse -Force $dstTpl1 -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $dstTpl1 | Out-Null
           Copy-Item -Recurse -Force "$env:DOCX_TPL\*" $dstTpl1
 
-          # чтобы docx/parts/../templates резолвилось
           New-Item -ItemType Directory -Force -Path (Join-Path $root "docx\parts") | Out-Null
 
-          # 2) Место внутри _internal (часто актуально для onefolder)
           $dstTpl2 = Join-Path $root "_internal\docx\templates"
           Remove-Item -Recurse -Force $dstTpl2 -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $dstTpl2 | Out-Null
@@ -195,9 +291,12 @@ jobs:
             --hidden-import=main \
             --target-arch "${TARCH}" \
             --icon assets/app.icns \
+            --add-data=assets/app.ico:assets \
+            --add-data=assets/app.icns:assets \
             --add-data=assets/app.jpg:assets \
             --add-data=assets/sign.png:assets \
             --add-data=assets/print.png:assets \
+            --add-data=assets/updates.txt:assets \
             --add-data=utilities:utilities \
             --add-data=database:database \
             --add-data=retrade.ui:. \
@@ -207,8 +306,17 @@ jobs:
             --add-data=templates/logs.log:templates \
             run.py
 
-          APP_PATH="$(find dist -maxdepth 4 -name '*.app' | head -n 1)"
+          APP_PATH="$(find dist -maxdepth 4 -name '*.app' -print -quit)"
           test -n "$APP_PATH"
+          test -f "$APP_PATH/Contents/Resources/retrade.ui"
+
+          PW_DST="$APP_PATH/Contents/Resources/playwright/driver/package/.local-browsers"
+          rm -rf "$PW_DST"
+          mkdir -p "$(dirname "$PW_DST")"
+          cp -R "$PW_BROWSERS" "$PW_DST"
+
+          test -d "$APP_PATH/Contents/Resources/playwright/driver/package/.local-browsers"
+          test -n "$(find "$APP_PATH/Contents/Resources/playwright/driver/package/.local-browsers" -path "*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" -type f -print -quit)"
 
           DOCX_BASE="$APP_PATH/Contents/Frameworks/docx"
           mkdir -p "$DOCX_BASE/templates"
@@ -218,7 +326,32 @@ jobs:
 
           test -d "$DOCX_BASE/parts"
           test -f "$DOCX_BASE/templates/default-header.xml"
-          ls -la "$DOCX_BASE/templates" | head -n 20
+          python -c "from pathlib import Path; import sys; [print(path.name) for _, path in zip(range(20), Path(sys.argv[1]).joinpath('templates').iterdir())]" "$DOCX_BASE"
+
+          xattr -cr "$APP_PATH"
+          if [ -n "${MACOS_CODESIGN_IDENTITY:-}" ]; then
+            : "${APPLE_ID:?Missing APPLE_ID secret}"
+            : "${APPLE_TEAM_ID:?Missing APPLE_TEAM_ID secret}"
+            : "${APPLE_APP_SPECIFIC_PASSWORD:?Missing APPLE_APP_SPECIFIC_PASSWORD secret}"
+
+            codesign --force --deep --options runtime --timestamp --sign "$MACOS_CODESIGN_IDENTITY" "$APP_PATH"
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+            NOTARY_ZIP="$RUNNER_TEMP/${APP_NAME}-notary-${TARCH}.zip"
+            ditto -c -k --keepParent "$APP_PATH" "$NOTARY_ZIP"
+            xcrun notarytool submit "$NOTARY_ZIP" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --wait
+            xcrun stapler staple "$APP_PATH"
+            xcrun stapler validate "$APP_PATH"
+            spctl --assess --type execute --verbose=4 "$APP_PATH"
+          else
+            codesign --force --deep --sign - "$APP_PATH"
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          fi
+
+          "$APP_PATH/Contents/MacOS/${APP_NAME}" --smoke-test
 
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
 

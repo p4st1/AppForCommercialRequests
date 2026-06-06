@@ -12,7 +12,7 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PySide6.QtCore import QSettings, QThread, Signal, QTimer, Qt
 from PySide6.QtGui import QAction, QColor
-from PySide6.QtUiTools import loadUiType
+from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -38,6 +38,7 @@ from retrade.retrade_service import RetradeService
 from services.excel_processor import ExcelProcessor, RowCountMismatchError
 from services.excel_recalc import force_excel_recalc
 from services.trade_exporter import TradeExporter
+from submission.submission_service import SubmissionService
 from tools import DatabaseTools as Tool
 
 
@@ -53,6 +54,7 @@ class ExportTradeWorker(QThread):
         bid_id: int | None = None,
         is_retrade: bool = False,
         is_submission_acceptance: bool = False,
+        submission_search_text: str = "",
         download_path: str,
         parent: Any = None,
     ) -> None:
@@ -62,6 +64,7 @@ class ExportTradeWorker(QThread):
         self._bid_id = int(bid_id) if bid_id is not None else None
         self._is_retrade = bool(is_retrade)
         self._is_submission_acceptance = bool(is_submission_acceptance)
+        self._submission_search_text = str(submission_search_text or "")
         if self._trade_id is None and self._lot_id is None:
             raise ValueError("Не указан trade_id или lot_id для экспорта")
         self._download_path = str(download_path)
@@ -80,6 +83,8 @@ class ExportTradeWorker(QThread):
                 saved_path = exporter.export_submission_lot_data(
                     lot_id=self._lot_id,
                     download_path=self._download_path,
+                    trade_id=self._trade_id,
+                    trade_search_text=self._submission_search_text,
                 )
             elif self._lot_id is not None:
                 saved_path = exporter.export_lot_data(
@@ -165,8 +170,13 @@ class ExportMixin:
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
         self.current_retrade_excel_path = ""
+        self.current_retrade = ""
+        self.current_retrade_context: dict[str, Any] = {}
         self.current_retrade_bid_id: int | None = None
+        self.current_retrade_trade_id: int | None = None
+        self.current_retrade_lot_id: int | None = None
         self._pending_retrade_bid_id: int | None = None
+        self._pending_retrade_context: dict[str, Any] = {}
         self._active_export_workflow = ""
         self._pending_submission_export_metadata: dict[str, str] = {}
         self.current_submission_acceptance_excel_path = ""
@@ -452,7 +462,7 @@ QTableWidget::indicator {{
         if callable(resource_path):
             candidate_paths.append(Path(resource_path(self.RETRADE_UI_FILE)))
         candidate_paths.append(Path(Tool.resourcePath(self.RETRADE_UI_FILE)))
-        candidate_paths.append(Path(__file__).resolve().parents[1] / self.RETRADE_UI_FILE)
+        candidate_paths.append(Tool.app_dir() / self.RETRADE_UI_FILE)
 
         for candidate_path in candidate_paths:
             if candidate_path.exists():
@@ -461,11 +471,23 @@ QTableWidget::indicator {{
         searched_paths = ", ".join(str(path) for path in candidate_paths)
         raise RuntimeError(f"Не найден {self.RETRADE_UI_FILE}; проверенные пути: {searched_paths}")
 
-    def _copy_retrade_ui_attrs(self, retrade_form: Any, attr_names: tuple[str, ...]) -> None:
+    def _copy_retrade_ui_attrs(self, retrade_tab: QWidget, attr_names: tuple[str, ...]) -> None:
         for attr_name in attr_names:
-            widget = getattr(retrade_form, attr_name)
+            widget = retrade_tab.findChild(QWidget, attr_name)
+            if widget is None:
+                widget = retrade_tab.findChild(QHBoxLayout, attr_name)
+            if widget is None:
+                raise RuntimeError(f"В {self.RETRADE_UI_FILE} не найден элемент {attr_name}")
             setattr(self, attr_name, widget)
             setattr(self.ui, attr_name, widget)
+
+    def _load_retrade_ui(self, tabs: QTabWidget) -> QWidget:
+        ui_path = self._get_retrade_ui_path()
+        loader = QUiLoader()
+        retrade_tab = loader.load(str(ui_path), tabs)
+        if not isinstance(retrade_tab, QWidget):
+            raise RuntimeError(f"Не удалось загрузить интерфейс {ui_path}")
+        return retrade_tab
 
     def _ensure_retrade_tab(self) -> None:
         if hasattr(self, "table_retrade") and hasattr(self, "retrade_tab"):
@@ -477,13 +499,10 @@ QTableWidget::indicator {{
         if not isinstance(tabs, QTabWidget):
             raise RuntimeError("Не найден tabWidget для вкладки Переторжка")
 
-        form_class, base_class = loadUiType(str(self._get_retrade_ui_path()))
-        retrade_tab = base_class(tabs)
-        retrade_form = form_class()
-        retrade_form.setupUi(retrade_tab)
+        retrade_tab = self._load_retrade_ui(tabs)
 
         self._copy_retrade_ui_attrs(
-            retrade_form,
+            retrade_tab,
             (
                 "table_retrade",
                 "retrade_inner_tabs",
@@ -513,8 +532,12 @@ QTableWidget::indicator {{
         self.retradingTable = self.retrade_table
         self.calculationsTable = self.retrade_calculations_table
         self.retrade_calculations_container_layout = (
-            retrade_form.retradeCalculationsContainerLayout
+            self.retrade_calculations_container.layout()
         )
+        if self.retrade_calculations_container_layout is None:
+            raise RuntimeError(
+                f"В {self.RETRADE_UI_FILE} не найден layout контейнера расчетов"
+            )
         self.total_without_vat_label = self.retrade_total_without_vat_label
         self.price_total_label = self.retrade_price_total_label
         self.ui.retradeTab = retrade_tab
@@ -1304,10 +1327,8 @@ QTableWidget::indicator {{
                 except Exception:
                     pass
 
-        status_bar_getter = getattr(self, "statusBar", None)
-        status_bar = status_bar_getter() if callable(status_bar_getter) else None
-        if show_success_status and status_bar is not None:
-            status_bar.showMessage("Файл сохранён", 3_000)
+        if show_success_status:
+            self._show_export_status("Файл сохранён", 3_000)
         return True
 
     def on_save_clicked(self) -> None:
@@ -1329,7 +1350,7 @@ QTableWidget::indicator {{
             self._on_retrade_import_error(str(exc))
 
     def _get_retrade_bid_id_for_import(self) -> int:
-        stored_bid_id = getattr(self, "current_retrade_bid_id", None)
+        stored_bid_id = self._get_current_retrade_bid_id()
         if stored_bid_id is not None:
             try:
                 return self._parse_positive_bid_id(stored_bid_id)
@@ -1337,6 +1358,28 @@ QTableWidget::indicator {{
                 Tool.write_log(f"Некорректный сохранённый bid_id переторжки: {stored_bid_id}")
 
         return self._get_selected_retrade_bid_id_for_export()
+
+    def _get_current_retrade_bid_id(self) -> int | None:
+        context = getattr(self, "current_retrade_context", {})
+        if isinstance(context, dict):
+            raw_bid_id = context.get("bid_id")
+            if raw_bid_id is not None:
+                try:
+                    return self._parse_positive_bid_id(raw_bid_id)
+                except Exception:
+                    Tool.write_log(
+                        f"Некорректный bid_id текущей переторжки: {raw_bid_id}"
+                    )
+
+        stored_bid_id = getattr(self, "current_retrade_bid_id", None)
+        if stored_bid_id is not None:
+            try:
+                return self._parse_positive_bid_id(stored_bid_id)
+            except Exception:
+                Tool.write_log(
+                    f"Некорректный сохранённый bid_id переторжки: {stored_bid_id}"
+                )
+        return None
 
     def _start_retrade_import_worker(self, *, bid_id: int, file_path: str) -> None:
         worker = getattr(self, "_retrade_import_worker", None)
@@ -1361,10 +1404,8 @@ QTableWidget::indicator {{
             import_button.setEnabled(not is_loading)
             import_button.setText("Импорт..." if is_loading else "Импорт")
 
-        status_bar_getter = getattr(self, "statusBar", None)
-        status_bar = status_bar_getter() if callable(status_bar_getter) else None
-        if status_bar is not None and is_loading:
-            status_bar.showMessage("Импорт таблицы...")
+        if is_loading:
+            self._show_export_status("Импорт таблицы...")
 
     def _finish_retrade_import(self, status_message: str) -> None:
         self._set_retrade_import_loading_state(is_loading=False)
@@ -1374,10 +1415,7 @@ QTableWidget::indicator {{
         if callable(delete_later):
             delete_later()
 
-        status_bar_getter = getattr(self, "statusBar", None)
-        status_bar = status_bar_getter() if callable(status_bar_getter) else None
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 5_000)
+        self._show_export_status(status_message, 5_000)
 
     def _on_retrade_import_finished(self, file_path: str) -> None:
         Tool.write_log(f"Импорт переторжки завершен: {file_path}")
@@ -1415,7 +1453,7 @@ QTableWidget::indicator {{
             return
 
         self.current_retrade_excel_path = file_path
-        self.current_retrade_bid_id = None
+        self._clear_current_retrade_context()
         self._activate_retrade_tab()
         self._log_ui(f"Excel спецификации загружен: {file_path}")
         status_bar_getter = getattr(self, "statusBar", None)
@@ -2007,7 +2045,7 @@ QTableWidget::indicator {{
         if sheet_names:
             main_sheet = sheet_names[0]
             if main_sheet != "Рассчеты":
-                print("⚠️ Первый лист должен называться 'Рассчеты'")
+                Tool.write_log("Первый лист должен называться 'Рассчеты'")
 
         selected_sheet_name = ""
         sheets_list.blockSignals(True)
@@ -2051,6 +2089,43 @@ QTableWidget::indicator {{
             data.append(parsed_row)
         return data
 
+    @classmethod
+    def _worksheet_to_visible_retrade_rows(
+        cls,
+        worksheet: Any,
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[tuple[int, list[dict[str, Any]]]],
+        int,
+    ]:
+        visible_rows: list[tuple[int, list[dict[str, Any]]]] = []
+        for row_number, row in enumerate(
+            worksheet.iter_rows(values_only=False),
+            start=1,
+        ):
+            parsed_row: list[dict[str, Any]] = []
+            for cell in row:
+                value = cell.value
+                parsed_row.append(
+                    {
+                        "value": value,
+                        "currency": cls._detect_currency(value, cell.number_format),
+                    }
+                )
+            if not cls._is_retrade_calculations_row_present(parsed_row):
+                continue
+            visible_rows.append((row_number, parsed_row))
+
+        if not visible_rows:
+            return [], [], 0
+
+        max_col = max(
+            (len(row_cells) for _row_number, row_cells in visible_rows),
+            default=0,
+        )
+        header_cells = visible_rows[0][1]
+        return header_cells, visible_rows[1:], max_col
+
     @staticmethod
     def _warn_if_retrade_calculations_formulas_unresolved(
         file_path: str,
@@ -2089,7 +2164,6 @@ QTableWidget::indicator {{
                     break
 
             if has_unresolved_formula:
-                print(warning_message)
                 Tool.write_log(warning_message)
         finally:
             try:
@@ -2124,14 +2198,30 @@ QTableWidget::indicator {{
         try:
             table.clear()
 
-            max_row = sheet.max_row
-            max_col = sheet.max_column
+            header_cells, visible_data_rows, max_col = (
+                self._worksheet_to_visible_retrade_rows(sheet)
+            )
+            self._retrade_calculations_row_numbers = [
+                excel_row for excel_row, _row_cells in visible_data_rows
+            ]
 
             table.setColumnCount(max_col)
+            table.setRowCount(len(visible_data_rows))
+            if max_col == 0:
+                return
 
             headers: list[str] = []
-            for col in range(1, max_col + 1):
-                value = sheet.cell(row=1, column=col).value
+            for col_index in range(max_col):
+                cell_payload = (
+                    header_cells[col_index]
+                    if col_index < len(header_cells)
+                    else {"value": None, "currency": None}
+                )
+                value = (
+                    cell_payload.get("value")
+                    if isinstance(cell_payload, dict)
+                    else cell_payload
+                )
                 headers.append("" if value is None else str(value))
             table.setHorizontalHeaderLabels(headers)
 
@@ -2148,14 +2238,16 @@ QTableWidget::indicator {{
                 if "рейтинг" in header_text:
                     rating_columns.add(index)
 
-            data_row_count = max(max_row - 1, 0)
-            table.setRowCount(data_row_count)
-
-            for row in range(2, max_row + 1):
-                for col in range(1, max_col + 1):
-                    cell = sheet.cell(row=row, column=col)
-                    value = cell.value
-                    col_index = col - 1
+            for row_index, (excel_row, row_cells) in enumerate(visible_data_rows):
+                for col_index in range(max_col):
+                    cell_payload = (
+                        dict(row_cells[col_index])
+                        if col_index < len(row_cells)
+                        and isinstance(row_cells[col_index], dict)
+                        else {"value": None, "currency": None}
+                    )
+                    value = cell_payload.get("value")
+                    cell_payload["excel_row"] = excel_row
                     text = self._format_calculations_display_value(
                         value,
                         col_index=col_index,
@@ -2171,7 +2263,8 @@ QTableWidget::indicator {{
                                 | Qt.AlignmentFlag.AlignVCenter
                             )
                         )
-                    table.setItem(row - 2, col - 1, item)
+                    item.setData(Qt.ItemDataRole.UserRole, cell_payload)
+                    table.setItem(row_index, col_index, item)
         finally:
             table.setUpdatesEnabled(True)
 
@@ -2338,6 +2431,17 @@ QTableWidget::indicator {{
         return f"{float(value):.12g}"
 
     @classmethod
+    def _worksheet_header_row_index(cls, worksheet: Any) -> int | None:
+        for row_number, row in enumerate(
+            worksheet.iter_rows(values_only=False),
+            start=1,
+        ):
+            row_data = [{"value": cell.value, "currency": None} for cell in row]
+            if cls._is_retrade_calculations_row_present(row_data):
+                return row_number
+        return None
+
+    @classmethod
     def _find_worksheet_column_by_header(
         cls,
         worksheet: Any,
@@ -2346,7 +2450,11 @@ QTableWidget::indicator {{
         if worksheet.max_row < 1:
             return None
 
-        for header_cell in worksheet[1]:
+        header_row_index = cls._worksheet_header_row_index(worksheet)
+        if header_row_index is None:
+            return None
+
+        for header_cell in worksheet[header_row_index]:
             header_text = cls._normalize_table_header(header_cell.value)
             if predicate(header_text):
                 return int(header_cell.column)
@@ -2363,6 +2471,8 @@ QTableWidget::indicator {{
         cls,
         worksheet: Any,
         row_indices: list[int],
+        *,
+        indices_are_excel_rows: bool = False,
     ) -> dict[int, str]:
         realization_price_col = cls._find_worksheet_column_by_header(
             worksheet,
@@ -2376,6 +2486,7 @@ QTableWidget::indicator {{
         if realization_price_col is None:
             raise ValueError('Не найдена колонка "Цена реализации за ед. без НДС"')
 
+        header_row_index = cls._worksheet_header_row_index(worksheet) or 1
         formulas: dict[int, str] = {}
 
         for row_index_raw in row_indices:
@@ -2386,13 +2497,21 @@ QTableWidget::indicator {{
             if row_index < 0:
                 continue
 
-            excel_row = row_index + 2
+            excel_row = (
+                row_index
+                if indices_are_excel_rows
+                else header_row_index + 1 + row_index
+            )
+            if excel_row <= header_row_index:
+                continue
             formula = f"=ROUND(J{excel_row}*S{excel_row}, 2)"
             target_cell = worksheet.cell(
                 row=excel_row,
                 column=realization_price_col,
             )
             source_price_cell = worksheet.cell(row=excel_row, column=10)
+            if cls._is_zero_retrade_price(source_price_cell.value):
+                continue
             currency = (
                 cls._detect_currency(target_cell.value, target_cell.number_format)
                 or cls._detect_currency(
@@ -2455,6 +2574,34 @@ QTableWidget::indicator {{
             index += 1
 
     @classmethod
+    def _is_zero_retrade_price(cls, value: Any) -> bool:
+        numeric_value = cls._parse_retrade_number_or_none(value)
+        return numeric_value is not None and abs(numeric_value) <= 1e-12
+
+    @classmethod
+    def _is_zero_retrade_price_cell(
+        cls,
+        worksheet: Any,
+        row: int,
+        column: int,
+        *,
+        values_worksheet: Any | None = None,
+    ) -> bool:
+        if values_worksheet is not None:
+            try:
+                value = values_worksheet.cell(row=row, column=column).value
+            except Exception:
+                value = None
+            if cls._is_zero_retrade_price(value):
+                return True
+
+        try:
+            value = worksheet.cell(row=row, column=column).value
+        except Exception:
+            return False
+        return cls._is_zero_retrade_price(value)
+
+    @classmethod
     def _write_best_prices_to_calculations_file(
         cls,
         file_path: str,
@@ -2465,7 +2612,14 @@ QTableWidget::indicator {{
         delta_percent: float | None = None,
     ) -> str:
         workbook = load_workbook(file_path)
+        workbook_values = None
         try:
+            try:
+                workbook_values = load_workbook(file_path, data_only=True, read_only=True)
+                sheet_values = workbook_values.worksheets[0]
+            except Exception:
+                sheet_values = None
+
             sheet_original = workbook.worksheets[0]
             sheet_copy = workbook.copy_worksheet(sheet_original)
             sheet_copy.title = cls._next_retrade_sheet_title(workbook)
@@ -2476,6 +2630,7 @@ QTableWidget::indicator {{
             formula_col = original_max_col + 3
             corrected_rating_col = original_max_col + 4
             best_price_letter = get_column_letter(best_price_col)
+            formula_letter = get_column_letter(formula_col)
             corrected_rating_letter = get_column_letter(corrected_rating_col)
             realization_price_col = cls._find_worksheet_column_by_header(
                 sheet_copy,
@@ -2500,11 +2655,16 @@ QTableWidget::indicator {{
             )
             min_margin_text = cls._format_excel_formula_number(min_margin_value)
             delta_text = cls._format_excel_formula_number(delta_percent_value / 100)
+            header_row_index = cls._worksheet_header_row_index(sheet_copy) or 1
 
-            sheet_copy.cell(row=1, column=real_rating_col).value = "Рейтинг (таблица)"
-            sheet_copy.cell(row=1, column=best_price_col).value = "Лучшая цена за ед."
-            sheet_copy.cell(row=1, column=formula_col).value = "Рейтинг"
-            sheet_copy.cell(row=1, column=corrected_rating_col).value = (
+            sheet_copy.cell(row=header_row_index, column=real_rating_col).value = (
+                "Рейтинг (таблица)"
+            )
+            sheet_copy.cell(row=header_row_index, column=best_price_col).value = (
+                "Лучшая цена за ед."
+            )
+            sheet_copy.cell(row=header_row_index, column=formula_col).value = "Рейтинг"
+            sheet_copy.cell(row=header_row_index, column=corrected_rating_col).value = (
                 "Скорректированный рейтинг"
             )
             for column_letter in (
@@ -2517,24 +2677,42 @@ QTableWidget::indicator {{
                 get_column_letter(corrected_rating_col)
             ].width = 26
 
-            start_row = 2
+            start_row = header_row_index + 1
             rating_values = ratings or []
             for index, best_price in enumerate(best_prices):
                 excel_row = start_row + index
+                if cls._is_zero_retrade_price_cell(
+                    sheet_copy,
+                    excel_row,
+                    10,
+                    values_worksheet=sheet_values,
+                ):
+                    for column in (
+                        real_rating_col,
+                        best_price_col,
+                        formula_col,
+                        corrected_rating_col,
+                    ):
+                        sheet_copy.cell(row=excel_row, column=column).value = None
+                    continue
 
                 rating = rating_values[index] if index < len(rating_values) else None
                 if rating is not None:
-                    sheet_copy.cell(row=excel_row, column=real_rating_col).value = rating
+                    sheet_copy.cell(row=excel_row, column=real_rating_col).value = round(
+                        float(rating),
+                        2,
+                    )
 
                 if best_price is not None:
                     sheet_copy.cell(row=excel_row, column=best_price_col).value = best_price
 
-                formula = f"={best_price_letter}{excel_row}/J{excel_row}"
+                formula = f"=ROUND({best_price_letter}{excel_row}/J{excel_row}, 2)"
                 sheet_copy.cell(row=excel_row, column=formula_col).value = formula
                 corrected_formula = (
-                    f"=IF(R{excel_row}-{delta_text}<{min_margin_text},"
+                    f"=ROUND(IF({formula_letter}{excel_row}-{delta_text}<"
                     f"{min_margin_text},"
-                    f"R{excel_row}-{delta_text})"
+                    f"{min_margin_text},"
+                    f"{formula_letter}{excel_row}-{delta_text}), 2)"
                 )
                 sheet_copy.cell(
                     row=excel_row,
@@ -2551,6 +2729,8 @@ QTableWidget::indicator {{
             workbook.save(file_path)
             return sheet_copy.title
         finally:
+            if workbook_values is not None:
+                workbook_values.close()
             workbook.close()
 
     def generate_retrade_calculation(self) -> None:
@@ -2836,9 +3016,15 @@ QTableWidget::indicator {{
     def _is_retrade_calculations_cell_present(cls, cell_data: Any) -> bool:
         if isinstance(cell_data, dict):
             value = cell_data.get("value")
-            currency = cell_data.get("currency")
-            return cls._is_retrade_calculations_value_present(value) or bool(currency)
+            return cls._is_retrade_calculations_value_present(value)
         return cls._is_retrade_calculations_value_present(cell_data)
+
+    @classmethod
+    def _is_retrade_calculations_row_present(cls, row_data: Any) -> bool:
+        return any(
+            cls._is_retrade_calculations_cell_present(cell)
+            for cell in row_data or []
+        )
 
     @classmethod
     def _is_retrade_position_cell(cls, value: Any) -> bool:
@@ -3006,6 +3192,8 @@ QTableWidget::indicator {{
 
             if cls._is_empty_number_value(price_raw) or cls._is_empty_number_value(coef_raw):
                 continue
+            if cls._is_zero_retrade_price(price_raw):
+                continue
 
             new_price = round(cls.parse_number(price_raw) * cls.parse_number(coef_raw), 2)
             updates.append(
@@ -3048,7 +3236,10 @@ QTableWidget::indicator {{
                 else None
             )
             price_raw = cls._cell_payload_value(price_cell)
-            if not cls._is_empty_number_value(price_raw):
+            if (
+                not cls._is_empty_number_value(price_raw)
+                and not cls._is_zero_retrade_price(price_raw)
+            ):
                 row_indices.append(row_index)
         return row_indices
 
@@ -3111,7 +3302,6 @@ QTableWidget::indicator {{
     @staticmethod
     def _log_calc(message: str) -> None:
         text = f"[CALC] {message}"
-        print(text)
         Tool.write_log(text)
 
     @classmethod
@@ -3127,7 +3317,7 @@ QTableWidget::indicator {{
 
         for raw_row in cells_data:
             row_data = list(raw_row or [])
-            if not any(cls._is_retrade_calculations_cell_present(cell) for cell in row_data):
+            if not cls._is_retrade_calculations_row_present(row_data):
                 continue
 
             if not header_found:
@@ -3434,6 +3624,25 @@ QTableWidget::indicator {{
             return payload.get("currency")
         return None
 
+    @staticmethod
+    def _table_item_payload_excel_row(item: Any) -> int | None:
+        if item is None:
+            return None
+        data_getter = getattr(item, "data", None)
+        if not callable(data_getter):
+            return None
+        try:
+            payload = data_getter(Qt.ItemDataRole.UserRole)
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        try:
+            excel_row = int(payload.get("excel_row"))
+        except (TypeError, ValueError):
+            return None
+        return excel_row if excel_row > 0 else None
+
     @classmethod
     def _table_payload_rows(cls, table: Any) -> list[list[dict[str, Any]]]:
         try:
@@ -3447,14 +3656,54 @@ QTableWidget::indicator {{
             row: list[dict[str, Any]] = []
             for column_index in range(column_count):
                 item = table.item(row_index, column_index)
-                row.append(
-                    {
-                        "value": cls._table_item_payload_value(item),
-                        "currency": cls._table_item_payload_currency(item),
-                    }
-                )
+                cell_payload = {
+                    "value": cls._table_item_payload_value(item),
+                    "currency": cls._table_item_payload_currency(item),
+                }
+                excel_row = cls._table_item_payload_excel_row(item)
+                if excel_row is not None:
+                    cell_payload["excel_row"] = excel_row
+                row.append(cell_payload)
             rows.append(row)
         return rows
+
+    def _table_rows_to_excel_rows(
+        self,
+        table: Any,
+        row_indices: list[int],
+    ) -> dict[int, int]:
+        try:
+            column_count = int(table.columnCount())
+        except Exception:
+            column_count = 0
+
+        row_numbers = getattr(self, "_retrade_calculations_row_numbers", None)
+        result: dict[int, int] = {}
+        for row_index in row_indices:
+            try:
+                normalized_row = int(row_index)
+            except (TypeError, ValueError):
+                continue
+            if normalized_row < 0:
+                continue
+
+            excel_row: int | None = None
+            for column_index in range(column_count):
+                item = table.item(normalized_row, column_index)
+                excel_row = self._table_item_payload_excel_row(item)
+                if excel_row is not None:
+                    break
+
+            if excel_row is None and isinstance(row_numbers, list):
+                if normalized_row < len(row_numbers):
+                    try:
+                        excel_row = int(row_numbers[normalized_row])
+                    except (TypeError, ValueError):
+                        excel_row = None
+
+            if excel_row is not None and excel_row > 0:
+                result[normalized_row] = excel_row
+        return result
 
     def _set_table_numeric_item(
         self,
@@ -3467,7 +3716,11 @@ QTableWidget::indicator {{
         show_currency: bool = False,
         formula: str | None = None,
     ) -> None:
+        item = table.item(row, column)
         payload = {"value": value, "currency": currency}
+        excel_row = self._table_item_payload_excel_row(item)
+        if excel_row is not None:
+            payload["excel_row"] = excel_row
         if formula:
             payload["formula"] = formula
         if show_currency:
@@ -3475,7 +3728,6 @@ QTableWidget::indicator {{
         else:
             text = self._format_number_ru(value)
 
-        item = table.item(row, column)
         if item is None:
             item = QTableWidgetItem(text)
             table.setItem(row, column, item)
@@ -3525,6 +3777,8 @@ QTableWidget::indicator {{
     def _write_update_position_formulas_to_current_calculations_file(
         self,
         row_indices: list[int],
+        *,
+        indices_are_excel_rows: bool = False,
     ) -> dict[int, str]:
         file_path = str(getattr(self, "calculations_file_path", "") or "").strip()
         if not file_path:
@@ -3543,6 +3797,7 @@ QTableWidget::indicator {{
             formulas = self._write_realization_price_formulas_to_sheet(
                 worksheet,
                 row_indices,
+                indices_are_excel_rows=indices_are_excel_rows,
             )
             self._enable_workbook_formula_recalculation(workbook)
             workbook.save(file_path)
@@ -3600,10 +3855,22 @@ QTableWidget::indicator {{
             )
             return
 
+        excel_rows_by_table_row = self._table_rows_to_excel_rows(
+            calculations_table,
+            formula_row_indices,
+        )
+        use_excel_rows = len(excel_rows_by_table_row) == len(formula_row_indices)
+        formula_targets = (
+            [excel_rows_by_table_row[row_index] for row_index in formula_row_indices]
+            if use_excel_rows
+            else formula_row_indices
+        )
+
         try:
             formulas_by_row = (
                 self._write_update_position_formulas_to_current_calculations_file(
-                    formula_row_indices
+                    formula_targets,
+                    indices_are_excel_rows=use_excel_rows,
                 )
             )
         except Exception as exc:
@@ -3621,7 +3888,12 @@ QTableWidget::indicator {{
 
             new_price = float(update["value"])
             currency = update.get("currency")
-            formula = formulas_by_row.get(row_index)
+            formula_key = (
+                excel_rows_by_table_row.get(row_index)
+                if use_excel_rows
+                else row_index
+            )
+            formula = formulas_by_row.get(formula_key)
             self._set_table_numeric_item(
                 calculations_table,
                 row_index,
@@ -3696,11 +3968,25 @@ QTableWidget::indicator {{
             self._log_ui("Автоматическое ведение торгов: Выключено")
             return
 
+        current_bid_id = self._get_current_retrade_bid_id()
+        if current_bid_id is None:
+            QMessageBox.warning(
+                self,
+                "Автоматическое ведение торгов",
+                "Сначала экспортируйте переторжку, чтобы закрепить текущую заявку.",
+            )
+            return
+
         if not self._confirm_auto_trade_enable_if_needed():
             return
 
         self._set_auto_trade_status(True)
         self._log_ui("Автоматическое ведение торгов: Включено")
+        current_number = str(getattr(self, "current_retrade", "") or "").strip()
+        if current_number:
+            self._log_auto_trade(
+                f"Текущая переторжка: заявка {current_number}, bid_id={current_bid_id}"
+            )
         self._start_auto_trade_timer_if_needed()
 
     def _set_auto_trade_status(self, is_enabled: bool) -> None:
@@ -3781,7 +4067,6 @@ QTableWidget::indicator {{
     @staticmethod
     def _log_auto_trade(message: str) -> None:
         text = f"[AUTO TRADE] {message}"
-        print(text)
         Tool.write_log(text)
 
     def _ensure_export_button(self) -> None:
@@ -3825,19 +4110,40 @@ QTableWidget::indicator {{
             trade = self._get_selected_trade_for_submission_export()
             self._set_pending_submission_export_metadata(trade)
             lot_id = self._submission_lot_id_from_trade(trade)
+            trade_id = self._submission_trade_id_from_trade(trade)
             self._start_export_worker(
+                trade_id=trade_id,
                 lot_id=lot_id,
                 is_submission_acceptance=True,
+                submission_search_text=self._submission_search_text_from_trade(trade),
             )
         except Exception as exc:
             self._on_export_error(str(exc))
 
     def export_trade(self, lot_id: int, trade: dict[str, Any] | None = None) -> None:
+        trade_id: int | None = None
+        submission_search_text = ""
         if isinstance(trade, dict):
             self._set_pending_submission_export_metadata(trade)
+            trade_id = self._submission_trade_id_from_trade(trade)
+            submission_search_text = self._submission_search_text_from_trade(trade)
+        else:
+            metadata = getattr(self, "_pending_submission_export_metadata", {})
+            if isinstance(metadata, dict):
+                metadata_lot_id = str(metadata.get("lot_id", "") or "").strip()
+                if not metadata_lot_id or metadata_lot_id == str(lot_id).strip():
+                    try:
+                        trade_id = self._parse_positive_trade_id(
+                            metadata.get("trade_id") or metadata.get("id")
+                        )
+                    except Exception:
+                        trade_id = None
+                    submission_search_text = self._submission_search_text_from_trade(metadata)
         self._start_export_worker(
+            trade_id=trade_id,
             lot_id=lot_id,
             is_submission_acceptance=True,
+            submission_search_text=submission_search_text,
         )
 
     def export_selected_retrade(self) -> None:
@@ -3862,12 +4168,21 @@ QTableWidget::indicator {{
         try:
             trade_id = self._parse_positive_trade_id(retr.get("id"))
             lot_id = self._get_retrade_lot_id_for_export(retr)
-            bid_id = self._get_selected_retrade_bid_id_for_export()
+            selected_offer = self._get_selected_retrade_offer_for_export()
+            bid_id = self._parse_positive_bid_id(selected_offer.get("bid_id"))
+            retrade_context = self._build_current_retrade_context(
+                retrade=retr,
+                offer=selected_offer,
+                trade_id=trade_id,
+                lot_id=lot_id,
+                bid_id=bid_id,
+            )
             self._start_export_worker(
                 trade_id=trade_id,
                 lot_id=lot_id,
                 bid_id=bid_id,
                 is_retrade=True,
+                retrade_context=retrade_context,
             )
         except Exception as exc:
             self._on_export_error(str(exc))
@@ -3911,7 +4226,7 @@ QTableWidget::indicator {{
             raise ValueError(f"Некорректный bid_id для экспорта переторжки: {bid_id}")
         return bid_id
 
-    def _get_selected_retrade_bid_id_for_export(self) -> int:
+    def _get_selected_retrade_offer_for_export(self) -> dict[str, Any]:
         table_offers = getattr(self, "table_retrade_offers", None)
         if table_offers is None:
             table_offers = getattr(getattr(self, "ui", None), "table_retrade_offers", None)
@@ -3930,7 +4245,97 @@ QTableWidget::indicator {{
         if not isinstance(selected_offer, dict):
             raise Exception("Выберите предложение переторжки")
 
+        return selected_offer
+
+    def _get_selected_retrade_bid_id_for_export(self) -> int:
+        selected_offer = self._get_selected_retrade_offer_for_export()
         return self._parse_positive_bid_id(selected_offer.get("bid_id"))
+
+    @staticmethod
+    def _retrade_number_text(retrade: dict[str, Any]) -> str:
+        return str(
+            retrade.get("number")
+            or retrade.get("registeredNumber")
+            or retrade.get("id")
+            or ""
+        ).strip()
+
+    @staticmethod
+    def _retrade_offer_number_text(offer: dict[str, Any], bid_id: int) -> str:
+        number = str(
+            offer.get("number")
+            or offer.get("registeredNumber")
+            or offer.get("bidNumber")
+            or ""
+        ).strip()
+        return number or str(bid_id)
+
+    def _build_current_retrade_context(
+        self,
+        *,
+        retrade: dict[str, Any],
+        offer: dict[str, Any],
+        trade_id: int,
+        lot_id: int,
+        bid_id: int,
+    ) -> dict[str, Any]:
+        offer_number = self._retrade_offer_number_text(offer, bid_id)
+        retrade_number = self._retrade_number_text(retrade)
+        return {
+            "number": offer_number,
+            "bid_number": offer_number,
+            "bid_id": int(bid_id),
+            "trade_id": int(trade_id),
+            "lot_id": int(lot_id),
+            "retrade_number": retrade_number,
+            "title": str(retrade.get("title") or "").strip(),
+            "status": str(
+                retrade.get("status") or retrade.get("processStatus") or ""
+            ).strip(),
+            "bidder_title": str(offer.get("bidder_title") or "").strip(),
+            "price": offer.get("price"),
+        }
+
+    def _set_current_retrade_context(self, context: dict[str, Any] | None) -> None:
+        retrade_context = dict(context) if isinstance(context, dict) else {}
+        self.current_retrade_context = retrade_context
+        self.current_retrade = str(
+            retrade_context.get("number")
+            or retrade_context.get("bid_number")
+            or ""
+        ).strip()
+
+        self.current_retrade_bid_id = None
+        self.current_retrade_trade_id = None
+        self.current_retrade_lot_id = None
+
+        for attr_name, key, parser in (
+            ("current_retrade_bid_id", "bid_id", self._parse_positive_bid_id),
+            ("current_retrade_trade_id", "trade_id", self._parse_positive_trade_id),
+            ("current_retrade_lot_id", "lot_id", self._parse_positive_lot_id),
+        ):
+            raw_value = retrade_context.get(key)
+            if raw_value is None:
+                continue
+            try:
+                setattr(self, attr_name, parser(raw_value))
+            except Exception:
+                Tool.write_log(
+                    f"Некорректный {key} текущей переторжки: {raw_value}"
+                )
+
+        if self.current_retrade:
+            Tool.write_log(
+                "Текущая переторжка закреплена за заявкой "
+                f"{self.current_retrade}"
+            )
+
+    def _clear_current_retrade_context(self) -> None:
+        self._set_current_retrade_context({})
+
+    def get_current_retrade_context(self) -> dict[str, Any]:
+        context = getattr(self, "current_retrade_context", {})
+        return dict(context) if isinstance(context, dict) else {}
 
     def _get_selected_trade_for_submission_export(self) -> dict[str, Any]:
         table = getattr(self.ui, "tradesTable", None)
@@ -3965,6 +4370,22 @@ QTableWidget::indicator {{
                 return self._parse_positive_lot_id(first_lot.get("id"))
         raise ValueError("У выбранной заявки отсутствует lot_id")
 
+    def _submission_trade_id_from_trade(self, trade: dict[str, Any]) -> int | None:
+        try:
+            return self._parse_positive_trade_id(trade.get("id"))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _submission_search_text_from_trade(trade: dict[str, Any]) -> str:
+        number = str(
+            trade.get("registeredNumber")
+            or trade.get("number")
+            or ""
+        ).strip()
+        title = str(trade.get("title") or "").strip()
+        return " ".join(part for part in (number, title) if part).strip()
+
     def _get_selected_submission_lot_id_for_export(self) -> int:
         return self._submission_lot_id_from_trade(
             self._get_selected_trade_for_submission_export()
@@ -3996,6 +4417,7 @@ QTableWidget::indicator {{
                 lot_id = str(first_lot.get("id") or "").strip()
 
         return {
+            "trade_id": str(trade.get("id") or "").strip(),
             "number": str(
                 trade.get("registeredNumber")
                 or trade.get("number")
@@ -4026,6 +4448,12 @@ QTableWidget::indicator {{
             "payment_condition": str(
                 context.get("payment_condition", "") or ""
             ).strip(),
+            "supplier_status": str(context.get("supplier_status", "") or "").strip(),
+            "warranty": str(
+                context.get("warranty", "")
+                or context.get("guarantee", "")
+                or ""
+            ).strip(),
         }
 
     def _set_pending_submission_export_metadata(
@@ -4055,6 +4483,10 @@ QTableWidget::indicator {{
             metadata["payment_terms"] = context_metadata["payment_condition"]
         if context_metadata["payment_condition"]:
             metadata["payment_condition"] = context_metadata["payment_condition"]
+        if context_metadata["supplier_status"]:
+            metadata["supplier_status"] = context_metadata["supplier_status"]
+        if context_metadata["warranty"]:
+            metadata["warranty"] = context_metadata["warranty"]
         self._pending_submission_export_metadata = metadata
 
     def _start_export_worker(
@@ -4065,6 +4497,8 @@ QTableWidget::indicator {{
         bid_id: int | None = None,
         is_retrade: bool = False,
         is_submission_acceptance: bool = False,
+        submission_search_text: str = "",
+        retrade_context: dict[str, Any] | None = None,
     ) -> None:
         if self._export_trade_worker is not None and self._export_trade_worker.isRunning():
             raise RuntimeError("Экспорт заявки уже выполняется")
@@ -4086,7 +4520,25 @@ QTableWidget::indicator {{
         if is_submission_acceptance and (lot_id is None or int(lot_id) <= 0):
             raise Exception("У выбранной заявки отсутствует lot_id")
 
-        self._pending_retrade_bid_id = int(bid_id) if is_retrade and bid_id is not None else None
+        if is_retrade and bid_id is not None:
+            self._pending_retrade_bid_id = int(bid_id)
+            pending_context = (
+                dict(retrade_context) if isinstance(retrade_context, dict) else {}
+            )
+            if not pending_context:
+                pending_context = {
+                    "number": str(bid_id),
+                    "bid_number": str(bid_id),
+                    "bid_id": int(bid_id),
+                    "trade_id": int(trade_id),
+                    "lot_id": int(lot_id),
+                }
+            self._pending_retrade_context = pending_context
+            self.current_retrade_excel_path = ""
+            self._set_current_retrade_context(pending_context)
+        else:
+            self._pending_retrade_bid_id = None
+            self._pending_retrade_context = {}
         self._active_export_workflow = (
             "retrade"
             if is_retrade
@@ -4114,6 +4566,7 @@ QTableWidget::indicator {{
             bid_id=bid_id,
             is_retrade=is_retrade,
             is_submission_acceptance=is_submission_acceptance,
+            submission_search_text=submission_search_text,
             download_path=download_path,
             parent=self,
         )
@@ -4163,7 +4616,7 @@ QTableWidget::indicator {{
 
     @staticmethod
     def _build_submission_export_download_path(identifier: Any) -> str:
-        base_dir = Path("temp") / "exports" / "submission"
+        base_dir = Tool.user_data_dir("MyApp") / "temp" / "exports" / "submission"
         base_dir.mkdir(parents=True, exist_ok=True)
 
         identifier_text = str(identifier or "").strip()
@@ -4181,6 +4634,26 @@ QTableWidget::indicator {{
             self.btn_export_retrade.setText(
                 "Экспорт..." if is_loading else "Экспорт переторжки"
             )
+        if is_loading:
+            workflow = str(getattr(self, "_active_export_workflow", "") or "")
+            status_message = (
+                "Экспорт таблицы приема заявок..."
+                if workflow == "submission_acceptance"
+                else "Экспорт таблицы переторжки..."
+                if workflow == "retrade"
+                else "Экспорт таблицы..."
+            )
+            self._show_export_status(status_message)
+
+    def _show_export_status(self, message: str, timeout_ms: int = 0) -> None:
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(message, timeout_ms)
 
     def _finish_export(self, status_message: str) -> None:
         self._set_export_loading_state(is_loading=False)
@@ -4189,11 +4662,10 @@ QTableWidget::indicator {{
         if worker is not None:
             worker.deleteLater()
         self._pending_retrade_bid_id = None
+        self._pending_retrade_context = {}
         self._active_export_workflow = ""
         self._pending_submission_export_metadata = {}
-        status_bar = self.statusBar()
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 5_000)
+        self._show_export_status(status_message, 5_000)
 
     @staticmethod
     def _developer_skip_table_fill_errors_enabled() -> bool:
@@ -4305,7 +4777,13 @@ QTableWidget::indicator {{
             return self.EXPORT_MISMATCH_OPEN_AND_COPY
         return self.EXPORT_MISMATCH_CANCEL
 
-    def get_table_rows(self, *, default_manufacturer: str = "") -> list[dict]:
+    def get_table_rows(
+        self,
+        *,
+        default_manufacturer: str = "",
+        default_supplier_status: str = "",
+        default_warranty: str = "",
+    ) -> list[dict]:
         table = getattr(getattr(self, "ui", None), "KpTable", None)
         if table is None:
             return []
@@ -4336,6 +4814,10 @@ QTableWidget::indicator {{
                 if kind == "qty" and ("колво" in normalized or "количество" in normalized):
                     return column
                 if kind == "manufacturer" and "производ" in normalized:
+                    return column
+                if kind == "supplier_status" and "статус" in normalized and "постав" in normalized:
+                    return column
+                if kind == "warranty" and "гарант" in normalized:
                     return column
                 if kind == "sale_price" and (
                     "ценареализациизаедбезндс" in normalized
@@ -4384,7 +4866,30 @@ QTableWidget::indicator {{
         delivery_col = 13 if 13 < column_count else None
         supplier_delivery_col = 14 if 14 < column_count else None
         manufacturer_col = find_column("manufacturer")
+        supplier_status_col = find_column("supplier_status")
+        warranty_col = find_column("warranty")
         default_manufacturer_text = str(default_manufacturer or "").strip()
+        default_supplier_status_text = str(default_supplier_status or "").strip()
+        default_warranty_text = str(default_warranty or "").strip()
+        table_data = getattr(self, "tableData", {})
+        table_data_currencies = (
+            table_data.get("currency", [])
+            if isinstance(table_data, dict)
+            else []
+        )
+        table_currency = (
+            SubmissionService.detect_currency_from_values(table_data_currencies)
+            or SubmissionService.detect_currency_from_values(headers)
+        )
+
+        def table_data_currency(row: int) -> str:
+            if isinstance(table_data_currencies, (list, tuple)):
+                if 0 <= row < len(table_data_currencies):
+                    return SubmissionService.detect_currency_from_value(
+                        table_data_currencies[row]
+                    )
+                return ""
+            return SubmissionService.detect_currency_from_value(table_data_currencies)
 
         def cell_text(row: int, column: int | None) -> str:
             if column is None or column < 0 or column >= column_count:
@@ -4410,13 +4915,50 @@ QTableWidget::indicator {{
                 return parsed
             return text
 
+        def is_zero_amount(text: str) -> bool:
+            parsed = self._parse_retrade_number_or_none(text)
+            return parsed is not None and abs(parsed) < 1e-9
+
+        def skip_submission_defaults(
+            source_price_text: str,
+            price_text: str,
+            total_text: str,
+        ) -> bool:
+            return is_zero_amount(source_price_text) or is_zero_amount(price_text) or (
+                not price_text and is_zero_amount(total_text)
+            )
+
         for row_index in range(row_count):
+            source_price_text = first_text(row_index, base_price_col)
+            source_total_text = first_text(row_index, base_total_col)
             price_text = first_text(row_index, final_price_col)
             total_text = first_text(row_index, final_total_col)
+            row_currency = (
+                SubmissionService.detect_currency_from_values(
+                    (
+                        price_text,
+                        total_text,
+                        source_price_text,
+                        source_total_text,
+                    )
+                )
+                or table_data_currency(row_index)
+                or table_currency
+            )
             delivery_time = first_text(row_index, delivery_col, supplier_delivery_col)
             manufacturer = cell_text(row_index, manufacturer_col)
             if not manufacturer:
                 manufacturer = default_manufacturer_text
+            if skip_submission_defaults(source_price_text, price_text, total_text):
+                supplier_status = ""
+                warranty = ""
+            else:
+                supplier_status = cell_text(row_index, supplier_status_col)
+                if not supplier_status:
+                    supplier_status = default_supplier_status_text
+                warranty = cell_text(row_index, warranty_col)
+                if not warranty:
+                    warranty = default_warranty_text
 
             rows.append(
                 {
@@ -4432,6 +4974,10 @@ QTableWidget::indicator {{
                     "manufacturer": manufacturer,
                     "tech_characteristics": manufacturer,
                     "technical_characteristics": manufacturer,
+                    "supplier_status": supplier_status,
+                    "warranty": warranty,
+                    "guarantee": warranty,
+                    "currency": row_currency,
                 }
             )
 
@@ -4440,7 +4986,6 @@ QTableWidget::indicator {{
     @staticmethod
     def _log_ui(message: str) -> None:
         text = f"[UI] {message}"
-        print(text)
         Tool.write_log(text)
 
     def update_retrade_table(self, df: pd.DataFrame) -> None:
@@ -4588,9 +5133,28 @@ QTableWidget::indicator {{
                     or metadata.get("manufacturer", "")
                     or ""
                 ).strip()
+                default_supplier_status = str(
+                    metadata.get("supplier_status", "") or ""
+                ).strip()
+                default_warranty = str(
+                    metadata.get("warranty", "")
+                    or metadata.get("guarantee", "")
+                    or ""
+                ).strip()
+            else:
+                default_supplier_status = ""
+                default_warranty = ""
             source_rows = self.get_table_rows(
                 default_manufacturer=default_manufacturer,
+                default_supplier_status=default_supplier_status,
+                default_warranty=default_warranty,
             )
+            source_currency = SubmissionService.detect_currency_from_values(source_rows)
+            if source_currency:
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                metadata["currency"] = source_currency
+                self._pending_submission_export_metadata = metadata
             if not source_rows:
                 Tool.write_log(
                     "Заполнение файла приема заявок пропущено: Полная таблица пуста"
@@ -4695,12 +5259,16 @@ QTableWidget::indicator {{
                     raise FileNotFoundError(f"Excel файл не найден: {export_path}")
 
                 self.current_retrade_excel_path = str(export_path.resolve())
-                pending_bid_id = getattr(self, "_pending_retrade_bid_id", None)
-                self.current_retrade_bid_id = (
-                    int(pending_bid_id)
-                    if pending_bid_id is not None
-                    else None
-                )
+                pending_context = getattr(self, "_pending_retrade_context", {})
+                if isinstance(pending_context, dict) and pending_context:
+                    self._set_current_retrade_context(pending_context)
+                else:
+                    pending_bid_id = getattr(self, "_pending_retrade_bid_id", None)
+                    self.current_retrade_bid_id = (
+                        int(pending_bid_id)
+                        if pending_bid_id is not None
+                        else None
+                    )
 
                 try:
                     dataframe = pd.read_excel(export_path)

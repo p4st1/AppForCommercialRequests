@@ -4,7 +4,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSignalBlocker, Qt, QThread, Signal
+try:
+    import requests
+except ModuleNotFoundError:  # pragma: no cover - dependency may be absent in test env
+    requests = None  # type: ignore[assignment]
+
+from PySide6.QtCore import QSignalBlocker, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -31,6 +36,9 @@ from tools import DatabaseTools as Tool
 class LoadTradesWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
+    PAGE_LIMIT = 100
+    TRADE_LOAD_TIMEOUT_SECONDS = (10.0, 180.0)
+    TRADE_LOAD_RETRIES = 1
 
     def __init__(
         self,
@@ -42,9 +50,27 @@ class LoadTradesWorker(QThread):
     ) -> None:
         super().__init__(parent)
         self._cookies = dict(cookies)
-        self.max_items = max_items
+        try:
+            parsed_max_items = int(max_items)
+        except (TypeError, ValueError):
+            parsed_max_items = 50
+        self.max_items = parsed_max_items if parsed_max_items >= 0 else 50
         self._login = str(login or "").strip()
         self._password = str(password or "")
+        self.loaded_all = False
+        self.total_items = 0
+
+    def _load_trades_with_client(self, client: MetalITClient) -> list[dict[str, Any]]:
+        trades = client.get_all_trades(
+            limit=self.PAGE_LIMIT,
+            max_items=self.max_items,
+        )
+        self.loaded_all = bool(getattr(client, "last_trades_loaded_all", False))
+        try:
+            self.total_items = int(getattr(client, "last_trades_total", 0) or 0)
+        except (TypeError, ValueError):
+            self.total_items = 0
+        return trades
 
     @staticmethod
     def _is_auth_error(message: str) -> bool:
@@ -60,8 +86,12 @@ class LoadTradesWorker(QThread):
         try:
             if not self._cookies:
                 raise ValueError("Не найдены cookies для авторизации")
-            client = MetalITClient(self._cookies)
-            trades = client.get_all_trades(max_items=self.max_items)
+            client = MetalITClient(
+                self._cookies,
+                timeout=self.TRADE_LOAD_TIMEOUT_SECONDS,
+                retries=self.TRADE_LOAD_RETRIES,
+            )
+            trades = self._load_trades_with_client(client)
             self.finished.emit(trades)
         except Exception as exc:
             error_text = str(exc or "Неизвестная ошибка")
@@ -80,7 +110,6 @@ class LoadTradesWorker(QThread):
                 return
 
             try:
-                print("AUTH: выполняем авто-переавторизацию из сохраненных учетных данных")
                 service = AuthService(headless=False)
                 refreshed_cookies = service.login_and_save_session(
                     self._login,
@@ -89,8 +118,12 @@ class LoadTradesWorker(QThread):
                 if not isinstance(refreshed_cookies, dict) or not refreshed_cookies:
                     raise RuntimeError("После переавторизации не получены cookies")
                 self._cookies = dict(refreshed_cookies)
-                client = MetalITClient(self._cookies)
-                trades = client.get_all_trades(max_items=self.max_items)
+                client = MetalITClient(
+                    self._cookies,
+                    timeout=self.TRADE_LOAD_TIMEOUT_SECONDS,
+                    retries=self.TRADE_LOAD_RETRIES,
+                )
+                trades = self._load_trades_with_client(client)
                 self.finished.emit(trades)
             except Exception as retry_exc:
                 self.error.emit(str(retry_exc))
@@ -99,6 +132,8 @@ class LoadTradesWorker(QThread):
 class LoadRetradesWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
+    TRADE_LOAD_TIMEOUT_SECONDS = (10.0, 180.0)
+    TRADE_LOAD_RETRIES = 1
 
     def __init__(
         self,
@@ -120,11 +155,14 @@ class LoadRetradesWorker(QThread):
         try:
             if not self._cookies:
                 raise ValueError("Не найдены cookies для авторизации")
-            self.client = MetalITClient(self._cookies)
+            self.client = MetalITClient(
+                self._cookies,
+                timeout=self.TRADE_LOAD_TIMEOUT_SECONDS,
+                retries=self.TRADE_LOAD_RETRIES,
+            )
             retrades = self.client.load_retrades(limit=50)
             if self.max_items > 0:
                 retrades = retrades[: self.max_items]
-            print(f"Загружено переторжек: {len(retrades)}")
             self.finished.emit(retrades)
         except Exception as exc:
             error_text = str(exc or "Неизвестная ошибка")
@@ -159,6 +197,7 @@ class AuthLoginWorker(QThread):
 
 class AuthStatusWorker(QThread):
     finished = Signal(bool)
+    STATUS_CHECK_TIMEOUT_SECONDS = 5.0
 
     def __init__(
         self,
@@ -168,19 +207,101 @@ class AuthStatusWorker(QThread):
         super().__init__(parent)
         self._cookies = dict(cookies)
 
+    def _interruption_requested(self) -> bool:
+        is_interruption_requested = getattr(self, "isInterruptionRequested", None)
+        if not callable(is_interruption_requested):
+            return False
+        try:
+            return bool(is_interruption_requested())
+        except RuntimeError:
+            return True
+
     def run(self) -> None:
         try:
+            if self._interruption_requested():
+                return
             if not self._cookies:
                 self.finished.emit(False)
                 return
-            client = MetalITClient(self._cookies)
+            client = MetalITClient(
+                self._cookies,
+                timeout=self.STATUS_CHECK_TIMEOUT_SECONDS,
+                retries=0,
+            )
             is_auth = client.is_authenticated()
-            self.finished.emit(bool(is_auth))
+            if not self._interruption_requested():
+                self.finished.emit(bool(is_auth))
         except Exception:
-            self.finished.emit(False)
+            if not self._interruption_requested():
+                self.finished.emit(False)
+
+
+class SiteStatusWorker(QThread):
+    finished = Signal(bool, str)
+    STATUS_CHECK_TIMEOUT_SECONDS = 5.0
+
+    def __init__(
+        self,
+        *,
+        url: str = AuthService.BASE_URL,
+        timeout: float = STATUS_CHECK_TIMEOUT_SECONDS,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._url = str(url or AuthService.BASE_URL).strip() or AuthService.BASE_URL
+        self._timeout = float(timeout)
+
+    def _interruption_requested(self) -> bool:
+        is_interruption_requested = getattr(self, "isInterruptionRequested", None)
+        if not callable(is_interruption_requested):
+            return False
+        try:
+            return bool(is_interruption_requested())
+        except RuntimeError:
+            return True
+
+    @classmethod
+    def check_site_connection(
+        cls,
+        *,
+        url: str = AuthService.BASE_URL,
+        timeout: float = STATUS_CHECK_TIMEOUT_SECONDS,
+    ) -> tuple[bool, str]:
+        if requests is None:
+            return False, "requests не установлен"
+
+        response = requests.get(
+            str(url or AuthService.BASE_URL),
+            timeout=float(timeout),
+            allow_redirects=True,
+        )
+        status_code = int(getattr(response, "status_code", 0) or 0)
+        if 200 <= status_code < 500:
+            return True, f"HTTP {status_code}"
+        return False, f"HTTP {status_code}" if status_code else "Нет ответа"
+
+    def run(self) -> None:
+        try:
+            if self._interruption_requested():
+                return
+            is_available, details = self.check_site_connection(
+                url=self._url,
+                timeout=self._timeout,
+            )
+            if not self._interruption_requested():
+                self.finished.emit(bool(is_available), str(details or ""))
+        except Exception as exc:
+            if not self._interruption_requested():
+                self.finished.emit(False, str(exc or "Неизвестная ошибка"))
 
 
 class PlatformMixin:
+    SEARCH_DEBOUNCE_MS = 250
+    MIN_SEARCH_CHARS = 3
+    TRADE_AUTOSIZE_ROW_LIMIT = 200
+    AUTH_STATUS_REFRESH_DELAY_MS = 0
+    SITE_STATUS_REFRESH_DELAY_MS = 0
+
     TRADE_HEADERS = (
         "id",
         "title",
@@ -193,21 +314,47 @@ class PlatformMixin:
     def init_platform_mixin(self) -> None:
         self.all_trades: list[dict[str, Any]] = []
         self.filtered_trades: list[dict[str, Any]] = []
+        self._trades_cache_complete = False
+        self._trades_total_count = 0
+        self._trades_load_requested_all = False
         self.retrades: list[dict[str, Any]] = []
         self.retrade_offers: list[dict[str, Any]] = []
         self._load_trades_worker: LoadTradesWorker | None = None
         self._load_retrades_worker: LoadRetradesWorker | None = None
         self._auth_login_worker: AuthLoginWorker | None = None
         self._auth_status_worker: AuthStatusWorker | None = None
+        self._site_status_worker: SiteStatusWorker | None = None
+        self._auth_status_refresh_timer: QTimer | None = None
+        self._site_status_refresh_timer: QTimer | None = None
         self._ensure_platform_tab()
+        self._platform_search_timer = QTimer(self)
+        self._platform_search_timer.setSingleShot(True)
+        self._platform_search_timer.setInterval(self.SEARCH_DEBOUNCE_MS)
+        self._platform_search_timer.timeout.connect(self.apply_filters)
         self._apply_web_auth_autofill_if_enabled()
         self.btn_login.clicked.connect(self.login)
         self.btn_load_trades.clicked.connect(self.load_trades_clicked)
+        self.btn_load_all_trades.clicked.connect(self.load_all_trades)
         self.btn_load_retrades.clicked.connect(self.load_retrades)
         self.table_retrades.itemSelectionChanged.connect(self.on_retrade_selection_changed)
         self.search_input.textChanged.connect(self.apply_search)
         self.checkbox_active.stateChanged.connect(self.apply_filters)
-        self.refresh_auth_status_on_startup()
+        self._schedule_site_status_refresh()
+        self._schedule_auth_status_refresh()
+
+    def _schedule_site_status_refresh(self) -> None:
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self.refresh_site_status_on_startup)
+        self._site_status_refresh_timer = timer
+        timer.start(self.SITE_STATUS_REFRESH_DELAY_MS)
+
+    def _schedule_auth_status_refresh(self) -> None:
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self.refresh_auth_status_on_startup)
+        self._auth_status_refresh_timer = timer
+        timer.start(self.AUTH_STATUS_REFRESH_DELAY_MS)
 
     def _ensure_platform_tab(self) -> None:
         if (
@@ -215,6 +362,7 @@ class PlatformMixin:
             and hasattr(self.ui, "table_retrades")
             and hasattr(self.ui, "table_retrade_offers")
             and hasattr(self, "btn_load_trades")
+            and hasattr(self, "btn_load_all_trades")
             and hasattr(self, "btn_load_retrades")
             and hasattr(self.ui, "input_limit")
             and hasattr(self, "btn_login")
@@ -222,6 +370,7 @@ class PlatformMixin:
             and hasattr(self.ui, "input_password")
             and hasattr(self, "search_input")
             and hasattr(self, "checkbox_active")
+            and hasattr(self, "label_site_status")
             and hasattr(self, "label_auth_status")
             and hasattr(self, "label_pipeline_status")
         ):
@@ -246,6 +395,14 @@ class PlatformMixin:
         self.label_auth_status.setStyleSheet("color: #666666")
         self.ui.label_auth_status = self.label_auth_status
 
+        site_status_title = QLabel("Сайт:", self.ui.webTab)
+        site_status_title.setObjectName("siteStatusTitle")
+
+        self.label_site_status = QLabel("Проверка...", self.ui.webTab)
+        self.label_site_status.setObjectName("label_site_status")
+        self.label_site_status.setStyleSheet("color: #666666")
+        self.ui.label_site_status = self.label_site_status
+
         self.input_login = QLineEdit(self.ui.webTab)
         self.input_login.setObjectName("input_login")
         self.input_login.setPlaceholderText("Логин")
@@ -263,6 +420,9 @@ class PlatformMixin:
 
         auth_layout.addWidget(auth_label)
         auth_layout.addWidget(self.label_auth_status)
+        auth_layout.addSpacing(16)
+        auth_layout.addWidget(site_status_title)
+        auth_layout.addWidget(self.label_site_status)
         auth_layout.addWidget(self.input_login)
         auth_layout.addWidget(self.input_password)
         auth_layout.addWidget(self.btn_login)
@@ -278,6 +438,10 @@ class PlatformMixin:
         self.btn_load_trades = QPushButton("Загрузить заявки", self.ui.webTab)
         self.btn_load_trades.setObjectName("btn_load_trades")
         self.ui.btn_load_trades = self.btn_load_trades
+
+        self.btn_load_all_trades = QPushButton("Загрузить все заявки", self.ui.webTab)
+        self.btn_load_all_trades.setObjectName("btn_load_all_trades")
+        self.ui.btn_load_all_trades = self.btn_load_all_trades
 
         self.btn_load_retrades = QPushButton("Загрузить переторжки", self.ui.webTab)
         self.btn_load_retrades.setObjectName("btn_load_retrades")
@@ -303,6 +467,7 @@ class PlatformMixin:
         header_layout.addWidget(self.search_input)
         header_layout.addWidget(self.input_limit)
         header_layout.addWidget(self.btn_load_trades)
+        header_layout.addWidget(self.btn_load_all_trades)
         header_layout.addWidget(self.btn_load_retrades)
 
         pipeline_status_layout = QHBoxLayout()
@@ -386,7 +551,6 @@ class PlatformMixin:
     def on_login_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка авторизации на площадке: {error_text}")
-        print(f"Ошибка авторизации на площадке: {error_text}")
         QMessageBox.warning(self, "Ошибка авторизации", error_text)
         self._set_auth_status(is_auth=False)
         self._finish_login("Ошибка авторизации")
@@ -396,6 +560,8 @@ class PlatformMixin:
         self.input_login.setEnabled(not is_loading)
         self.input_password.setEnabled(not is_loading)
         self.btn_login.setText("Вход..." if is_loading else "Войти")
+        if is_loading:
+            self._show_platform_status("Авторизация на площадке...", 0)
 
     def _finish_login(self, status_message: str) -> None:
         self._set_login_loading_state(is_loading=False)
@@ -403,11 +569,49 @@ class PlatformMixin:
         self._auth_login_worker = None
         if worker is not None:
             worker.deleteLater()
-        status_bar = self.statusBar()
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 4000)
+        self._show_platform_status(status_message, 4000)
+
+    def refresh_site_status_on_startup(self) -> None:
+        if bool(getattr(self, "_app_is_closing", False)):
+            return
+        if self._site_status_worker is not None and self._site_status_worker.isRunning():
+            return
+
+        self._set_site_status_checking()
+        worker = SiteStatusWorker(parent=self)
+        worker.finished.connect(self.on_site_status_checked)
+        self._site_status_worker = worker
+        worker.start()
+
+    def on_site_status_checked(self, is_available: bool, details: str = "") -> None:
+        worker = self._site_status_worker
+        self._site_status_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        if bool(getattr(self, "_app_is_closing", False)):
+            return
+        self._set_site_status(is_available=bool(is_available), details=details)
+
+    def _set_site_status_checking(self) -> None:
+        self.label_site_status.setText("Проверка...")
+        self.label_site_status.setToolTip("")
+        self.label_site_status.setStyleSheet("color: #666666")
+
+    def _set_site_status(self, *, is_available: bool, details: str = "") -> None:
+        if is_available:
+            self.label_site_status.setText("Есть связь")
+            self.label_site_status.setToolTip("")
+            self.label_site_status.setStyleSheet("color: green")
+            return
+
+        self.label_site_status.setText("Нет связи")
+        tooltip = str(details or "").strip()
+        self.label_site_status.setToolTip(tooltip)
+        self.label_site_status.setStyleSheet("color: red")
 
     def refresh_auth_status_on_startup(self) -> None:
+        if bool(getattr(self, "_app_is_closing", False)):
+            return
         if self._auth_status_worker is not None and self._auth_status_worker.isRunning():
             return
 
@@ -432,6 +636,8 @@ class PlatformMixin:
         self._auth_status_worker = None
         if worker is not None:
             worker.deleteLater()
+        if bool(getattr(self, "_app_is_closing", False)):
+            return
         self._set_auth_status(is_auth=bool(is_auth))
 
     def _set_auth_status_checking(self) -> None:
@@ -464,14 +670,39 @@ class PlatformMixin:
             pass
         table.itemDoubleClicked.connect(self.on_trade_double_click)
 
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         configure_table_autosize(table)
+        self._set_trades_table_fast_resize_mode(table)
+
+    @staticmethod
+    def _set_trades_table_fast_resize_mode(
+        table: QTableWidget,
+        *,
+        apply_default_widths: bool = True,
+    ) -> None:
+        header = table.horizontalHeader()
+        interactive = QHeaderView.ResizeMode.Interactive
+        header.setSectionResizeMode(0, interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, interactive)
+        header.setSectionResizeMode(3, interactive)
+        header.setSectionResizeMode(4, interactive)
+        header.setSectionResizeMode(5, interactive)
+
+        vertical_header = table.verticalHeader()
+        vertical_header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        vertical_header.setDefaultSectionSize(24)
+        vertical_header.setMinimumSectionSize(20)
+
+        if apply_default_widths:
+            for column, width in (
+                (0, 86),
+                (1, 420),
+                (2, 150),
+                (3, 170),
+                (4, 170),
+                (5, 100),
+            ):
+                table.setColumnWidth(column, width)
 
     @staticmethod
     def _normalize_cookies(raw: Any) -> dict[str, str]:
@@ -541,11 +772,7 @@ class PlatformMixin:
         if login and password:
             return login, password
 
-        candidate_paths: list[Path] = [Path("config.json")]
-        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
-        if cfg_path:
-            candidate_paths.append(Path(cfg_path))
-        candidate_paths.append(Path("utilities/config.json"))
+        candidate_paths = Tool.config_candidate_paths()
 
         seen: set[Path] = set()
         for path in candidate_paths:
@@ -617,28 +844,21 @@ class PlatformMixin:
             Config.config["platformLogin"] = login
             Config.config["platformPassword"] = password
 
+        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
+        cfg_file = Path(cfg_path).expanduser() if cfg_path else Tool.user_config_path()
         self._save_web_auth_credentials_to_path(
-            Path("config.json"),
+            cfg_file,
             login=login,
             password=password,
         )
-
-        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
-        if cfg_path:
-            cfg_file = Path(cfg_path).expanduser()
-            if cfg_file != Path("config.json"):
-                self._save_web_auth_credentials_to_path(
-                    cfg_file,
-                    login=login,
-                    password=password,
-                )
 
     def _save_web_auth_to_root_config(self, cookies_raw: Any) -> None:
         cookies = self._normalize_cookies(cookies_raw)
         if not cookies:
             return
 
-        config_path = Path("config.json")
+        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
+        config_path = Path(cfg_path).expanduser() if cfg_path else Tool.user_config_path()
         payload: dict[str, Any] = {}
         if config_path.exists():
             try:
@@ -662,11 +882,7 @@ class PlatformMixin:
             Config.config["cookies"] = cookies
 
     def load_cookies(self) -> dict[str, str]:
-        candidate_paths: list[Path] = []
-        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
-        if cfg_path:
-            candidate_paths.append(Path(cfg_path))
-        candidate_paths.extend([Path("config.json"), Path("utilities/config.json")])
+        candidate_paths = Tool.config_candidate_paths()
 
         seen: set[Path] = set()
         errors: list[str] = []
@@ -702,10 +918,20 @@ class PlatformMixin:
         raise FileNotFoundError("Не найден config.json с cookies")
 
     def load_trades_clicked(self) -> None:
+        self._start_trades_loading(max_items=self._parse_max_items_input())
+
+    def load_all_trades(self) -> None:
+        self._start_trades_loading(max_items=0, requested_all=True)
+
+    def _start_trades_loading(
+        self,
+        *,
+        max_items: int,
+        requested_all: bool = False,
+    ) -> None:
         if self._load_trades_worker is not None and self._load_trades_worker.isRunning():
             return
 
-        max_items = self._parse_max_items_input()
         login, password = self._load_web_auth_credentials()
         if not login:
             login = self.input_login.text().strip()
@@ -726,11 +952,22 @@ class PlatformMixin:
                 "Будет выполнена авто-переавторизация перед загрузкой заявок."
             )
 
-        self._set_trades_loading_state(is_loading=True)
+        try:
+            max_items_value = int(max_items)
+        except (TypeError, ValueError):
+            max_items_value = 50
+        if max_items_value < 0:
+            max_items_value = 50
+
+        self._trades_load_requested_all = bool(requested_all or max_items_value == 0)
+        self._set_trades_loading_state(
+            is_loading=True,
+            loading_all=self._trades_load_requested_all,
+        )
 
         worker = LoadTradesWorker(
             cookies=cookies,
-            max_items=max_items,
+            max_items=max_items_value,
             login=login,
             password=password,
             parent=self,
@@ -767,10 +1004,24 @@ class PlatformMixin:
         worker.start()
 
     def on_trades_loaded(self, trades: list[dict[str, Any]]) -> None:
+        worker = self._load_trades_worker
+        loaded_all = bool(getattr(worker, "loaded_all", False))
+        try:
+            total_items = int(getattr(worker, "total_items", 0) or 0)
+        except (TypeError, ValueError):
+            total_items = 0
+
         self.all_trades = trades if isinstance(trades, list) else []
         self.filtered_trades = list(self.all_trades)
+        self._trades_cache_complete = loaded_all
+        self._trades_total_count = total_items
         self.apply_filters()
-        self._finish_trades_loading(f"Загружено заявок: {len(self.all_trades)}")
+        status_message = f"Загружено заявок: {len(self.all_trades)}"
+        if loaded_all:
+            status_message += " (все)"
+        elif total_items > 0:
+            status_message += f" из {total_items}"
+        self._finish_trades_loading(status_message)
 
     def on_retrades_loaded(self, retrades: list[dict[str, Any]]) -> None:
         self.retrades = retrades if isinstance(retrades, list) else []
@@ -782,31 +1033,50 @@ class PlatformMixin:
     def on_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка загрузки заявок: {error_text}")
-        print(f"Ошибка загрузки заявок: {error_text}")
         if "401" in error_text or "403" in error_text:
             self._set_auth_status(is_auth=False)
         QMessageBox.warning(self, "Ошибка загрузки заявок", error_text)
         self._finish_trades_loading("Ошибка загрузки заявок")
 
-    def _set_trades_loading_state(self, *, is_loading: bool) -> None:
+    def _set_trades_loading_state(
+        self,
+        *,
+        is_loading: bool,
+        loading_all: bool | None = None,
+    ) -> None:
+        loading_all = (
+            bool(getattr(self, "_trades_load_requested_all", False))
+            if loading_all is None
+            else bool(loading_all)
+        )
         self.btn_load_trades.setEnabled(not is_loading)
         self.btn_load_trades.setText("Загрузка..." if is_loading else "Загрузить заявки")
+        button = getattr(self, "btn_load_all_trades", None)
+        if isinstance(button, QPushButton):
+            button.setEnabled(not is_loading)
+            button.setText(
+                "Загрузка всех..." if is_loading and loading_all else "Загрузить все заявки"
+            )
+        if is_loading:
+            message = "Загрузка всех заявок..." if loading_all else "Загрузка заявок..."
+            self._show_platform_status(message, 0)
 
     def _set_retrades_loading_state(self, *, is_loading: bool) -> None:
         self.btn_load_retrades.setEnabled(not is_loading)
         self.btn_load_retrades.setText(
             "Загрузка..." if is_loading else "Загрузить переторжки"
         )
+        if is_loading:
+            self._show_platform_status("Загрузка переторжек...", 0)
 
     def _finish_trades_loading(self, status_message: str) -> None:
         self._set_trades_loading_state(is_loading=False)
+        self._trades_load_requested_all = False
         worker = self._load_trades_worker
         self._load_trades_worker = None
         if worker is not None:
             worker.deleteLater()
-        status_bar = self.statusBar()
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 4000)
+        self._show_platform_status(status_message, 4000)
 
     def _finish_retrades_loading(self, status_message: str) -> None:
         self._set_retrades_loading_state(is_loading=False)
@@ -814,14 +1084,11 @@ class PlatformMixin:
         self._load_retrades_worker = None
         if worker is not None:
             worker.deleteLater()
-        status_bar = self.statusBar()
-        if status_bar is not None and status_message:
-            status_bar.showMessage(status_message, 4000)
+        self._show_platform_status(status_message, 4000)
 
     def on_retrades_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка загрузки переторжек: {error_text}")
-        print(f"Ошибка загрузки переторжек: {error_text}")
         self.retrade_offers = []
         self.populate_retrade_offers_table([])
         if (
@@ -972,7 +1239,6 @@ class PlatformMixin:
         except Exception as exc:
             error_text = str(exc or "Неизвестная ошибка")
             Tool.write_log(f"Ошибка загрузки предложений переторжки: {error_text}")
-            print(f"Ошибка загрузки предложений переторжки: {error_text}")
             offers = []
 
         retrade["offers"] = offers
@@ -986,7 +1252,7 @@ class PlatformMixin:
                 value = int(override)
             except (TypeError, ValueError):
                 value = 50
-            return value if value > 0 else 50
+            return value if value >= 0 else 50
 
         max_items = 50
         try:
@@ -1002,63 +1268,75 @@ class PlatformMixin:
         rows = trades if isinstance(trades, list) else []
         today = datetime.now()
         sorting_enabled = table.isSortingEnabled()
+        updates_enabled = table.updatesEnabled()
 
+        self._set_trades_table_fast_resize_mode(table)
         table.setSortingEnabled(False)
         blocker = QSignalBlocker(table)
-        table.clearContents()
-        table.setRowCount(len(rows))
+        table.setUpdatesEnabled(False)
+        try:
+            table.clearContents()
+            table.setRowCount(len(rows))
 
-        for row_idx, trade in enumerate(rows):
-            if not isinstance(trade, dict):
-                continue
+            for row_idx, trade in enumerate(rows):
+                if not isinstance(trade, dict):
+                    continue
 
-            currency = trade.get("currency")
-            currency_title = ""
-            if isinstance(currency, dict):
-                currency_title = str(currency.get("title", "") or "")
+                currency = trade.get("currency")
+                currency_title = ""
+                if isinstance(currency, dict):
+                    currency_title = str(currency.get("title", "") or "")
 
-            values = (
-                trade.get("id", ""),
-                trade.get("title", ""),
-                trade.get("registeredNumber", ""),
-                trade.get("bidSubmissionStartDate", ""),
-                trade.get("bidSubmissionEndDate", ""),
-                currency_title,
-            )
+                values = (
+                    trade.get("id", ""),
+                    trade.get("title", ""),
+                    trade.get("registeredNumber", ""),
+                    trade.get("bidSubmissionStartDate", ""),
+                    trade.get("bidSubmissionEndDate", ""),
+                    currency_title,
+                )
 
-            end_date = trade.get("bidSubmissionEndDate")
-            if end_date:
-                try:
-                    dt = datetime.fromisoformat(str(end_date).replace("Z", ""))
-                    diff = (dt - today).days
-                    if diff <= 1:
-                        color = QColor(255, 200, 200)
-                    elif diff <= 3:
-                        color = QColor(255, 255, 200)
-                    else:
-                        color = QColor(200, 255, 200)
-                except Exception:
-                    color = QColor(255, 255, 255)
-            else:
-                color = QColor(220, 220, 220)
+                end_date = trade.get("bidSubmissionEndDate")
+                if end_date:
+                    try:
+                        dt = datetime.fromisoformat(str(end_date).replace("Z", ""))
+                        diff = (dt - today).days
+                        if diff <= 1:
+                            color = QColor(255, 200, 200)
+                        elif diff <= 3:
+                            color = QColor(255, 255, 200)
+                        else:
+                            color = QColor(200, 255, 200)
+                    except Exception:
+                        color = QColor(255, 255, 255)
+                else:
+                    color = QColor(220, 220, 220)
 
-            for col_idx, value in enumerate(values):
-                item = QTableWidgetItem("" if value is None else str(value))
-                flags = item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
-                flags &= ~Qt.ItemFlag.ItemIsEditable
-                item.setFlags(flags)
-                if col_idx == 0:
-                    item.setData(Qt.ItemDataRole.UserRole, trade)
-                table.setItem(row_idx, col_idx, item)
-
-            for col_idx in range(table.columnCount()):
-                item = table.item(row_idx, col_idx)
-                if item:
+                for col_idx, value in enumerate(values):
+                    item = QTableWidgetItem("" if value is None else str(value))
+                    flags = (
+                        item.flags()
+                        | Qt.ItemFlag.ItemIsSelectable
+                        | Qt.ItemFlag.ItemIsEnabled
+                    )
+                    flags &= ~Qt.ItemFlag.ItemIsEditable
+                    item.setFlags(flags)
                     item.setBackground(color)
+                    if col_idx == 0:
+                        item.setData(Qt.ItemDataRole.UserRole, trade)
+                    table.setItem(row_idx, col_idx, item)
+        finally:
+            del blocker
+            table.setSortingEnabled(sorting_enabled)
+            table.setUpdatesEnabled(updates_enabled)
 
-        del blocker
-        table.setSortingEnabled(sorting_enabled)
-        resize_table_to_contents(table)
+        if len(rows) <= self.TRADE_AUTOSIZE_ROW_LIMIT:
+            resize_table_to_contents(table)
+            self._set_trades_table_fast_resize_mode(table, apply_default_widths=False)
+        else:
+            viewport = table.viewport()
+            if viewport is not None:
+                viewport.update()
 
     def on_trade_double_click(self, item: QTableWidgetItem) -> None:
         row = item.row()
@@ -1080,33 +1358,84 @@ class PlatformMixin:
         if not isinstance(trade, dict):
             return
 
-        trade_id = trade.get("id")
-        print("Открываем заявку:", trade_id)
-
     def apply_search(self, _: str = "") -> None:
+        timer = getattr(self, "_platform_search_timer", None)
+        if isinstance(timer, QTimer):
+            timer.start()
+            return
         self.apply_filters()
 
     def apply_filters(self, _: int = 0) -> None:
-        trades = list(self.all_trades) if isinstance(self.all_trades, list) else []
+        timer = getattr(self, "_platform_search_timer", None)
+        if isinstance(timer, QTimer) and timer.isActive():
+            timer.stop()
 
-        if self.checkbox_active.isChecked():
-            trades = [
-                trade
-                for trade in trades
-                if isinstance(trade, dict) and trade.get("bidSubmissionEndDate") is not None
-            ]
+        search_text = self._normalize_search_text(self.search_input.text())
+        if self._is_search_text_too_short(search_text):
+            self.filtered_trades = []
+            self.populate_trades_table([])
+            self._show_platform_status(
+                f"Введите минимум {self.MIN_SEARCH_CHARS} символа для поиска"
+            )
+            return
 
-        text = self.search_input.text().lower().strip()
-        if text:
-            trades = [
-                trade
-                for trade in trades
-                if isinstance(trade, dict)
-                and (
-                    text in (trade.get("title", "") or "").lower()
-                    or text in str(trade.get("registeredNumber", "")).lower()
-                )
-            ]
+        trades = self._filter_trades(
+            self.all_trades,
+            active_only=self.checkbox_active.isChecked(),
+            search_text=search_text,
+        )
 
         self.filtered_trades = trades
         self.populate_trades_table(self.filtered_trades)
+
+    @staticmethod
+    def _normalize_search_text(value: Any) -> str:
+        return " ".join(str(value or "").casefold().split())
+
+    @classmethod
+    def _is_search_text_too_short(cls, search_text: str) -> bool:
+        return bool(search_text) and len(search_text) < cls.MIN_SEARCH_CHARS
+
+    @classmethod
+    def _filter_trades(
+        cls,
+        trades: list[dict[str, Any]] | Any,
+        *,
+        active_only: bool,
+        search_text: str,
+    ) -> list[dict[str, Any]]:
+        rows = (
+            [trade for trade in trades if isinstance(trade, dict)]
+            if isinstance(trades, list)
+            else []
+        )
+
+        if active_only:
+            rows = [
+                trade
+                for trade in rows
+                if trade.get("bidSubmissionEndDate") is not None
+            ]
+
+        text = cls._normalize_search_text(search_text)
+        if not text:
+            return rows
+
+        return [
+            trade
+            for trade in rows
+            if (
+                text in cls._normalize_search_text(trade.get("title", ""))
+                or text in cls._normalize_search_text(trade.get("registeredNumber", ""))
+            )
+        ]
+
+    def _show_platform_status(self, message: str, timeout_ms: int = 3000) -> None:
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar_getter = getattr(self, "statusBar", None)
+        status_bar = status_bar_getter() if callable(status_bar_getter) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(message, timeout_ms)

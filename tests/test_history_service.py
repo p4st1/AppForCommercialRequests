@@ -20,7 +20,8 @@ class _FakeOfferRepository:
         self.created_events.append(kwargs)
         return 0
 
-    def get_history(self, limit=500):
+    def get_history(self, limit=500, **filters):
+        self.last_history_filters = filters
         return self._history_rows[:limit]
 
     def delete_history_event(self, event_id):
@@ -81,6 +82,7 @@ class HistoryServiceTests(unittest.TestCase):
             output_path="/tmp/out.docx",
             selected_suppliers_count=2,
             summary_columns=9,
+            remote_url="https://drive.google.com/file/d/123/view",
         )
 
         self.assertEqual(offer_number, 7)
@@ -93,6 +95,10 @@ class HistoryServiceTests(unittest.TestCase):
         self.assertEqual(offer["currency"], "¥")
         self.assertEqual(offer["notes"], "Выбрано заказчиков: 2")
         self.assertEqual(offer["file_path"], "/tmp/out.docx")
+        self.assertEqual(
+            offer["remote_url"],
+            "https://drive.google.com/file/d/123/view",
+        )
 
     def test_record_excel_export_creates_excel_history_event(self):
         self.service.record_excel_export(
@@ -100,6 +106,7 @@ class HistoryServiceTests(unittest.TestCase):
             total_amount=1250.5,
             currency="¥",
             file_path="/tmp/out.xlsx",
+            remote_url="https://drive.google.com/file/d/xlsx/view",
         )
 
         self.assertEqual(len(self.repo.created_events), 1)
@@ -109,6 +116,10 @@ class HistoryServiceTests(unittest.TestCase):
         self.assertEqual(event["total_amount"], 1250.5)
         self.assertEqual(event["currency"], "¥")
         self.assertEqual(event["file_path"], "/tmp/out.xlsx")
+        self.assertEqual(
+            event["remote_url"],
+            "https://drive.google.com/file/d/xlsx/view",
+        )
 
     def test_event_name_and_total_format(self):
         self.assertEqual(self.service.event_name("docx"), "КП (DOCX)")
@@ -121,8 +132,25 @@ class HistoryServiceTests(unittest.TestCase):
         self.assertEqual(self.service.format_total(None, "¥", fmt_number=str), "—")
 
     def test_delete_get_and_save_delegate_to_repository(self):
-        rows = self.service.get_history(limit=10)
+        rows = self.service.get_history(
+            limit=10,
+            customer_query="Ромашка",
+            event_type="docx",
+            date_from="2026-05-01",
+            date_to="2026-05-18",
+            search_text="out.docx",
+        )
         self.assertEqual(rows, [("row",)])
+        self.assertEqual(
+            self.repo.last_history_filters,
+            {
+                "customer_query": "Ромашка",
+                "event_type": "docx",
+                "date_from": "2026-05-01",
+                "date_to": "2026-05-18",
+                "search_text": "out.docx",
+            },
+        )
 
         self.service.delete_event(12)
         self.assertEqual(self.repo.deleted_ids, [12])

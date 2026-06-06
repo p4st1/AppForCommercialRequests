@@ -44,7 +44,7 @@ class FormulaInputMixin:
 
         if Config.isTableOpened:
             try:
-                self.logisticCalculate()
+                self.logisticCalculate(apply_filters=False)
                 self.calculating()
             except ValueError as e:
                 self.error("Ошибка", str(e))

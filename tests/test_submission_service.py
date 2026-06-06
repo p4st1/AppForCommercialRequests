@@ -34,17 +34,23 @@ class SubmissionServiceTests(unittest.TestCase):
 
         errors = [(issue.row, issue.label) for issue in issues if issue.severity == "error"]
         warnings = [(issue.row, issue.label) for issue in issues if issue.severity == "warning"]
-        self.assertEqual(
-            errors,
-            [
-                (1, "Цена за ед."),
-                (1, "Срок поставки"),
-                (1, "Производитель"),
-                (1, "Технические характеристики"),
-            ],
-        )
+        self.assertEqual(errors, [])
+        self.assertIn((1, "Цена за ед."), warnings)
+        self.assertIn((1, "Срок поставки"), warnings)
+        self.assertIn((1, "Производитель"), warnings)
+        self.assertIn((1, "Технические характеристики"), warnings)
         self.assertIn((0, "Статус поставщика"), warnings)
         self.assertIn((0, "Гарантия"), warnings)
+
+    def test_validate_keeps_missing_header_fields_blocking(self):
+        service = SubmissionService()
+
+        issues = service.validate(SubmissionHeader(), [SubmissionRow(name="Насос")])
+
+        errors = [issue.label for issue in issues if issue.severity == "error"]
+        self.assertIn("Номер заявки", errors)
+        self.assertIn("Название заявки", errors)
+        self.assertIn("Срок действия КП", errors)
 
     def test_prepare_payload_calculates_total(self):
         payload = SubmissionService.prepare_payload(
@@ -67,6 +73,48 @@ class SubmissionServiceTests(unittest.TestCase):
         self.assertEqual(payload.header.offer_validity_period, "31.12.2026")
         self.assertEqual(payload.header.delivery_order, "Доставка до склада")
         self.assertEqual(payload.header.payment_terms, "Оплата по договору")
+
+    def test_prepare_payload_preserves_trade_and_lot_ids(self):
+        payload = SubmissionService.prepare_payload(
+            SubmissionHeader(
+                number="125475",
+                title="Заявка",
+                lot_id="557621478",
+                trade_id="123456",
+            ),
+            [SubmissionRow(name="Насос", qty=1, unit_price=100, total=100)],
+        )
+
+        self.assertEqual(payload.header.lot_id, "557621478")
+        self.assertEqual(payload.header.trade_id, "123456")
+
+    def test_prepare_payload_infers_currency_from_row_price(self):
+        payload = SubmissionService.prepare_payload(
+            SubmissionHeader(
+                number="REQ-1",
+                title="Заявка",
+                offer_validity_period="31.12.2026",
+            ),
+            [
+                SubmissionRow(
+                    name="Насос",
+                    qty="2",
+                    unit_price="146.36 ¥",
+                    delivery_time="30 дней",
+                    manufacturer="cat",
+                    technical="гидромотор",
+                )
+            ],
+        )
+
+        self.assertEqual(payload.header.currency, "CNY")
+        self.assertEqual(payload.rows[0].unit_price, 146.36)
+        self.assertEqual(payload.rows[0].total, 292.72)
+
+    def test_parse_number_accepts_currency_codes_and_names(self):
+        self.assertEqual(SubmissionService.parse_number("1 234,50 CNY"), 1234.5)
+        self.assertEqual(SubmissionService.parse_number("1 234,50 тенге"), 1234.5)
+        self.assertEqual(SubmissionService.parse_number("1 234,50 рублей"), 1234.5)
 
     def test_rows_from_matrix_detects_headers(self):
         rows = SubmissionService._rows_from_matrix(
@@ -114,6 +162,27 @@ class SubmissionServiceTests(unittest.TestCase):
         self.assertEqual(rows[0].qty, 2.0)
         self.assertEqual(rows[0].unit_price, 100.0)
         self.assertEqual(rows[0].delivery_time, "30 дней")
+
+    def test_currency_from_matrix_detects_export_header_code(self):
+        currency = SubmissionService._currency_from_matrix(
+            [
+                [
+                    "Наименование",
+                    "Предлагаемая цена за ед. (без учета НДС)",
+                    "Сумма, CNY (без учета НДС)",
+                ],
+                ["Насос", "100", "200"],
+            ]
+        )
+
+        self.assertEqual(currency, "CNY")
+
+    def test_normalize_currency_code_accepts_symbols_and_names(self):
+        self.assertEqual(SubmissionService.normalize_currency_code("рубли"), "RUB")
+        self.assertEqual(SubmissionService.normalize_currency_code("1 000,00 ₽"), "RUB")
+        self.assertEqual(SubmissionService.normalize_currency_code("юани"), "CNY")
+        self.assertEqual(SubmissionService.normalize_currency_code("CYN"), "CNY")
+        self.assertEqual(SubmissionService.normalize_currency_code("USD"), "USD")
 
     def test_load_csv_detects_semicolon_delimiter(self):
         with tempfile.TemporaryDirectory() as tmpdir:

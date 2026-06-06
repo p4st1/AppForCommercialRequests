@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from utilities.paths import user_path
+
 EXPORT_KEYWORDS = ("export", "excel", "xlsx", "report")
 
 
@@ -34,6 +36,13 @@ def _append_log_line(log_path: Path, line: str) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as file:
         file.write(f"{line}\n")
+
+
+def _resolve_debug_log_path(log_path: str) -> Path:
+    candidate = Path(log_path).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return user_path("logs", candidate.name)
 
 
 def _request_method(request: Any) -> str:
@@ -83,7 +92,8 @@ def attach_network_trace(
     log_path: str = "export_debug.log",
 ) -> tuple[NetworkTrace, Callable[[], None]]:
     trace = NetworkTrace()
-    debug_log_path = Path(log_path).resolve()
+    debug_log_path = _resolve_debug_log_path(log_path)
+    debug_log_path.parent.mkdir(parents=True, exist_ok=True)
     debug_log_path.write_text("", encoding="utf-8")
 
     def _log(message: str) -> None:
@@ -174,7 +184,7 @@ def attach_export_route_probe(
     *,
     log_path: str = "export_debug.log",
 ) -> Callable[[], None]:
-    debug_log_path = Path(log_path).resolve()
+    debug_log_path = _resolve_debug_log_path(log_path)
 
     def _log(message: str) -> None:
         print(message)
@@ -227,7 +237,7 @@ def select_export_request_event(trace: NetworkTrace) -> NetworkEvent | None:
 
 
 def dump_trace_details(trace: NetworkTrace, *, log_path: str = "export_debug.log") -> None:
-    debug_log_path = Path(log_path).resolve()
+    debug_log_path = _resolve_debug_log_path(log_path)
     _append_log_line(debug_log_path, "")
     _append_log_line(debug_log_path, "=== TRACE SUMMARY ===")
     _append_log_line(debug_log_path, f"response_urls={len(trace.response_urls)}")

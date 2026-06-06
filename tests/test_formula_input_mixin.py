@@ -38,7 +38,7 @@ class _FakeWindow(FormulaInputMixin, NumberFormatMixin):
     def error(self, title, text):
         self.error_calls.append((title, text))
 
-    def logisticCalculate(self):
+    def logisticCalculate(self, **_kwargs):
         self.logistic_calls += 1
 
     def calculating(self):

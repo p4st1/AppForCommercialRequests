@@ -26,6 +26,10 @@ if not hasattr(qtwidgets, "QMessageBox"):
         def critical(*args, **kwargs):
             return 0
 
+        @staticmethod
+        def information(*args, **kwargs):
+            return 0
+
     qtwidgets.QMessageBox = _QMessageBox
 
 pyside6.QtWidgets = qtwidgets
@@ -47,6 +51,18 @@ class _FakeNumLine:
         self.value = text
 
 
+class _FakeRadio:
+    def __init__(self):
+        self.checked = False
+        self.enabled = True
+
+    def setChecked(self, value):
+        self.checked = bool(value)
+
+    def setEnabled(self, value):
+        self.enabled = bool(value)
+
+
 class _FakeCreateDocUi:
     def __init__(self):
         self.numLine = _FakeNumLine()
@@ -60,6 +76,10 @@ class _FakeCreateDocWindow:
         self.tableData = tableData
         self.ui = _FakeCreateDocUi()
         self.windowClosed = _FakeSignal()
+        self.documentCreated = _FakeSignal()
+        self.googleDocxFormatRadio = _FakeRadio()
+        self.docxFormatRadio = _FakeRadio()
+        self.pdfFormatRadio = _FakeRadio()
         self.shown = False
         self.__class__.instances.append(self)
 
@@ -125,6 +145,7 @@ class _FakeMainWindow(DocExportFlowMixin):
         self.finish_loading_messages = []
         self.auth_status_values = []
         self.all_trades = []
+        self._trades_cache_complete = False
         self.pending_submission_metadata_calls = []
 
     def error(self, title, message):
@@ -201,6 +222,23 @@ class DocExportFlowMixinTests(unittest.TestCase):
         self.assertTrue(_has_bound_callback(created_window.windowClosed.callbacks, window, "closeTable"))
         self.assertEqual(window.ui.KpTable.row_count_values, [0])
 
+    def test_open_create_doc_window_can_force_google_docx_and_connect_callback(self):
+        Config.settings["closeTable"] = False
+        window = _FakeMainWindow()
+        callback = lambda payload: payload
+
+        window.openCreateDocWindow(
+            (1, [["row"]]),
+            force_google_docx=True,
+            on_document_created=callback,
+        )
+
+        created_window = _FakeCreateDocWindow.instances[0]
+        self.assertTrue(created_window.googleDocxFormatRadio.checked)
+        self.assertFalse(created_window.docxFormatRadio.enabled)
+        self.assertFalse(created_window.pdfFormatRadio.enabled)
+        self.assertEqual(created_window.documentCreated.callbacks, [callback])
+
     @patch("app.ui.doc_export_flow_mixin.Tool.write_log")
     def test_export_docs_requires_loaded_table(self, write_log):
         Config.isTableOpened = False
@@ -250,7 +288,32 @@ class DocExportFlowMixinTests(unittest.TestCase):
 
         self.assertEqual(window.ui.tabWidget.indices, [1])
         self.assertEqual(window.load_trades_calls, 1)
+        self.assertEqual(window._trades_load_max_items_override, 0)
         self.assertEqual(window._web_pipeline_trade_number, "A-100")
+
+    def test_run_web_pipeline_uses_loaded_trade_without_reloading(self):
+        window = _FakeMainWindow()
+        window.all_trades = [{"registeredNumber": "A-100", "lots": [{"id": 77}]}]
+
+        window.run_web_pipeline("A-100")
+
+        self.assertEqual(window.ui.tabWidget.indices, [1])
+        self.assertEqual(window.load_trades_calls, 0)
+        self.assertEqual(window.export_trade_calls, [77])
+        self.assertEqual(window._web_pipeline_trade_number, "")
+
+    @patch("app.ui.doc_export_flow_mixin.QMessageBox.warning")
+    def test_run_web_pipeline_does_not_reload_when_full_cache_misses(self, warning):
+        window = _FakeMainWindow()
+        window._trades_cache_complete = True
+        window.all_trades = [{"registeredNumber": "A-100", "lots": [{"id": 77}]}]
+
+        window.run_web_pipeline("A-404")
+
+        warning.assert_called_once()
+        self.assertEqual(window.load_trades_calls, 0)
+        self.assertEqual(window.export_trade_calls, [])
+        self.assertEqual(window._web_pipeline_trade_number, "")
 
     def test_on_trades_loaded_continues_pipeline_and_exports_lot(self):
         window = _FakeMainWindow()
@@ -261,6 +324,8 @@ class DocExportFlowMixinTests(unittest.TestCase):
             "delivery_order": "",
             "payment_terms": "",
             "payment_condition": "",
+            "supplier_status": "Посредник",
+            "warranty": "12 мес.",
         }
         window.run_web_pipeline("A-100", submission_context=context)
         window.all_trades = [
@@ -285,6 +350,8 @@ class DocExportFlowMixinTests(unittest.TestCase):
         context = window._web_pipeline_submission_context
         self.assertEqual(context["customer"], "ООО Тест")
         self.assertRegex(context["offer_validity_period"], r"^\d{2}\.\d{2}\.\d{4}$")
+        self.assertEqual(context["supplier_status"], "")
+        self.assertEqual(context["warranty"], "")
 
     @patch("app.ui.doc_export_flow_mixin.QMessageBox.warning")
     def test_on_trades_loaded_shows_warning_when_trade_not_found(self, warning):

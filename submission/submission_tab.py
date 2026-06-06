@@ -93,6 +93,7 @@ class SubmissionTabMixin:
         self.submission_service = SubmissionService()
         self._submission_loaded_kp_rows: list[SubmissionRow] = []
         self._submission_loaded_kp_path = ""
+        self._submission_trade_id = ""
         self._submission_lot_id = ""
         self._submission_submit_worker: SubmitSubmissionWorker | None = None
         self._updating_submission_table = False
@@ -222,6 +223,19 @@ class SubmissionTabMixin:
         )
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         table.setAlternatingRowColors(True)
+        table.setStyleSheet(
+            """
+QTableWidget::item:selected {
+    background-color: #eaf3ff;
+    color: #101828;
+}
+
+QTableWidget::item:selected:!active {
+    background-color: #f2f4f7;
+    color: #101828;
+}
+"""
+        )
         table.verticalHeader().setVisible(False)
         table.horizontalHeader().setStretchLastSection(False)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -259,6 +273,15 @@ class SubmissionTabMixin:
             for col in range(self.submission_table.columnCount())
         )
 
+    def _submission_row_has_zero_price(self, row: int) -> bool:
+        price_text = self._submission_item_text(row, 3)
+        total_text = self._submission_item_text(row, 4)
+        price = self.submission_service.parse_number(price_text)
+        total = self.submission_service.parse_number(total_text)
+        if price is not None and abs(price) < 1e-9:
+            return True
+        return not price_text and total is not None and abs(total) < 1e-9
+
     def _on_submission_item_changed(self, item: QTableWidgetItem) -> None:
         if self._updating_submission_table or item is None:
             return
@@ -293,12 +316,50 @@ class SubmissionTabMixin:
                 rows.append(row)
         return rows
 
+    def _submission_currency_from_table(self) -> str:
+        table = getattr(self, "submission_table", None)
+        if table is None:
+            return ""
+
+        priority_values: list[str] = []
+        header_values: list[str] = []
+        all_values: list[str] = []
+        priority_columns = {3, 4}
+        for col_index in range(table.columnCount()):
+            header_item = (
+                table.horizontalHeaderItem(col_index)
+                if callable(getattr(table, "horizontalHeaderItem", None))
+                else None
+            )
+            if header_item is not None:
+                header_text = str(header_item.text() or "").strip()
+                if header_text:
+                    header_values.append(header_text)
+        for row_index in range(table.rowCount()):
+            for col_index in range(table.columnCount()):
+                text = self._submission_item_text(row_index, col_index)
+                if not text:
+                    continue
+                if col_index in priority_columns:
+                    priority_values.append(text)
+                else:
+                    all_values.append(text)
+
+        return self.submission_service.detect_currency_from_values(
+            priority_values + header_values + all_values
+        )
+
     def _submission_header_from_inputs(self) -> SubmissionHeader:
+        currency = (
+            self.submission_currency_input.text().strip()
+            or self._submission_currency_from_table()
+        )
         return SubmissionHeader(
+            trade_id=str(getattr(self, "_submission_trade_id", "") or "").strip(),
             number=self.submission_number_input.text().strip(),
             title=self.submission_title_input.text().strip(),
             customer=self.submission_customer_input.text().strip(),
-            currency=self.submission_currency_input.text().strip(),
+            currency=currency,
             offer_validity_period=self.submission_offer_validity_input.text().strip(),
             delivery_order=self.submission_delivery_order_input.text().strip(),
             payment_terms=self.submission_payment_terms_input.text().strip(),
@@ -379,8 +440,19 @@ class SubmissionTabMixin:
             row_count = max(len(rows) + 1, 10)
             table.setRowCount(row_count)
             for row_index, row in enumerate(rows):
+                unit_price = self.submission_service.parse_number(row.unit_price)
+                total = self.submission_service.parse_number(row.total)
+                zero_price_row = (
+                    unit_price == 0.0
+                    or (unit_price is None and total == 0.0)
+                )
                 for col_index, value in enumerate(row.to_cells()):
-                    text = self.submission_service.format_money(value) if col_index in {3, 4} else "" if value is None else str(value)
+                    if zero_price_row and col_index in {8, 9}:
+                        text = ""
+                    elif col_index in {3, 4}:
+                        text = self.submission_service.format_money(value)
+                    else:
+                        text = "" if value is None else str(value)
                     item = QTableWidgetItem(text)
                     if col_index in {1, 3, 4}:
                         item.setTextAlignment(
@@ -414,7 +486,9 @@ class SubmissionTabMixin:
 
         self._submission_loaded_kp_rows = rows
         self._submission_loaded_kp_path = file_path
+        self._submission_trade_id = ""
         self._submission_lot_id = ""
+        self._set_submission_currency_from_file(file_path)
         self._set_submission_status("idle", f"КП загружено: {len(rows)} поз.")
         status_bar = self.statusBar() if callable(getattr(self, "statusBar", None)) else None
         if status_bar is not None:
@@ -441,7 +515,9 @@ class SubmissionTabMixin:
         rows = self.submission_service.load_kp(path)
         self._submission_loaded_kp_rows = rows
         self._submission_loaded_kp_path = str(path)
+        self._submission_trade_id = ""
         self._submission_lot_id = self._submission_lot_id_from_export_path(path)
+        self._set_submission_currency_from_file(path)
         self._set_submission_rows(rows)
         self._set_submission_status("idle", f"Загружено из экспорта: {len(rows)} поз.")
         self.activate_submission_tab()
@@ -451,14 +527,92 @@ class SubmissionTabMixin:
             status_bar.showMessage("Экспорт загружен во вкладку Подача заявки", 5_000)
         return len(rows)
 
+    def _set_submission_currency_from_file(self, file_path: str | Path) -> None:
+        currency = self.submission_service.detect_currency(file_path)
+        self._submission_export_detected_currency = currency
+        if currency:
+            blocker = QSignalBlocker(self.submission_currency_input)
+            try:
+                self.submission_currency_input.setText(currency)
+            finally:
+                del blocker
+
+    def _apply_submission_row_defaults(self, metadata: dict[str, Any]) -> None:
+        if not isinstance(metadata, dict):
+            return
+
+        field_values = {
+            "supplier_status": str(metadata.get("supplier_status", "") or "").strip(),
+            "warranty": str(
+                metadata.get("warranty", "")
+                or metadata.get("guarantee", "")
+                or ""
+            ).strip(),
+        }
+        field_values = {key: value for key, value in field_values.items() if value}
+
+        column_by_field = {field: index for index, field in enumerate(FIELD_ORDER)}
+        columns_to_clear_on_zero = (
+            column_by_field.get("supplier_status"),
+            column_by_field.get("warranty"),
+        )
+        if not field_values and not any(
+            column is not None for column in columns_to_clear_on_zero
+        ):
+            return
+
+        self._updating_submission_table = True
+        blocker = QSignalBlocker(self.submission_table)
+        try:
+            for row in range(self.submission_table.rowCount()):
+                if not self._submission_row_has_content(row):
+                    continue
+                if self._submission_row_has_zero_price(row):
+                    for column in columns_to_clear_on_zero:
+                        if column is None:
+                            continue
+                        item = self.submission_table.item(row, column)
+                        if item is not None:
+                            item.setText("")
+                    continue
+                for field, value in field_values.items():
+                    column = column_by_field.get(field)
+                    if column is None or self._submission_item_text(row, column):
+                        continue
+                    self._ensure_submission_item(row, column).setText(value)
+        finally:
+            del blocker
+            self._updating_submission_table = False
+        self._update_submission_total()
+
     def apply_submission_export_metadata(self, metadata: dict[str, Any] | None) -> None:
         if not isinstance(metadata, dict):
             return
 
         self._ensure_submission_tab()
+        metadata = dict(metadata)
+        detected_currency = str(
+            getattr(self, "_submission_export_detected_currency", "") or ""
+        ).strip()
+        metadata_currency = (
+            self.submission_service.normalize_currency_code(metadata.get("currency"))
+            or str(metadata.get("currency", "") or "").strip()
+        )
+        table_currency = self._submission_currency_from_table()
+        if metadata_currency:
+            metadata["currency"] = metadata_currency
+        elif table_currency:
+            metadata["currency"] = table_currency
+        elif detected_currency:
+            metadata["currency"] = detected_currency
         lot_id = str(metadata.get("lot_id", "") or "").strip()
         if lot_id:
             self._submission_lot_id = lot_id
+        trade_id = str(
+            metadata.get("trade_id", "") or metadata.get("id", "") or ""
+        ).strip()
+        if trade_id:
+            self._submission_trade_id = trade_id
         field_map = (
             ("number", self.submission_number_input),
             ("title", self.submission_title_input),
@@ -472,12 +626,15 @@ class SubmissionTabMixin:
         try:
             for key, input_widget in field_map:
                 value = str(metadata.get(key, "") or "").strip()
+                if key == "currency":
+                    value = self.submission_service.normalize_currency_code(value) or value
                 if not value:
                     continue
                 blockers.append(QSignalBlocker(input_widget))
                 input_widget.setText(value)
         finally:
             blockers.clear()
+        self._apply_submission_row_defaults(metadata)
 
     @staticmethod
     def _submission_lot_id_from_export_path(path: str | Path) -> str:
@@ -491,6 +648,32 @@ class SubmissionTabMixin:
                 item = self.submission_table.item(row, col)
                 if item is not None:
                     item.setBackground(QColor())
+
+    def _clear_submission_table_selection(self) -> None:
+        table = getattr(self, "submission_table", None)
+        if table is None:
+            return
+        clear_selection = getattr(table, "clearSelection", None)
+        if callable(clear_selection):
+            try:
+                clear_selection()
+            except Exception:
+                pass
+        selection_model_getter = getattr(table, "selectionModel", None)
+        if callable(selection_model_getter):
+            try:
+                selection_model = selection_model_getter()
+                clear_model = getattr(selection_model, "clear", None)
+                if callable(clear_model):
+                    clear_model()
+            except Exception:
+                pass
+        set_current_item = getattr(table, "setCurrentItem", None)
+        if callable(set_current_item):
+            try:
+                set_current_item(None)
+            except Exception:
+                pass
 
     def _highlight_submission_issues(self, issues: list[SubmissionValidationIssue]) -> None:
         self._clear_submission_highlight()
@@ -512,6 +695,7 @@ class SubmissionTabMixin:
             for col in range(self.submission_table.columnCount()):
                 item = self._ensure_submission_item(row, col)
                 item.setBackground(color)
+        self._clear_submission_table_selection()
 
     @staticmethod
     def _validation_message(issues: list[SubmissionValidationIssue]) -> str:
@@ -629,10 +813,7 @@ class SubmissionTabMixin:
         if cookies:
             return cookies
 
-        candidate_paths: list[Path] = [Path("config.json"), Path("utilities/config.json")]
-        cfg_path = str(getattr(Config, "cfg_path", "") or "").strip()
-        if cfg_path:
-            candidate_paths.insert(0, Path(cfg_path))
+        candidate_paths = Tool.config_candidate_paths()
 
         seen: set[Path] = set()
         for path in candidate_paths:
@@ -729,6 +910,16 @@ class SubmissionTabMixin:
             self.btn_submit_submission.setText("Подготовка..." if is_loading else "Подать заявку")
         if is_loading:
             self._set_submission_status("idle", "Подготовка...")
+            self._show_submission_status_bar("Подготовка заявки к подаче...")
+
+    def _show_submission_status_bar(self, message: str, timeout_ms: int = 0) -> None:
+        show_status = getattr(self, "_show_status_message", None)
+        if callable(show_status):
+            show_status(message, timeout_ms)
+            return
+        status_bar = self.statusBar() if callable(getattr(self, "statusBar", None)) else None
+        if status_bar is not None and message:
+            status_bar.showMessage(message, timeout_ms)
 
     def _finish_submission_worker(self) -> None:
         self._set_submission_loading_state(is_loading=False)
@@ -741,12 +932,10 @@ class SubmissionTabMixin:
         info_text = str(message or "").strip()
         Tool.write_log(f"Заявка подготовлена к ручной подаче: {info_text}")
         self._set_submission_status("warning", "Ожидание пользователя")
-        status_bar = self.statusBar() if callable(getattr(self, "statusBar", None)) else None
-        if status_bar is not None:
-            status_bar.showMessage(
-                info_text or "Таблица загружена на сайт. Ожидается ручная подача.",
-                10_000,
-            )
+        self._show_submission_status_bar(
+            info_text or "Таблица загружена на сайт. Ожидается ручная подача.",
+            10_000,
+        )
 
     def _on_submission_finished(self, message: str) -> None:
         Tool.write_log(f"Подача заявки завершена: {message}")
@@ -754,6 +943,7 @@ class SubmissionTabMixin:
         status_text = "Подано" if "подан" in message_text.casefold() else "Загружено"
         self._set_submission_status("ready", status_text)
         self._finish_submission_worker()
+        self._show_submission_status_bar("Подача заявки завершена", 5_000)
         QMessageBox.information(self, "Подача заявки", message)
 
     def _on_submission_error(self, message: str) -> None:
@@ -761,4 +951,5 @@ class SubmissionTabMixin:
         Tool.write_log(f"Ошибка подачи заявки: {error_text}")
         self._set_submission_status("error", "Ошибка подачи")
         self._finish_submission_worker()
+        self._show_submission_status_bar("Ошибка подачи заявки", 5_000)
         QMessageBox.warning(self, "Подача заявки", error_text)
