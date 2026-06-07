@@ -194,6 +194,8 @@ class _FakeExportWindow(ExportMixin):
         self.current_retrade_trade_id = None
         self.current_retrade_lot_id = None
         self._active_export_workflow = ""
+        self._generate_retrade_after_export = False
+        self.calculations_file_path = "/tmp/calc.xlsx"
         self.loading_states = []
 
     def _build_export_download_path(self, identifier):
@@ -309,6 +311,26 @@ class RetradeContextTests(unittest.TestCase):
         with patch("ui_mixins.export_mixin.ExportTradeWorker", _FakeExportWorker):
             window.export_selected_retrade()
 
+        self.assertEqual(len(_FakeExportWorker.created), 1)
+        self.assertEqual(_FakeExportWorker.created[0].kwargs["trade_id"], 999)
+        self.assertEqual(_FakeExportWorker.created[0].kwargs["lot_id"], 55)
+        self.assertEqual(_FakeExportWorker.created[0].kwargs["bid_id"], 7001)
+
+    def test_generate_button_reexports_attached_retrade_first(self):
+        window = _FakeExportWindow()
+        window._set_current_retrade_context(
+            {
+                "number": "740370",
+                "bid_id": 7001,
+                "trade_id": 999,
+                "lot_id": 55,
+            }
+        )
+
+        with patch("ui_mixins.export_mixin.ExportTradeWorker", _FakeExportWorker):
+            window._on_generate_retrade_calculation_clicked()
+
+        self.assertTrue(window._generate_retrade_after_export)
         self.assertEqual(len(_FakeExportWorker.created), 1)
         self.assertEqual(_FakeExportWorker.created[0].kwargs["trade_id"], 999)
         self.assertEqual(_FakeExportWorker.created[0].kwargs["lot_id"], 55)
