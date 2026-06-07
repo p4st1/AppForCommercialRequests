@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from playwright.sync_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
+from services.platform.cookies import build_playwright_cookies, normalize_cookies
 
 
 class TradeUploader:
@@ -29,26 +30,10 @@ class TradeUploader:
 
     @staticmethod
     def _normalize_cookies(raw: Any) -> dict[str, str]:
-        if not isinstance(raw, dict):
-            return {}
-        result: dict[str, str] = {}
-        for key, value in raw.items():
-            key_text = str(key).strip()
-            value_text = str(value).strip()
-            if not key_text or not value_text:
-                continue
-            result[key_text] = value_text
-        return result
+        return normalize_cookies(raw)
 
     def _build_playwright_cookies(self) -> list[dict[str, str]]:
-        return [
-            {
-                "name": name,
-                "value": value,
-                "url": self.BASE_URL,
-            }
-            for name, value in self._cookies.items()
-        ]
+        return build_playwright_cookies(self._cookies, url=self.BASE_URL)
 
     def upload_file(self, trade_id: int, file_path: str) -> str:
         return self.submit_trade(trade_id=trade_id, file_path=file_path)

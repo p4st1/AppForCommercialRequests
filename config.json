@@ -17,28 +17,20 @@
       "на дату подписания спецификации Поставщиком",
       "на дату оплаты"
     ],
-    "platformLogin": "d.burnashev@alphakappa.ru",
-    "platformPassword": "Alphakappa01",
-    "cookies": {
-      "__Host-JSESSIONID": "044DD791FB5A7D8704C4F4EB33803174",
-      "__Host-refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzMDcxMTQ3MzQiLCJleHAiOjE3Nzg3ODMwNjUsImlhdCI6MTc3ODY5NjY2NX0.-fzUpdsQfGSTxxFtSOWMim8VNMM0M-KMpWvgliO2zK4",
-      "_ym_d": "1778696654",
-      "_ym_isad": "2",
-      "_ym_uid": "1778696653395973104",
-      "_ym_visorc": "b",
-      "bh": "EigiQ2hyb21pdW0iO3Y9IjE0NSIsICJOb3Q6QS1CcmFuZCI7dj0iOTkiGgNhcm0iDDE0NS4wLjc2MzIuNioCPzA6ByJtYWNPUyJCBjI2LjMuMUoCNjRSNiJDaHJvbWl1bSI7dj0iMTQ1LjAuNzYzMi42IiwiTm90OkEtQnJhbmQiO3Y9Ijk5LjAuMC4wImDhg5PQBmoh3MrRtgG78Z+rBPrWhswI0tHt6wP8ua//B9/995wB84EC",
-      "gdpr": "0",
-      "i": "ykaMCIM5CH0/g3J5sh1EIqDsPbfX+JfHe3wqAWjXBDomtHxmEEIchWVHkr0+oHwlxODaghB4OFSwyIE/iZ1BU5+x+U8=",
-      "receive-cookie-deprecation": "1",
-      "yabs-sid": "1851175171778696650",
-      "yandexuid": "6038426201778696649",
-      "yashr": "4185149231778696649",
-      "ymex": "2094056650.yrts.1778696650",
-      "yuidss": "6038426201778696649"
-    },
+    "platformLogin": "",
+    "platformPassword": "",
+    "cookies": {},
     "platform": {
-      "login": "d.burnashev@alphakappa.ru",
-      "password": "Alphakappa01"
+      "login": "",
+      "password": ""
+    },
+    "platformTradeLoad": {
+      "default_limit": 20,
+      "max_items": 50,
+      "timeout": [
+        10.0,
+        180.0
+      ]
     }
   },
   "settings": {
@@ -58,21 +50,5 @@
     "show_history_tab": true,
     "show_updates_tab": true
   },
-  "cookies": {
-    "__Host-JSESSIONID": "044DD791FB5A7D8704C4F4EB33803174",
-    "__Host-refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzMDcxMTQ3MzQiLCJleHAiOjE3Nzg3ODMwNjUsImlhdCI6MTc3ODY5NjY2NX0.-fzUpdsQfGSTxxFtSOWMim8VNMM0M-KMpWvgliO2zK4",
-    "_ym_d": "1778696654",
-    "_ym_isad": "2",
-    "_ym_uid": "1778696653395973104",
-    "_ym_visorc": "b",
-    "bh": "EigiQ2hyb21pdW0iO3Y9IjE0NSIsICJOb3Q6QS1CcmFuZCI7dj0iOTkiGgNhcm0iDDE0NS4wLjc2MzIuNioCPzA6ByJtYWNPUyJCBjI2LjMuMUoCNjRSNiJDaHJvbWl1bSI7dj0iMTQ1LjAuNzYzMi42IiwiTm90OkEtQnJhbmQiO3Y9Ijk5LjAuMC4wImDhg5PQBmoh3MrRtgG78Z+rBPrWhswI0tHt6wP8ua//B9/995wB84EC",
-    "gdpr": "0",
-    "i": "ykaMCIM5CH0/g3J5sh1EIqDsPbfX+JfHe3wqAWjXBDomtHxmEEIchWVHkr0+oHwlxODaghB4OFSwyIE/iZ1BU5+x+U8=",
-    "receive-cookie-deprecation": "1",
-    "yabs-sid": "1851175171778696650",
-    "yandexuid": "6038426201778696649",
-    "yashr": "4185149231778696649",
-    "ymex": "2094056650.yrts.1778696650",
-    "yuidss": "6038426201778696649"
-  }
+  "cookies": {}
 }

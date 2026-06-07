@@ -169,6 +169,9 @@ class DatabaseTools:
             config.get("googleDriveCredentialsPath", "")
         ).strip()
         config["googleDriveFolderId"] = str(config.get("googleDriveFolderId", "")).strip()
+        config["platformTradeLoad"] = DatabaseTools._normalize_platform_trade_load(
+            config.get("platformTradeLoad")
+        )
         config["offerValidityDays"] = str(
             Config.normalize_offer_validity_days(config.get("offerValidityDays"))
         )
@@ -209,6 +212,52 @@ class DatabaseTools:
         if normalized_cookies:
             result["cookies"] = normalized_cookies
         return result
+
+    @staticmethod
+    def _normalize_platform_trade_load(raw_value):
+        defaults = Config.DEFAULT_CONFIG.get("platformTradeLoad", {})
+        if not isinstance(defaults, dict):
+            defaults = {
+                "default_limit": 20,
+                "max_items": 50,
+                "timeout": [10.0, 180.0],
+            }
+        data = raw_value if isinstance(raw_value, dict) else {}
+
+        def _positive_int(key):
+            try:
+                parsed = int(float(str(data.get(key, defaults.get(key))).replace(",", ".")))
+            except (TypeError, ValueError):
+                parsed = int(defaults.get(key, 1))
+            return max(1, parsed)
+
+        def _non_negative_int(key):
+            try:
+                parsed = int(float(str(data.get(key, defaults.get(key))).replace(",", ".")))
+            except (TypeError, ValueError):
+                parsed = int(defaults.get(key, 0))
+            return max(0, parsed)
+
+        raw_timeout = data.get("timeout", defaults.get("timeout", [10.0, 180.0]))
+        if isinstance(raw_timeout, (list, tuple)) and len(raw_timeout) == 2:
+            try:
+                timeout = [
+                    max(0.1, float(raw_timeout[0])),
+                    max(0.1, float(raw_timeout[1])),
+                ]
+            except (TypeError, ValueError):
+                timeout = list(defaults.get("timeout", [10.0, 180.0]))
+        else:
+            try:
+                timeout = max(0.1, float(raw_timeout))
+            except (TypeError, ValueError):
+                timeout = list(defaults.get("timeout", [10.0, 180.0]))
+
+        return {
+            "default_limit": _positive_int("default_limit"),
+            "max_items": _non_negative_int("max_items"),
+            "timeout": timeout,
+        }
 
     @staticmethod
     def evalWithVars(line):

@@ -109,6 +109,27 @@ class ConfigMergeTests(unittest.TestCase):
         )
         self.assertEqual(merged["config"]["googleDriveFolderId"], "folder-123")
 
+    def test_platform_trade_load_defaults_and_normalization(self):
+        merged = Tool.merge_config_with_defaults(
+            {
+                "config": {
+                    "platformTradeLoad": {
+                        "default_limit": "0",
+                        "max_items": "-5",
+                        "timeout": ["bad", 0],
+                    }
+                },
+                "settings": {},
+            }
+        )
+
+        self.assertEqual(merged["config"]["platformTradeLoad"]["default_limit"], 1)
+        self.assertEqual(merged["config"]["platformTradeLoad"]["max_items"], 0)
+        self.assertEqual(
+            merged["config"]["platformTradeLoad"]["timeout"],
+            Config.DEFAULT_CONFIG["platformTradeLoad"]["timeout"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

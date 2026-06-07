@@ -5,6 +5,26 @@ __pycache__/
 *.pyc
 *.pyo
 
+.DS_Store
+.vs/
+.appdata/
+
 build/
 dist/
 *.spec
+
+temp/
+playwright_profile/
+
+logs.txt
+*.log
+
+debug_*.html
+debug_*.png
+export_debug.*
+export_error.*
+submission_export_error.*
+manual_export_ready.*
+after_click.html
+retrade_open.*
+test.html

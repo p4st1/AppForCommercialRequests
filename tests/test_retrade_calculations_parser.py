@@ -148,6 +148,11 @@ def _ensure_pyside_stubs() -> None:
         def getOpenFileName(*_args, **_kwargs):
             return ("", "")
 
+    class _QInputDialog:
+        @staticmethod
+        def getText(*_args, **_kwargs):
+            return ("", False)
+
     class _QMessageBox:
         @staticmethod
         def warning(*_args, **_kwargs):
@@ -210,6 +215,7 @@ def _ensure_pyside_stubs() -> None:
         "QCheckBox": _Widget,
         "QDoubleSpinBox": _Widget,
         "QFileDialog": _QFileDialog,
+        "QInputDialog": _QInputDialog,
         "QHeaderView": _QHeaderView,
         "QHBoxLayout": _Widget,
         "QLabel": _Widget,

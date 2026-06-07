@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from services.currency_service import CurrencyService
+
 
 SUBMISSION_HEADERS = (
     "Наименование",
@@ -111,53 +113,8 @@ class SubmissionValidationIssue:
 
 
 class SubmissionService:
-    CURRENCY_CODES = {
-        "AUD",
-        "BYN",
-        "CHF",
-        "CNY",
-        "EUR",
-        "GBP",
-        "INR",
-        "JPY",
-        "KZT",
-        "RSD",
-        "RUB",
-        "TRY",
-        "UAH",
-        "USD",
-    }
-    CURRENCY_ALIASES = {
-        "₽": "RUB",
-        "руб": "RUB",
-        "руб.": "RUB",
-        "рубль": "RUB",
-        "рубля": "RUB",
-        "рублей": "RUB",
-        "рубли": "RUB",
-        "рубл": "RUB",
-        "rur": "RUB",
-        "$": "USD",
-        "доллар": "USD",
-        "доллара": "USD",
-        "долларов": "USD",
-        "usd": "USD",
-        "€": "EUR",
-        "евро": "EUR",
-        "eur": "EUR",
-        "¥": "CNY",
-        "юан": "CNY",
-        "юань": "CNY",
-        "юаня": "CNY",
-        "юаней": "CNY",
-        "юани": "CNY",
-        "yuan": "CNY",
-        "cny": "CNY",
-        "cyn": "CNY",
-        "₸": "KZT",
-        "тенге": "KZT",
-        "kzt": "KZT",
-    }
+    CURRENCY_CODES = CurrencyService.CURRENCY_CODES
+    CURRENCY_ALIASES = CurrencyService.CURRENCY_ALIASES
     REQUIRED_HEADER_FIELDS = {
         "number": "Номер заявки",
         "title": "Название заявки",
@@ -179,86 +136,15 @@ class SubmissionService:
 
     @classmethod
     def normalize_currency_code(cls, value: Any) -> str:
-        text = str(value or "").strip()
-        if not text:
-            return ""
-
-        upper_text = text.upper()
-        for code in sorted(cls.CURRENCY_CODES, key=len, reverse=True):
-            if re.search(rf"(?<![A-Z]){re.escape(code)}(?![A-Z])", upper_text):
-                return code
-
-        normalized = text.casefold().replace("ё", "е")
-        compact = re.sub(r"\s+", " ", normalized)
-        for alias, code in cls.CURRENCY_ALIASES.items():
-            if alias in compact:
-                return code
-        return ""
+        return CurrencyService.normalize_currency_code(value)
 
     @classmethod
     def detect_currency_from_value(cls, value: Any) -> str:
-        if isinstance(value, dict):
-            priority_keys = (
-                "currency",
-                "currency_code",
-                "price_currency",
-                "unit_price_currency",
-                "total_currency",
-            )
-            for key in priority_keys:
-                code = cls.normalize_currency_code(value.get(key))
-                if code:
-                    return code
-
-            value_keys = (
-                "unit_price",
-                "price",
-                "proposal_price",
-                "total",
-                "sum",
-                "amount",
-            )
-            for key in value_keys:
-                code = cls.detect_currency_from_value(value.get(key))
-                if code:
-                    return code
-
-            return cls.detect_currency_from_values(value.values())
-
-        if isinstance(value, SubmissionRow):
-            return cls.detect_currency_from_values(
-                (
-                    value.unit_price,
-                    value.total,
-                    value.name,
-                    value.unit,
-                    value.delivery_time,
-                    value.manufacturer,
-                    value.technical,
-                    value.supplier_status,
-                    value.warranty,
-                )
-            )
-
-        if isinstance(value, (list, tuple, set)):
-            return cls.detect_currency_from_values(value)
-
-        return cls.normalize_currency_code(value)
+        return CurrencyService.detect_currency_from_value(value)
 
     @classmethod
     def detect_currency_from_values(cls, values: Any) -> str:
-        if values is None:
-            return ""
-        if isinstance(values, dict):
-            return cls.detect_currency_from_value(values)
-        if isinstance(values, (str, bytes)) or not hasattr(values, "__iter__"):
-            return cls.detect_currency_from_value(values)
-
-        for value in values:
-            code = cls.detect_currency_from_value(value)
-            if code:
-                return code
-        return ""
+        return CurrencyService.detect_currency_from_values(values)
 
     @classmethod
     def _currency_from_matrix(cls, matrix: list[list[Any]]) -> str:

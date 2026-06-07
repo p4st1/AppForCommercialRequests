@@ -8,6 +8,12 @@ import pandas as pd
 import requests
 
 from config import Config
+from services.platform.cookies import (
+    apply_cookies_to_session,
+    build_playwright_cookies,
+    normalize_cookies,
+)
+from services.platform.queries import build_trade_search_variables
 from tools import DatabaseTools as Tool
 
 try:
@@ -139,13 +145,7 @@ query tradeWithCurrentStage($id: Int) {
 
     @staticmethod
     def _normalize_cookies(raw_value: Any) -> dict[str, str]:
-        if not isinstance(raw_value, dict):
-            return {}
-        return {
-            str(key): str(value)
-            for key, value in raw_value.items()
-            if str(key).strip() and str(value).strip()
-        }
+        return normalize_cookies(raw_value)
 
     def _extract_cookies_from_payload(self, payload: dict[str, Any]) -> dict[str, str]:
         candidates: list[Any] = [payload.get("cookies")]
@@ -209,19 +209,11 @@ query tradeWithCurrentStage($id: Int) {
         *,
         sitemap_page: str = DEFAULT_SITEMAP_PAGE,
     ) -> dict[str, Any]:
-        return {
-            "limit": limit,
-            "skip": skip,
-            "tradeQueryDto": {
-                "order": {
-                    "expressions": [
-                        {"ascending": False, "property": "REGISTERED_DATE"},
-                        {"ascending": False, "property": "ID"},
-                    ]
-                },
-                "sitemapPage": sitemap_page,
-            },
-        }
+        return build_trade_search_variables(
+            limit=limit,
+            skip=skip,
+            sitemap_page=sitemap_page,
+        )
 
     @classmethod
     def _build_api_session(cls, cookies: dict[str, str]) -> requests.Session:
@@ -236,35 +228,12 @@ query tradeWithCurrentStage($id: Int) {
             }
         )
 
-        xsrf_token = str(cookies.get("XSRF-TOKEN", "") or "").strip()
-        if xsrf_token:
-            session.headers["X-XSRF-TOKEN"] = xsrf_token
-
-        for key, value in cookies.items():
-            key_text = str(key).strip()
-            value_text = str(value).strip()
-            if not key_text or not value_text:
-                continue
-            session.cookies.set(key_text, value_text)
-            session.cookies.set(key_text, value_text, domain="etp.metal-it.ru", path="/")
+        apply_cookies_to_session(session, cookies)
         return session
 
     @classmethod
     def _build_playwright_cookies(cls, cookies: dict[str, str]) -> list[dict[str, str]]:
-        payload: list[dict[str, str]] = []
-        for name, value in cookies.items():
-            name_text = str(name).strip()
-            value_text = str(value).strip()
-            if not name_text or not value_text:
-                continue
-            payload.append(
-                {
-                    "name": name_text,
-                    "value": value_text,
-                    "url": cls.BASE_URL,
-                }
-            )
-        return payload
+        return build_playwright_cookies(cookies, url=cls.BASE_URL)
 
     @staticmethod
     def _write_page_debug_dump(

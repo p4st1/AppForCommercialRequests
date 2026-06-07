@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ except ModuleNotFoundError:  # pragma: no cover - dependency may be absent in te
     requests = None  # type: ignore[assignment]
 
 from config import Config
+from services.platform.cookies import apply_cookies_to_session, normalize_cookies
 from tools import DatabaseTools as Tool
 
 try:
@@ -19,17 +21,11 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - dependency may 
     sync_playwright = None  # type: ignore[assignment]
 
 
+logger = logging.getLogger(__name__)
+
+
 def _normalize_cookies(raw_value: Any) -> dict[str, str]:
-    if not isinstance(raw_value, dict):
-        return {}
-    normalized: dict[str, str] = {}
-    for key, value in raw_value.items():
-        key_text = str(key).strip()
-        value_text = str(value).strip()
-        if not key_text or not value_text:
-            continue
-        normalized[key_text] = value_text
-    return normalized
+    return normalize_cookies(raw_value)
 
 
 def _resolve_config_path() -> Path:
@@ -122,7 +118,7 @@ class AuthService:
                 )
                 page.get_by_role("button", name="ДАЛЕЕ").click(timeout=form_timeout_ms)
 
-                print("Введите капчу вручную в браузере...")
+                logger.info("Ожидание ручного ввода капчи в браузере")
                 self._wait_for_login_success(page)
                 page.wait_for_timeout(self.POST_LOGIN_SETTLE_TIMEOUT_MS)
 
@@ -136,7 +132,7 @@ class AuthService:
                 cookies = self._extract_session_cookies(context.cookies())
                 if not cookies:
                     raise RuntimeError("Не удалось получить cookies после авторизации")
-                print("Cookies после авторизации:", list(cookies.keys()))
+                logger.info("Cookies после авторизации: %s", list(cookies.keys()))
 
                 has_host_session = "__Host-JSESSIONID" in cookies
                 has_session = "JSESSIONID" in cookies
@@ -273,17 +269,7 @@ class AuthService:
                     "Referer": f"{self.BASE_URL}/",
                 }
             )
-            xsrf_token = str(normalized_cookies.get("XSRF-TOKEN", "") or "").strip()
-            if xsrf_token:
-                session.headers["X-XSRF-TOKEN"] = xsrf_token
-
-            for key, value in normalized_cookies.items():
-                key_text = str(key).strip()
-                value_text = str(value).strip()
-                if not key_text or not value_text:
-                    continue
-                session.cookies.set(key_text, value_text, domain="etp.metal-it.ru", path="/")
-                session.cookies.set(key_text, value_text)
+            apply_cookies_to_session(session, normalized_cookies)
 
             response = session.post(
                 self.TRADE_SEARCH_ENDPOINT,

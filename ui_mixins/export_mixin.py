@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHeaderView,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -35,10 +36,11 @@ from PySide6.QtWidgets import (
 from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from config import Config
 from retrade.retrade_service import RetradeService
+from services.currency_service import CurrencyService
 from services.excel_processor import ExcelProcessor, RowCountMismatchError
 from services.excel_recalc import force_excel_recalc
+from services.google_drive_service import GoogleDriveService
 from services.trade_exporter import TradeExporter
-from submission.submission_service import SubmissionService
 from tools import DatabaseTools as Tool
 
 
@@ -175,6 +177,10 @@ class ExportMixin:
         self.current_retrade_bid_id: int | None = None
         self.current_retrade_trade_id: int | None = None
         self.current_retrade_lot_id: int | None = None
+        self.current_retrade_last_export_at = ""
+        self.current_retrade_calculations_drive_file_id = ""
+        self.current_retrade_calculations_drive_link = ""
+        self.current_retrade_calculations_drive_name = ""
         self._pending_retrade_bid_id: int | None = None
         self._pending_retrade_context: dict[str, Any] = {}
         self._active_export_workflow = ""
@@ -509,6 +515,7 @@ QTableWidget::indicator {{
                 "retrade_main_table_tab",
                 "retrade_calculations_tab",
                 "retrade_history_tab",
+                "retrade_top_controls_layout",
                 "retrade_calculations_container",
                 "retrade_calculations_totals",
                 "btn_auto_trade",
@@ -554,9 +561,11 @@ QTableWidget::indicator {{
 
         self._configure_excel_like_table(self.retrade_table)
         self._configure_excel_like_table(self.retrade_calculations_table)
+        self._ensure_retrade_context_labels()
         self._ensure_retrade_main_table_controls()
         self._ensure_retrade_calculations_controls()
         self._ensure_retrade_calculations_sheet_selector()
+        self._refresh_retrade_context_labels()
         self._set_auto_trade_status(False)
         self._set_retrade_calculations_loaded_status(False)
 
@@ -574,6 +583,99 @@ QTableWidget::indicator {{
         self.retrade_tab_index = tab_index
         self.retrade_inner_tabs.setCurrentIndex(self.RETRADE_INNER_TAB_MAIN)
         self._clear_retrade_calculations_view()
+
+    def _ensure_retrade_context_labels(self) -> None:
+        if isinstance(getattr(self, "label_current_retrade", None), QLabel):
+            return
+
+        controls_layout = getattr(self, "retrade_top_controls_layout", None)
+        if not isinstance(controls_layout, QHBoxLayout):
+            return
+
+        parent = getattr(self, "retrade_tab", None)
+        self.label_current_retrade = QLabel(parent)
+        self.label_current_retrade.setObjectName("label_current_retrade")
+        self.label_current_retrade.setText("Текущая переторжка: не прикреплена")
+
+        self.label_retrade_last_export = QLabel(parent)
+        self.label_retrade_last_export.setObjectName("label_retrade_last_export")
+        self.label_retrade_last_export.setText("Последний экспорт: -")
+
+        insert_index = controls_layout.indexOf(self.btn_load_retrade_excel)
+        if insert_index < 0:
+            insert_index = 0
+        controls_layout.insertWidget(insert_index + 1, self.label_current_retrade)
+        controls_layout.insertWidget(insert_index + 2, self.label_retrade_last_export)
+
+        self.ui.label_current_retrade = self.label_current_retrade
+        self.ui.label_retrade_last_export = self.label_retrade_last_export
+
+    @staticmethod
+    def _format_retrade_datetime(value: Any) -> str:
+        if isinstance(value, datetime):
+            return value.strftime("%d.%m.%Y %H:%M:%S")
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        return text
+
+    @classmethod
+    def _retrade_context_identity(cls, context: dict[str, Any] | None) -> tuple[str, str, str]:
+        source = context if isinstance(context, dict) else {}
+        return (
+            str(source.get("trade_id") or "").strip(),
+            str(source.get("lot_id") or "").strip(),
+            str(source.get("bid_id") or "").strip(),
+        )
+
+    def _format_current_retrade_label(self) -> str:
+        context = getattr(self, "current_retrade_context", {})
+        if not isinstance(context, dict) or not context:
+            return "Текущая переторжка: не прикреплена"
+
+        retrade_number = str(
+            context.get("retrade_number")
+            or context.get("title")
+            or ""
+        ).strip()
+        bid_number = str(
+            context.get("number")
+            or context.get("bid_number")
+            or ""
+        ).strip()
+        bid_id = str(context.get("bid_id") or "").strip()
+
+        parts = []
+        if retrade_number:
+            parts.append(retrade_number)
+        if bid_number:
+            parts.append(f"заявка {bid_number}")
+        if bid_id:
+            parts.append(f"bid_id {bid_id}")
+        return "Текущая переторжка: " + (", ".join(parts) if parts else "прикреплена")
+
+    def _refresh_retrade_context_labels(self) -> None:
+        current_label = getattr(self, "label_current_retrade", None)
+        if isinstance(current_label, QLabel):
+            current_label.setText(self._format_current_retrade_label())
+
+        last_export_label = getattr(self, "label_retrade_last_export", None)
+        if isinstance(last_export_label, QLabel):
+            last_export_at = self._format_retrade_datetime(
+                getattr(self, "current_retrade_last_export_at", "")
+            )
+            last_export_label.setText(
+                f"Последний экспорт: {last_export_at}" if last_export_at else "Последний экспорт: -"
+            )
+
+    def _mark_current_retrade_table_exported_now(self) -> None:
+        timestamp = self._format_retrade_datetime(datetime.now())
+        self.current_retrade_last_export_at = timestamp
+        context = getattr(self, "current_retrade_context", {})
+        if isinstance(context, dict):
+            context["last_export_at"] = timestamp
+            self.current_retrade_context = context
+        self._refresh_retrade_context_labels()
 
     def _ensure_retrade_main_table_controls(self) -> None:
         if isinstance(getattr(self, "save_button", None), QPushButton):
@@ -2272,20 +2374,31 @@ QTableWidget::indicator {{
         self._apply_min_margin_highlighting()
 
     def _open_retrade_calculations(self) -> None:
-        default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
-        default_dir = (
-            str(Path(default_dir_raw).expanduser())
-            if default_dir_raw
-            else str(Path.home())
-        )
-        file_path, _ = QFileDialog.getOpenFileName(
+        current_link = str(
+            getattr(self, "current_retrade_calculations_drive_link", "") or ""
+        ).strip()
+        link, accepted = QInputDialog.getText(
             self,
-            "Выберите Excel файл расчетов",
-            default_dir,
-            "Excel Files (*.xlsx)",
+            "Открыть расчеты",
+            "Ссылка на файл расчетов в Google Drive:",
+            text=current_link,
         )
-        if not file_path:
+        if not accepted:
             return
+        link = str(link or "").strip()
+        if not link:
+            QMessageBox.warning(self, "Ошибка", "Укажите ссылку на расчеты Google Drive")
+            return
+
+        try:
+            download_result = GoogleDriveService().download_excel(link)
+        except Exception as exc:
+            error_text = f"Не удалось скачать расчеты с Google Drive: {exc}"
+            Tool.write_log(error_text)
+            QMessageBox.warning(self, "Ошибка", error_text)
+            return
+
+        file_path = str(download_result.local_path)
 
         workbook = None
         try:
@@ -2307,6 +2420,9 @@ QTableWidget::indicator {{
             QMessageBox.warning(self, "Ошибка", error_text)
             return
 
+        self.current_retrade_calculations_drive_file_id = download_result.file_id
+        self.current_retrade_calculations_drive_link = download_result.web_view_link
+        self.current_retrade_calculations_drive_name = download_result.name
         self._replace_retrade_calculations_workbook(workbook)
         self.calculations_file_path = file_path
         parsed = self._parse_retrade_calculations(cells_data)
@@ -2328,6 +2444,7 @@ QTableWidget::indicator {{
         self._open_retrade_calculations_tab()
 
         self._log_calc("файл загружен")
+        self._log_calc(f"google drive: {download_result.web_view_link}")
         self._log_calc(f"заголовков: {len(headers)}")
         self._log_calc(f"строк данных: {len(rows)}")
         self._log_calc(f"сумма товаров: {totals.get('price', 0)}")
@@ -2774,36 +2891,74 @@ QTableWidget::indicator {{
             )
             Tool.write_log(recalc_error)
 
+        drive_error = ""
+        drive_file_id = str(
+            getattr(self, "current_retrade_calculations_drive_file_id", "") or ""
+        ).strip()
+        if drive_file_id:
+            try:
+                upload_result = GoogleDriveService().update_excel(
+                    drive_file_id,
+                    calculations_file_path,
+                )
+                self.current_retrade_calculations_drive_file_id = upload_result.file_id
+                self.current_retrade_calculations_drive_link = upload_result.web_view_link
+                self.current_retrade_calculations_drive_name = upload_result.name
+                self._set_retrade_calculations_loaded_status(True)
+                self._log_calc(
+                    f"расчет сохранен на Google Drive: {upload_result.web_view_link}"
+                )
+            except Exception as exc:
+                drive_error = (
+                    "Расчет обновлен локально, но не удалось сохранить его "
+                    f"на Google Drive: {exc}"
+                )
+                Tool.write_log(drive_error)
+
         self._log_calc(f"расчет обновлен: {calculations_file_path}")
         self._log_calc(f"лист: {sheet_title}")
         self._log_calc(f"выбрано строк расчетов: {len(selected_rows)}")
         status_bar_getter = getattr(self, "statusBar", None)
         status_bar = status_bar_getter() if callable(status_bar_getter) else None
         if status_bar is not None:
-            status_message = (
-                "Расчет обновлен, но Excel не пересчитан"
-                if recalc_error
-                else (
+            if drive_error:
+                status_message = "Расчет обновлен, но не сохранен на Google Drive"
+            elif recalc_error:
+                status_message = "Расчет обновлен, но Excel не пересчитан"
+            elif recalc_skipped:
+                status_message = (
                     "Расчет обновлен, Excel пересчитает формулы при открытии"
-                    if recalc_skipped
-                    else "Расчет успешно обновлен и пересчитан"
                 )
-            )
+            else:
+                status_message = "Расчет успешно обновлен и пересчитан"
+            if drive_file_id and not drive_error:
+                status_message = f"{status_message}; сохранен на Google Drive"
             status_bar.showMessage(status_message, 5_000)
 
-        if recalc_error:
-            QMessageBox.warning(self, "Готово с предупреждением", recalc_error)
+        warnings = [message for message in (recalc_error, drive_error) if message]
+        if warnings:
+            QMessageBox.warning(
+                self,
+                "Готово с предупреждением",
+                "\n\n".join(warnings),
+            )
         elif recalc_skipped:
+            message = "Расчет обновлен. Формулы пересчитаются при открытии файла в Excel."
+            if drive_file_id:
+                message = f"{message}\nФайл сохранен на Google Drive."
             QMessageBox.information(
                 self,
                 "Готово",
-                "Расчет обновлен. Формулы пересчитаются при открытии файла в Excel.",
+                message,
             )
         else:
+            message = "Расчет успешно обновлен и пересчитан"
+            if drive_file_id:
+                message = f"{message}\nФайл сохранен на Google Drive."
             QMessageBox.information(
                 self,
                 "Готово",
-                "Расчет успешно обновлен и пересчитан",
+                message,
             )
 
     @staticmethod
@@ -3950,11 +4105,22 @@ QTableWidget::indicator {{
             return
 
         if self.retrade_calculations_loaded:
-            status_label.setText("Расчеты подключены")
+            drive_name = str(
+                getattr(self, "current_retrade_calculations_drive_name", "") or ""
+            ).strip()
+            drive_link = str(
+                getattr(self, "current_retrade_calculations_drive_link", "") or ""
+            ).strip()
+            if drive_name:
+                status_label.setText(f"Расчеты подключены: {drive_name}")
+            else:
+                status_label.setText("Расчеты подключены")
+            status_label.setToolTip(drive_link)
             status_label.setStyleSheet("color: #1f8f3a; font-weight: 600;")
             return
 
         status_label.setText("Расчеты не подключены")
+        status_label.setToolTip("")
         status_label.setStyleSheet("color: #c62828; font-weight: 600;")
 
     def _toggle_auto_trade_status(self) -> None:
@@ -4147,6 +4313,20 @@ QTableWidget::indicator {{
         )
 
     def export_selected_retrade(self) -> None:
+        attached_context = self._get_attached_retrade_export_context()
+        if attached_context:
+            try:
+                self._start_export_worker(
+                    trade_id=int(attached_context["trade_id"]),
+                    lot_id=int(attached_context["lot_id"]),
+                    bid_id=int(attached_context["bid_id"]),
+                    is_retrade=True,
+                    retrade_context=attached_context,
+                )
+            except Exception as exc:
+                self._on_export_error(str(exc))
+            return
+
         table_retrades = getattr(self, "table_retrades", None)
         if table_retrades is None:
             table_retrades = getattr(getattr(self, "ui", None), "table_retrades", None)
@@ -4186,6 +4366,24 @@ QTableWidget::indicator {{
             )
         except Exception as exc:
             self._on_export_error(str(exc))
+
+    def _get_attached_retrade_export_context(self) -> dict[str, Any]:
+        context = getattr(self, "current_retrade_context", {})
+        if not isinstance(context, dict) or not context:
+            return {}
+
+        try:
+            trade_id = self._parse_positive_trade_id(context.get("trade_id"))
+            lot_id = self._parse_positive_lot_id(context.get("lot_id"))
+            bid_id = self._parse_positive_bid_id(context.get("bid_id"))
+        except Exception:
+            return {}
+
+        attached_context = dict(context)
+        attached_context["trade_id"] = trade_id
+        attached_context["lot_id"] = lot_id
+        attached_context["bid_id"] = bid_id
+        return attached_context
 
     @staticmethod
     def _parse_positive_trade_id(raw_trade_id: Any) -> int:
@@ -4297,7 +4495,19 @@ QTableWidget::indicator {{
         }
 
     def _set_current_retrade_context(self, context: dict[str, Any] | None) -> None:
+        previous_identity = self._retrade_context_identity(
+            getattr(self, "current_retrade_context", {})
+        )
         retrade_context = dict(context) if isinstance(context, dict) else {}
+        current_identity = self._retrade_context_identity(retrade_context)
+        if previous_identity != current_identity:
+            self.current_retrade_last_export_at = self._format_retrade_datetime(
+                retrade_context.get("last_export_at")
+            )
+        elif retrade_context.get("last_export_at"):
+            self.current_retrade_last_export_at = self._format_retrade_datetime(
+                retrade_context.get("last_export_at")
+            )
         self.current_retrade_context = retrade_context
         self.current_retrade = str(
             retrade_context.get("number")
@@ -4329,8 +4539,10 @@ QTableWidget::indicator {{
                 "Текущая переторжка закреплена за заявкой "
                 f"{self.current_retrade}"
             )
+        self._refresh_retrade_context_labels()
 
     def _clear_current_retrade_context(self) -> None:
+        self.current_retrade_last_export_at = ""
         self._set_current_retrade_context({})
 
     def get_current_retrade_context(self) -> dict[str, Any]:
@@ -4878,18 +5090,18 @@ QTableWidget::indicator {{
             else []
         )
         table_currency = (
-            SubmissionService.detect_currency_from_values(table_data_currencies)
-            or SubmissionService.detect_currency_from_values(headers)
+            CurrencyService.detect_currency_from_values(table_data_currencies)
+            or CurrencyService.detect_currency_from_values(headers)
         )
 
         def table_data_currency(row: int) -> str:
             if isinstance(table_data_currencies, (list, tuple)):
                 if 0 <= row < len(table_data_currencies):
-                    return SubmissionService.detect_currency_from_value(
+                    return CurrencyService.detect_currency_from_value(
                         table_data_currencies[row]
                     )
                 return ""
-            return SubmissionService.detect_currency_from_value(table_data_currencies)
+            return CurrencyService.detect_currency_from_value(table_data_currencies)
 
         def cell_text(row: int, column: int | None) -> str:
             if column is None or column < 0 or column >= column_count:
@@ -4934,7 +5146,7 @@ QTableWidget::indicator {{
             price_text = first_text(row_index, final_price_col)
             total_text = first_text(row_index, final_total_col)
             row_currency = (
-                SubmissionService.detect_currency_from_values(
+                CurrencyService.detect_currency_from_values(
                     (
                         price_text,
                         total_text,
@@ -5149,7 +5361,7 @@ QTableWidget::indicator {{
                 default_supplier_status=default_supplier_status,
                 default_warranty=default_warranty,
             )
-            source_currency = SubmissionService.detect_currency_from_values(source_rows)
+            source_currency = CurrencyService.detect_currency_from_values(source_rows)
             if source_currency:
                 if not isinstance(metadata, dict):
                     metadata = {}
@@ -5233,8 +5445,9 @@ QTableWidget::indicator {{
 
     def _on_export_finished(self, file_path: str) -> None:
         file_path_text = str(file_path or "").strip()
+        workflow = str(getattr(self, "_active_export_workflow", "") or "")
 
-        if getattr(self, "_active_export_workflow", "") == "submission_acceptance":
+        if workflow == "submission_acceptance":
             self._on_submission_acceptance_export_finished(file_path_text)
             return
 
@@ -5284,6 +5497,8 @@ QTableWidget::indicator {{
                     update_method(dataframe)
                 else:
                     self.update_retrade_table(dataframe)
+                if workflow == "retrade":
+                    self._mark_current_retrade_table_exported_now()
                 self._activate_retrade_tab()
             except Exception as exc:
                 error_text = str(exc or "Ошибка обработки Excel")

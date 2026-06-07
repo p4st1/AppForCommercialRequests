@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from services.platform.cookies import build_playwright_cookies, normalize_cookies
 from tools import DatabaseTools as Tool
 
 from .submission_service import (
@@ -44,25 +45,10 @@ class SubmissionPlaywright:
 
     @staticmethod
     def _normalize_cookies(raw: Any) -> dict[str, str]:
-        if not isinstance(raw, dict):
-            return {}
-        cookies: dict[str, str] = {}
-        for key, value in raw.items():
-            key_text = str(key or "").strip()
-            value_text = str(value or "").strip()
-            if key_text and value_text:
-                cookies[key_text] = value_text
-        return cookies
+        return normalize_cookies(raw)
 
     def _build_playwright_cookies(self) -> list[dict[str, str]]:
-        return [
-            {
-                "name": name,
-                "value": value,
-                "url": self.BASE_URL,
-            }
-            for name, value in self._cookies.items()
-        ]
+        return build_playwright_cookies(self._cookies, url=self.BASE_URL)
 
     @staticmethod
     def _positive_int_from_value(value: Any, *, name: str) -> int:

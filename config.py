@@ -44,6 +44,11 @@ class Config:
         "paymentTemplates": DEFAULT_PAYMENT_TEMPLATES.copy(),
         "platformLogin": "",
         "platformPassword": "",
+        "platformTradeLoad": {
+            "default_limit": 20,
+            "max_items": 50,
+            "timeout": [10.0, 180.0],
+        },
         "googleDriveCredentialsPath": "",
         "googleDriveFolderId": "",
     }
