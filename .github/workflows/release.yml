@@ -233,6 +233,20 @@ jobs:
             throw "Application smoke test failed"
           }
 
+      - name: Build updater (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name updater `
+            --icon assets/app.ico `
+            --distpath "dist\$env:APP_NAME" `
+            --workpath "build\updater" `
+            updater.py
+
+          if (-not (Test-Path "dist\$env:APP_NAME\updater.exe")) {
+            throw "Missing updater.exe"
+          }
+
       - name: Fix python-docx templates (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
