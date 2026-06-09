@@ -12,6 +12,7 @@ permissions:
 env:
   APP_NAME: MyApp
   PYTHON_VERSION: "3.11"
+  WINDOWS_SETUP_ASSET: MyAppSetup.exe
 
 jobs:
   verify:
@@ -271,6 +272,98 @@ jobs:
           Write-Host $dstTpl1
           Write-Host $dstTpl2
 
+      - name: Build installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $appRoot = Resolve-Path "dist\$env:APP_NAME"
+          $preferredScript = Join-Path (Get-Location) "installer.iss"
+
+          if (Test-Path $preferredScript) {
+            $installerScript = (Resolve-Path $preferredScript).Path
+          } else {
+            $installerScript = Get-ChildItem -Path . -Recurse -File -Filter "*.iss" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -notmatch "\\(\.git|venv|\.venv)\\" } |
+              Sort-Object FullName |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+
+          if (-not $installerScript) {
+            throw "Missing Inno Setup script. Expected installer.iss or another *.iss file in the repository."
+          }
+          $iscc = Get-Command ISCC -ErrorAction SilentlyContinue
+          if ($iscc) {
+            $isccPath = $iscc.Source
+          } else {
+            $isccCandidates = @()
+            $programFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
+            $programFiles = [Environment]::GetEnvironmentVariable("ProgramFiles")
+            foreach ($basePath in @($programFilesX86, $programFiles)) {
+              foreach ($versionDir in @("Inno Setup 6", "Inno Setup 5")) {
+                if ($basePath) {
+                  $isccCandidates += Join-Path $basePath "$versionDir\ISCC.exe"
+                }
+              }
+            }
+            $isccPath = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $isccPath) {
+            throw "Missing ISCC. Inno Setup must be available on the Windows runner."
+          }
+
+          Write-Host "ISCC: $isccPath"
+          Write-Host "Inno Setup script: $installerScript"
+
+          function Get-WorkspaceExeFiles {
+            Get-ChildItem -Path . -Recurse -File -Filter "*.exe" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -notmatch "\\(\.git|venv|\.venv)\\" }
+          }
+
+          $exeSnapshot = @{}
+          Get-WorkspaceExeFiles | ForEach-Object { $exeSnapshot[$_.FullName] = $true }
+
+          $appFileSnapshot = @{}
+          Get-ChildItem -Path $appRoot -Recurse -File -ErrorAction SilentlyContinue |
+            ForEach-Object { $appFileSnapshot[$_.FullName] = $true }
+
+          $appDirSnapshot = @{}
+          Get-ChildItem -Path $appRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { $appDirSnapshot[$_.FullName] = $true }
+
+          & $isccPath $installerScript
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup build failed"
+          }
+
+          $bundledExeNames = @("${env:APP_NAME}.exe", "updater.exe")
+          $setupCandidates = @(Get-WorkspaceExeFiles |
+            Where-Object {
+              -not $exeSnapshot.ContainsKey($_.FullName) -and
+              $bundledExeNames -notcontains $_.Name
+            } |
+            Sort-Object LastWriteTimeUtc -Descending)
+
+          if ($setupCandidates.Count -eq 0) {
+            throw "Missing Inno Setup output exe"
+          }
+
+          $setupExe = $setupCandidates[0]
+          Write-Host "Inno Setup output: $($setupExe.FullName)"
+
+          Copy-Item -Force $setupExe.FullName $env:WINDOWS_SETUP_ASSET
+          if (-not (Test-Path $env:WINDOWS_SETUP_ASSET)) {
+            throw "Missing $env:WINDOWS_SETUP_ASSET"
+          }
+
+          Get-ChildItem -Path $appRoot -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { -not $appFileSnapshot.ContainsKey($_.FullName) } |
+            Remove-Item -Force
+
+          Get-ChildItem -Path $appRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Where-Object { -not $appDirSnapshot.ContainsKey($_.FullName) } |
+            Remove-Item -Recurse -Force
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -282,7 +375,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-windows
-          path: MyApp-windows.zip
+          path: |
+            MyApp-windows.zip
+            MyAppSetup.exe
 
       # ---------------- macOS ----------------
 
@@ -387,7 +482,7 @@ jobs:
         with:
           path: artifacts
 
-      - name: Collect zips
+      - name: Collect release assets
         shell: bash
         run: |
           set -euo pipefail
@@ -395,7 +490,11 @@ jobs:
           printf '%s\n' "${ZIP_FILES[@]}"
           test "${#ZIP_FILES[@]}" -ge 3
           cp "${ZIP_FILES[@]}" .
-          ls -la *.zip
+          SETUP_FILE="$(find artifacts -type f -name "MyAppSetup.exe" -print -quit)"
+          test -n "$SETUP_FILE"
+          cp "$SETUP_FILE" .
+          ls -la MyAppSetup.exe *.zip
+          test -f "MyAppSetup.exe"
           test -f "MyApp-windows.zip"
           test -f "MyApp-macos-arm64.zip"
           test -f "MyApp-macos-x86_64.zip"
@@ -405,6 +504,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
+            MyAppSetup.exe
             MyApp-windows.zip
             MyApp-macos-arm64.zip
             MyApp-macos-x86_64.zip
