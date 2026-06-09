@@ -1,8 +1,34 @@
+from html import escape
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
 
+from version_check import load_local_version_meta
+
+
+def build_about_text(app_version: str) -> str:
+    version_text = escape(str(app_version or "неизвестна"))
+    return (
+        "<b>Автоматизация подготовки коммерческих предложений</b><br>"
+        f"Версия {version_text}<br><br>"
+        "Создано с использованием PySide6<br>"
+        "<br>Лицензия MIT</br>"
+        "Автор: https://github.com/p4st1"
+    )
+
 
 class InfoDialogsMixin:
+    def _application_version(self) -> str:
+        resource_path = getattr(self, "resourcePath", None)
+        if resource_path is None:
+            from tools import DatabaseTools as Tool
+
+            resource_path = Tool.resourcePath
+        try:
+            return load_local_version_meta(resource_path).version
+        except Exception:
+            return ""
+
     def show_help(self):
         help_text = """
         <html>
@@ -68,9 +94,5 @@ class InfoDialogsMixin:
         QMessageBox.about(
             self,
             "О программе",
-            "<b>Автоматизация подгтовки коммерческих приложений</b><br>"
-            "Версия 1.0.5<br><br>"
-            "Создано с использованием PySide6<br>"
-            "<br>Лицензия MIT</br>"
-            "Автор: https://github.com/p4st1",
+            build_about_text(self._application_version()),
         )

@@ -6,6 +6,11 @@ from typing import Callable
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
+VERSION_CHECK_HEADERS = {
+    "User-Agent": "AppForCommercialRequests-Version-Check",
+    "Accept": "application/vnd.github+json",
+}
+
 
 @dataclass(frozen=True)
 class VersionMeta:
@@ -24,6 +29,17 @@ class VersionCheckResult:
     details: str
 
 
+def _latest_release_api_url(repo: str) -> str:
+    return f"https://api.github.com/repos/{repo}/releases/latest"
+
+
+def _remote_version_json_url(meta: VersionMeta) -> str:
+    return (
+        "https://raw.githubusercontent.com/"
+        f"{meta.repo}/{meta.release_branch}/utilities/version.json"
+    )
+
+
 def _safe_text(value: object, default: str = "") -> str:
     text = str(value or "").strip()
     return text or default
@@ -40,7 +56,7 @@ def load_local_version_meta(resource_path: Callable[[str], str]) -> VersionMeta:
     release_branch = _safe_text(raw.get("release_branch"), "release")
     release_url = _safe_text(
         raw.get("release_url"),
-        f"https://github.com/{repo}/releases",
+        f"https://github.com/{repo}/releases/latest",
     )
 
     return VersionMeta(
@@ -51,22 +67,65 @@ def load_local_version_meta(resource_path: Callable[[str], str]) -> VersionMeta:
     )
 
 
-def fetch_release_version(meta: VersionMeta, timeout_seconds: float = 2.5) -> str:
-    url = (
-        "https://raw.githubusercontent.com/"
-        f"{meta.repo}/{meta.release_branch}/utilities/version.json"
-    )
-    request = Request(url, headers={"User-Agent": "MyApp-Version-Check"})
+def _fetch_json(url: str, timeout_seconds: float) -> object:
+    request = Request(url, headers=VERSION_CHECK_HEADERS)
     with urlopen(request, timeout=timeout_seconds) as response:
         payload = response.read().decode("utf-8")
+    return json.loads(payload)
 
-    raw = json.loads(payload)
+
+def _extract_release_version(raw: object) -> str:
+    if not isinstance(raw, dict):
+        raise ValueError("Metadata latest release должен быть JSON-объектом")
+
+    for field_name in ("tag_name", "name"):
+        candidate = _safe_text(raw.get(field_name))
+        if not candidate:
+            continue
+        match = re.search(r"v?\d+(?:\.\d+)*(?:[-+][0-9A-Za-z.-]+)?", candidate)
+        if match:
+            return match.group(0)
+
+    raise ValueError("В metadata latest release отсутствует tag_name/name с версией")
+
+
+def _fetch_github_latest_release_version(
+    meta: VersionMeta,
+    timeout_seconds: float,
+) -> str:
+    raw = _fetch_json(_latest_release_api_url(meta.repo), timeout_seconds)
+    return _extract_release_version(raw)
+
+
+def _fetch_remote_version_json_version(
+    meta: VersionMeta,
+    timeout_seconds: float,
+) -> str:
+    raw = _fetch_json(_remote_version_json_url(meta), timeout_seconds)
     if not isinstance(raw, dict):
         raise ValueError("Удаленный version.json должен содержать JSON-объект")
     remote_version = _safe_text(raw.get("version"))
     if not remote_version:
         raise ValueError("В удаленном version.json отсутствует поле version")
     return remote_version
+
+
+def fetch_release_version(meta: VersionMeta, timeout_seconds: float = 2.5) -> str:
+    try:
+        return _fetch_github_latest_release_version(meta, timeout_seconds)
+    except (HTTPError, URLError, TimeoutError, ValueError) as release_error:
+        try:
+            return _fetch_remote_version_json_version(meta, timeout_seconds)
+        except (HTTPError, URLError, TimeoutError) as version_json_error:
+            raise URLError(
+                "latest release metadata: "
+                f"{release_error}; remote version.json: {version_json_error}"
+            ) from version_json_error
+        except Exception as version_json_error:
+            raise ValueError(
+                "latest release metadata: "
+                f"{release_error}; remote version.json: {version_json_error}"
+            ) from version_json_error
 
 
 def _parse_semver(version_text: str) -> tuple[int, ...]:
