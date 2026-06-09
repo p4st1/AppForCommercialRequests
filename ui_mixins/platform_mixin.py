@@ -347,7 +347,6 @@ class PlatformMixin:
         self._platform_search_timer.timeout.connect(self.apply_filters)
         self._apply_web_auth_autofill_if_enabled()
         self.btn_login.clicked.connect(self.login)
-        self.btn_load_trades.clicked.connect(self.load_trades_clicked)
         self.btn_load_all_trades.clicked.connect(self.load_all_trades)
         self.btn_load_retrades.clicked.connect(self.load_retrades)
         self.table_retrades.itemSelectionChanged.connect(self.on_retrade_selection_changed)
@@ -375,7 +374,6 @@ class PlatformMixin:
             hasattr(self.ui, "tradesTable")
             and hasattr(self.ui, "table_retrades")
             and hasattr(self.ui, "table_retrade_offers")
-            and hasattr(self, "btn_load_trades")
             and hasattr(self, "btn_load_all_trades")
             and hasattr(self, "btn_load_retrades")
             and hasattr(self.ui, "input_limit")
@@ -449,10 +447,6 @@ class PlatformMixin:
         title_label = QLabel("Заявки с площадки", self.ui.webTab)
         title_label.setObjectName("platformTitleLabel")
 
-        self.btn_load_trades = QPushButton("Загрузить заявки", self.ui.webTab)
-        self.btn_load_trades.setObjectName("btn_load_trades")
-        self.ui.btn_load_trades = self.btn_load_trades
-
         self.btn_load_all_trades = QPushButton("Загрузить все заявки", self.ui.webTab)
         self.btn_load_all_trades.setObjectName("btn_load_all_trades")
         self.ui.btn_load_all_trades = self.btn_load_all_trades
@@ -463,7 +457,7 @@ class PlatformMixin:
 
         self.input_limit = QLineEdit(self.ui.webTab)
         self.input_limit.setObjectName("input_limit")
-        self.input_limit.setPlaceholderText("Количество заявок (например 50)")
+        self.input_limit.setPlaceholderText("Количество переторжек (например 50)")
         self.ui.input_limit = self.input_limit
 
         self.search_input = QLineEdit(self.ui.webTab)
@@ -479,9 +473,8 @@ class PlatformMixin:
         header_layout.addStretch(1)
         header_layout.addWidget(self.checkbox_active)
         header_layout.addWidget(self.search_input)
-        header_layout.addWidget(self.input_limit)
-        header_layout.addWidget(self.btn_load_trades)
         header_layout.addWidget(self.btn_load_all_trades)
+        header_layout.addWidget(self.input_limit)
         header_layout.addWidget(self.btn_load_retrades)
 
         pipeline_status_layout = QHBoxLayout()
@@ -525,7 +518,7 @@ class PlatformMixin:
         root_layout.addWidget(self.table_retrades)
         root_layout.addWidget(retrade_offers_label)
         root_layout.addWidget(self.table_retrade_offers)
-        self.ui.tabWidget.addTab(self.ui.webTab, "Прием заявок")
+        self.ui.tabWidget.addTab(self.ui.webTab, "Загрузка с ЭТП")
 
         self._setup_trades_table()
         self._setup_retrades_table()
@@ -926,7 +919,7 @@ class PlatformMixin:
         raise FileNotFoundError("Не найден config.json с cookies")
 
     def load_trades_clicked(self) -> None:
-        self._start_trades_loading(max_items=self._parse_max_items_input())
+        self.load_all_trades()
 
     def load_all_trades(self) -> None:
         self._start_trades_loading(max_items=0, requested_all=True)
@@ -986,7 +979,7 @@ class PlatformMixin:
         worker.start()
 
     def load_trades(self) -> None:
-        self.load_trades_clicked()
+        self.load_all_trades()
 
     def load_retrades(self) -> None:
         if (
@@ -1057,8 +1050,6 @@ class PlatformMixin:
             if loading_all is None
             else bool(loading_all)
         )
-        self.btn_load_trades.setEnabled(not is_loading)
-        self.btn_load_trades.setText("Загрузка..." if is_loading else "Загрузить заявки")
         button = getattr(self, "btn_load_all_trades", None)
         if isinstance(button, QPushButton):
             button.setEnabled(not is_loading)

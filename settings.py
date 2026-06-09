@@ -1071,7 +1071,7 @@ QFrame[settingsCard="true"] QPushButton {
     def _setup_tab_visibility_settings_block(self):
         items = (
             ("show_retrade_tab", "Показывать вкладку «Переторжка»"),
-            ("show_platform_tab", "Показывать вкладку «Прием заявок»"),
+            ("show_platform_tab", "Показывать вкладку «Загрузка с ЭТП»"),
             ("show_submission_tab", "Показывать вкладку «Подача заявки»"),
             ("show_history_tab", "Показывать вкладку «История»"),
             ("show_updates_tab", "Показывать вкладку «Обновления»"),

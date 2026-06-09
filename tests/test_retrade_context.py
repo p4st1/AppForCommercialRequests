@@ -1,6 +1,6 @@
 import unittest
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 
@@ -155,6 +155,46 @@ class _FakeSignal:
 
     def connect(self, callback):
         self.callbacks.append(callback)
+
+
+class _FakeButton:
+    def __init__(self, text="", _parent=None):
+        self._text = text
+        self.object_name = ""
+        self.stylesheet = ""
+        self.clicked = _FakeSignal()
+
+    def setObjectName(self, name):
+        self.object_name = name
+
+    def setStyleSheet(self, stylesheet):
+        self.stylesheet = stylesheet
+
+    def text(self):
+        return self._text
+
+    def setText(self, text):
+        self._text = text
+
+    def setEnabled(self, _enabled):
+        pass
+
+
+class _FakeHBoxLayout:
+    def __init__(self):
+        self.widgets = []
+
+    def indexOf(self, widget):
+        try:
+            return self.widgets.index(widget)
+        except ValueError:
+            return -1
+
+    def count(self):
+        return len(self.widgets)
+
+    def insertWidget(self, index, widget):
+        self.widgets.insert(index, widget)
 
 
 class _FakeExportWorker:
@@ -353,6 +393,35 @@ class RetradeContextTests(unittest.TestCase):
         self.assertEqual(
             window.current_retrade_context["last_export_at"],
             window.current_retrade_last_export_at,
+        )
+
+    def test_retrade_main_controls_only_add_update_proposal_button(self):
+        class _Window(ExportMixin):
+            def __init__(self):
+                self.retrade_controls_layout = _FakeHBoxLayout()
+                self.label_auto_trade_status = object()
+                self.retrade_controls_layout.widgets.append(self.label_auto_trade_status)
+                self.retrade_tab = object()
+                self.ui = SimpleNamespace()
+
+            def on_import_clicked(self):
+                pass
+
+        window = _Window()
+
+        with (
+            patch("ui_mixins.export_mixin.QHBoxLayout", _FakeHBoxLayout),
+            patch("ui_mixins.export_mixin.QPushButton", _FakeButton),
+        ):
+            window._ensure_retrade_main_table_controls()
+
+        self.assertFalse(hasattr(window, "save_button"))
+        self.assertEqual(window.import_button.text(), "Обновить предложение")
+        self.assertEqual(window.import_button.object_name, "import_button")
+        self.assertIn("#007aff", window.import_button.stylesheet)
+        self.assertEqual(
+            window.retrade_controls_layout.widgets,
+            [window.import_button, window.label_auto_trade_status],
         )
 
 

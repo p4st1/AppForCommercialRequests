@@ -1028,26 +1028,11 @@ class Ui_MainWindow(object):
         font3.setBold(False)
         self.tabWidget.setFont(font3)
         self.tabWidget.setTabsClosable(False)
-        self.tab_3 = QWidget()
-        self.tab_3.setObjectName(u"tab_3")
+        self.tab = QWidget()
+        self.tab.setObjectName(u"tab")
         sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
-        sizePolicy1.setHeightForWidth(self.tab_3.sizePolicy().hasHeightForWidth())
-        self.tab_3.setSizePolicy(sizePolicy1)
-        self.verticalLayout_4 = QVBoxLayout(self.tab_3)
-        self.verticalLayout_4.setSpacing(0)
-        self.verticalLayout_4.setObjectName(u"verticalLayout_4")
-        self.verticalLayout_4.setContentsMargins(0, 0, 0, 0)
-        self.tableWidget_3 = QTableWidget(self.tab_3)
-        self.tableWidget_3.setObjectName(u"tableWidget_3")
-        self.tableWidget_3.setFont(font)
-
-        self.verticalLayout_4.addWidget(self.tableWidget_3)
-
-        self.tabWidget.addTab(self.tab_3, "")
-        self.tab = QWidget()
-        self.tab.setObjectName(u"tab")
         sizePolicy1.setHeightForWidth(self.tab.sizePolicy().hasHeightForWidth())
         self.tab.setSizePolicy(sizePolicy1)
         self.tab.setMaximumSize(QSize(16777215, 493))
@@ -1839,7 +1824,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.tabWidget.setCurrentIndex(2)
+        self.tabWidget.setCurrentIndex(0)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -1865,7 +1850,6 @@ class Ui_MainWindow(object):
         self.aboutMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u041e \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435", None))
         self.clearCacheMenuButton.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u043a\u044d\u0448", None))
         self.changeFormButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u043b\u043e\u043d\u0435\u043d\u0438\u0435 \u0441\u043b\u043e\u0432", None))
-        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_3), QCoreApplication.translate("MainWindow", u"\u0418\u0442\u043e\u0433\u043e", None))
         ___qtablewidgetitem = self.KpTable.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("MainWindow", u"\u2116", None));
         ___qtablewidgetitem1 = self.KpTable.horizontalHeaderItem(1)
@@ -1896,7 +1880,7 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem13.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0440\u043e\u043a \u043f\u043e\u0441\u0442\u0430\u0432\u043a\u0438", None));
         ___qtablewidgetitem14 = self.KpTable.horizontalHeaderItem(14)
         ___qtablewidgetitem14.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0440\u043e\u043a \u043f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0430", None));
-        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043b\u043d\u0430\u044f \u0442\u0430\u0431\u043b\u0438\u0446\u0430", None))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), QCoreApplication.translate("MainWindow", u"\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430 \u041a\u041f", None))
         self.textUpdates.setHtml(QCoreApplication.translate("MainWindow", u"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><meta charset=\"utf-8\" /><style type=\"text/css\">\n"
 "p, li { white-space: pre-wrap; }\n"
@@ -2009,4 +1993,3 @@ class Ui_MainWindow(object):
         self.WindowMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u043a\u043d\u043e", None))
         self.HelpMenu.setTitle(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043c\u043e\u0449\u044c", None))
     # retranslateUi
-

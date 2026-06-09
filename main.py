@@ -98,7 +98,6 @@ from app.ui.window_navigation_mixin import WindowNavigationMixin
 from ui_mixins.excel_viewer_mixin import ExcelViewerMixin
 from ui_mixins.export_mixin import ExportMixin
 from ui_mixins.platform_mixin import PlatformMixin
-from ui_mixins.upload_mixin import UploadMixin
 from submission.submission_tab import SubmissionTabMixin
 from tools import DatabaseTools as Tool
 from database import Database
@@ -157,10 +156,16 @@ class mainWindow(
     ExcelViewerMixin,
     ExportMixin,
     SubmissionTabMixin,
-    UploadMixin,
     PlatformMixin,
     QMainWindow,
 ):
+    MAIN_TAB_ORDER = (
+        ("tab", "Подготовка КП"),
+        ("webTab", "Загрузка с ЭТП"),
+        ("submission_tab", "Подача заявки"),
+        ("retrade_tab", "Переторжка"),
+        ("historyTab", "История"),
+    )
     BASE_EDITABLE_COLUMNS = {0, 1, 2, 3, 4, 5, 14}
     FORMULA_EDITABLE_COLUMNS = {8, 9, 10, 11, 13}
     EDITABLE_COLUMNS = BASE_EDITABLE_COLUMNS | FORMULA_EDITABLE_COLUMNS
@@ -308,7 +313,7 @@ class mainWindow(
         self.init_excel_viewer_mixin()
         self.init_export_mixin()
         self.init_submission_tab()
-        self.init_upload_mixin()
+        self._apply_main_tab_order()
         self._setup_full_table_input_layout()
         self._full_table_panel_widgets = list(
             dict.fromkeys(self._collect_layout_widgets(self.ui.funcButtons))
@@ -511,7 +516,10 @@ class mainWindow(
             self._restore_full_table_painting()
             QTimer.singleShot(0, self._restore_full_table_painting)
             QTimer.singleShot(80, self._restore_full_table_painting)
-        elif current_widget is self.ui.tab_3:
+        else:
+            total_tab = getattr(self.ui, "tab_3", None)
+            if total_tab is None or current_widget is not total_tab:
+                return
             self._restore_total_table_painting()
             QTimer.singleShot(0, self._restore_total_table_painting)
             QTimer.singleShot(80, self._restore_total_table_painting)
@@ -522,7 +530,8 @@ class mainWindow(
         self._restore_table_painting(getattr(self.ui, "KpTable", None))
 
     def _restore_total_table_painting(self):
-        if self.ui.tabWidget.currentWidget() is not self.ui.tab_3:
+        total_tab = getattr(self.ui, "tab_3", None)
+        if total_tab is None or self.ui.tabWidget.currentWidget() is not total_tab:
             return
         self._restore_table_painting(getattr(self.ui, "tableWidget_3", None))
 
@@ -534,6 +543,58 @@ class mainWindow(
         if horizontal_header is not None:
             horizontal_header.setVisible(True)
         refresh_table_viewport(table, force_updates_enabled=True)
+
+    def _main_tab_widget(self, attribute_name):
+        widget = getattr(self, attribute_name, None)
+        if widget is not None:
+            return widget
+        return getattr(self.ui, attribute_name, None)
+
+    def _apply_main_tab_order(self):
+        tabs = getattr(getattr(self, "ui", None), "tabWidget", None)
+        if tabs is None:
+            return
+
+        total_tab = getattr(self.ui, "tab_3", None)
+        if total_tab is not None:
+            total_index = tabs.indexOf(total_tab)
+            if total_index >= 0:
+                tabs.removeTab(total_index)
+
+        current_widget = tabs.currentWidget()
+        target_index = 0
+        for attribute_name, title in self.MAIN_TAB_ORDER:
+            widget = self._main_tab_widget(attribute_name)
+            if widget is None:
+                continue
+
+            index = tabs.indexOf(widget)
+            if index < 0:
+                continue
+
+            icon = tabs.tabIcon(index)
+            enabled = tabs.isTabEnabled(index)
+            visible = True
+            if hasattr(tabs, "isTabVisible"):
+                visible = tabs.isTabVisible(index)
+            tooltip = tabs.tabToolTip(index)
+            whats_this = tabs.tabWhatsThis(index)
+            tab_data = tabs.tabData(index) if hasattr(tabs, "tabData") else None
+
+            tabs.removeTab(index)
+            insert_index = min(target_index, tabs.count())
+            new_index = tabs.insertTab(insert_index, widget, icon, title)
+            tabs.setTabEnabled(new_index, enabled)
+            if hasattr(tabs, "setTabVisible"):
+                tabs.setTabVisible(new_index, visible)
+            tabs.setTabToolTip(new_index, tooltip)
+            tabs.setTabWhatsThis(new_index, whats_this)
+            if hasattr(tabs, "setTabData"):
+                tabs.setTabData(new_index, tab_data)
+            target_index = new_index + 1
+
+        if current_widget is not None and tabs.indexOf(current_widget) >= 0:
+            tabs.setCurrentWidget(current_widget)
 
     def _apply_main_tab_visibility(self):
         tabs = getattr(getattr(self, "ui", None), "tabWidget", None)

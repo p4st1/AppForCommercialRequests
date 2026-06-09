@@ -15,7 +15,6 @@ class AppLifecycleMixin:
         "_load_retrades_worker",
         "_export_trade_worker",
         "_retrade_import_worker",
-        "_upload_trade_worker",
         "_submission_submit_worker",
     )
     BACKGROUND_WORKER_DICT_ATTRS = (
