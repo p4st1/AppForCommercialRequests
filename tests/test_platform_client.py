@@ -19,7 +19,9 @@ if requests is None:
     requests.Session = _Session
     sys.modules["requests"] = requests
 
-from services.platform_client import MetalITClient
+from services.platform.cookies import normalize_cookies, with_session_cookie_aliases
+from services.platform.queries import build_trade_search_variables
+from services.platform_client import MetalITClient, PlatformTimeoutError
 
 
 class _CaptureCookies:
@@ -114,6 +116,42 @@ class PlatformClientAuthTests(unittest.TestCase):
     def test_build_variables_uses_bid_submission_sitemap(self):
         variables = MetalITClient._build_variables(limit=20, skip=0)
         self.assertEqual(variables["tradeQueryDto"]["sitemapPage"], "purchases.trades.filters.BID_SUBMISSION")
+
+    def test_build_trade_search_variables_preserves_limit_skip_and_sitemap(self):
+        variables = build_trade_search_variables(
+            limit=20,
+            skip=40,
+            sitemap_page="purchases.trades.filters.RETRADING",
+        )
+
+        self.assertEqual(variables["limit"], 20)
+        self.assertEqual(variables["skip"], 40)
+        self.assertEqual(
+            variables["tradeQueryDto"]["sitemapPage"],
+            "purchases.trades.filters.RETRADING",
+        )
+
+    def test_normalize_cookies_trims_values_and_drops_empty_entries(self):
+        cookies = normalize_cookies(
+            {
+                " JSESSIONID ": " session ",
+                "empty": " ",
+                "": "value",
+                "XSRF-TOKEN": " xsrf ",
+            }
+        )
+
+        self.assertEqual(cookies, {"JSESSIONID": "session", "XSRF-TOKEN": "xsrf"})
+
+    def test_session_cookie_aliases_are_symmetric(self):
+        self.assertEqual(
+            with_session_cookie_aliases({"JSESSIONID": "session"}),
+            {"JSESSIONID": "session", "__Host-JSESSIONID": "session"},
+        )
+        self.assertEqual(
+            with_session_cookie_aliases({"__Host-JSESSIONID": "host-session"}),
+            {"__Host-JSESSIONID": "host-session", "JSESSIONID": "host-session"},
+        )
 
     def test_client_sets_required_headers_and_cookie_aliases(self):
         session = _CaptureSession()
@@ -237,6 +275,29 @@ class PlatformClientAuthTests(unittest.TestCase):
         self.assertFalse(client.last_trades_loaded_all)
         self.assertEqual(client.last_trades_total, 3)
 
+    def test_get_all_trades_does_not_request_more_than_max_items(self):
+        session = _PostCaptureSession(
+            responses=[
+                _FakeResponse(
+                    status_code=200,
+                    payload={
+                        "data": {
+                            "trades": {
+                                "items": [{"id": 1}, {"id": 2}],
+                                "total": 100,
+                            }
+                        }
+                    },
+                )
+            ]
+        )
+        client = MetalITClient({"JSESSIONID": "session-cookie"}, session=session)
+
+        trades = client.get_all_trades(limit=100, max_items=2)
+
+        self.assertEqual(trades, [{"id": 1}, {"id": 2}])
+        self.assertEqual(session.post_calls[0]["json"]["variables"]["limit"], 2)
+
     def test_get_trades_retries_read_timeout_with_configured_timeout(self):
         session = _FlakyPostSession(
             error=TimeoutError("HTTPSConnectionPool: Read timed out."),
@@ -266,6 +327,36 @@ class PlatformClientAuthTests(unittest.TestCase):
         self.assertEqual(len(session.post_calls), 2)
         self.assertEqual(session.post_calls[0]["timeout"], (10.0, 180.0))
         self.assertEqual(session.post_calls[1]["timeout"], (10.0, 180.0))
+
+    def test_get_trades_timeout_raises_clear_user_message(self):
+        session = _FlakyPostSession(
+            error=TimeoutError("HTTPSConnectionPool: Read timed out."),
+            response=_FakeResponse(status_code=200, payload={}),
+        )
+        client = MetalITClient(
+            {"JSESSIONID": "session-cookie"},
+            timeout=(1.0, 2.0),
+            retries=0,
+            session=session,
+        )
+
+        with self.assertRaisesRegex(PlatformTimeoutError, "Площадка не ответила"):
+            client.get_trades_page(limit=1, skip=0)
+
+    def test_get_trades_returns_empty_for_empty_graphql_payload(self):
+        session = _PostCaptureSession(
+            responses=[
+                _FakeResponse(
+                    status_code=200,
+                    payload={},
+                )
+            ]
+        )
+        client = MetalITClient({"JSESSIONID": "session-cookie"}, session=session)
+
+        page = client.get_trades(limit=20, skip=0)
+
+        self.assertEqual(page, {"items": [], "total": 0})
 
     def test_load_retrades_uses_retrading_payload_and_pagination(self):
         session = _PostCaptureSession(
@@ -320,7 +411,7 @@ class PlatformClientAuthTests(unittest.TestCase):
         )
         client = MetalITClient({"JSESSIONID": "session-cookie"}, session=session)
 
-        retrades = client.load_retrades()
+        retrades = client.load_retrades(limit=50, max_items=0)
 
         self.assertEqual(
             retrades,
@@ -363,6 +454,27 @@ class PlatformClientAuthTests(unittest.TestCase):
         self.assertEqual(session.post_calls[0]["json"]["variables"]["skip"], 0)
         self.assertEqual(session.post_calls[1]["json"]["variables"]["skip"], 50)
         self.assertIs(session.post_calls[0]["headers"], session.headers)
+
+    def test_load_retrades_uses_default_limit_twenty(self):
+        session = _PostCaptureSession(
+            responses=[
+                _FakeResponse(
+                    status_code=200,
+                    payload={
+                        "data": {
+                            "trades": {
+                                "items": [],
+                                "total": 0,
+                            }
+                        }
+                    },
+                )
+            ]
+        )
+        client = MetalITClient({"JSESSIONID": "session-cookie"}, session=session)
+
+        self.assertEqual(client.load_retrades(), [])
+        self.assertEqual(session.post_calls[0]["json"]["variables"]["limit"], 20)
 
     def test_load_retrades_shows_auth_error_for_403(self):
         session = _PostCaptureSession(

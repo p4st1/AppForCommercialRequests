@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
 from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from config import Config
 from services.auth_service import AuthService
+from services.platform.cookies import normalize_cookies
+from services.platform.config import PlatformLoadConfig
 from services.platform_client import MetalITClient
 from tools import DatabaseTools as Tool
 
@@ -36,8 +38,6 @@ from tools import DatabaseTools as Tool
 class LoadTradesWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
-    PAGE_LIMIT = 100
-    TRADE_LOAD_TIMEOUT_SECONDS = (10.0, 180.0)
     TRADE_LOAD_RETRIES = 1
 
     def __init__(
@@ -49,12 +49,17 @@ class LoadTradesWorker(QThread):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        load_config = PlatformLoadConfig.from_config()
         self._cookies = dict(cookies)
         try:
             parsed_max_items = int(max_items)
         except (TypeError, ValueError):
-            parsed_max_items = 50
-        self.max_items = parsed_max_items if parsed_max_items >= 0 else 50
+            parsed_max_items = load_config.max_items
+        self.max_items = (
+            parsed_max_items if parsed_max_items >= 0 else load_config.max_items
+        )
+        self.page_limit = load_config.default_limit
+        self.timeout = load_config.timeout
         self._login = str(login or "").strip()
         self._password = str(password or "")
         self.loaded_all = False
@@ -62,7 +67,7 @@ class LoadTradesWorker(QThread):
 
     def _load_trades_with_client(self, client: MetalITClient) -> list[dict[str, Any]]:
         trades = client.get_all_trades(
-            limit=self.PAGE_LIMIT,
+            limit=self.page_limit,
             max_items=self.max_items,
         )
         self.loaded_all = bool(getattr(client, "last_trades_loaded_all", False))
@@ -88,7 +93,7 @@ class LoadTradesWorker(QThread):
                 raise ValueError("Не найдены cookies для авторизации")
             client = MetalITClient(
                 self._cookies,
-                timeout=self.TRADE_LOAD_TIMEOUT_SECONDS,
+                timeout=self.timeout,
                 retries=self.TRADE_LOAD_RETRIES,
             )
             trades = self._load_trades_with_client(client)
@@ -120,7 +125,7 @@ class LoadTradesWorker(QThread):
                 self._cookies = dict(refreshed_cookies)
                 client = MetalITClient(
                     self._cookies,
-                    timeout=self.TRADE_LOAD_TIMEOUT_SECONDS,
+                    timeout=self.timeout,
                     retries=self.TRADE_LOAD_RETRIES,
                 )
                 trades = self._load_trades_with_client(client)
@@ -132,7 +137,6 @@ class LoadTradesWorker(QThread):
 class LoadRetradesWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
-    TRADE_LOAD_TIMEOUT_SECONDS = (10.0, 180.0)
     TRADE_LOAD_RETRIES = 1
 
     def __init__(
@@ -142,8 +146,17 @@ class LoadRetradesWorker(QThread):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        load_config = PlatformLoadConfig.from_config()
         self._cookies = dict(cookies)
-        self.max_items = max_items
+        try:
+            parsed_max_items = int(max_items)
+        except (TypeError, ValueError):
+            parsed_max_items = load_config.max_items
+        self.max_items = (
+            parsed_max_items if parsed_max_items >= 0 else load_config.max_items
+        )
+        self.page_limit = load_config.default_limit
+        self.timeout = load_config.timeout
         self.client: MetalITClient | None = None
 
     @staticmethod
@@ -157,12 +170,13 @@ class LoadRetradesWorker(QThread):
                 raise ValueError("Не найдены cookies для авторизации")
             self.client = MetalITClient(
                 self._cookies,
-                timeout=self.TRADE_LOAD_TIMEOUT_SECONDS,
+                timeout=self.timeout,
                 retries=self.TRADE_LOAD_RETRIES,
             )
-            retrades = self.client.load_retrades(limit=50)
-            if self.max_items > 0:
-                retrades = retrades[: self.max_items]
+            retrades = self.client.load_retrades(
+                limit=self.page_limit,
+                max_items=self.max_items,
+            )
             self.finished.emit(retrades)
         except Exception as exc:
             error_text = str(exc or "Неизвестная ошибка")
@@ -706,13 +720,7 @@ class PlatformMixin:
 
     @staticmethod
     def _normalize_cookies(raw: Any) -> dict[str, str]:
-        if not isinstance(raw, dict):
-            return {}
-        return {
-            str(key): str(value)
-            for key, value in raw.items()
-            if str(key).strip() and str(value).strip()
-        }
+        return normalize_cookies(raw)
 
     def _extract_cookies_from_payload(self, payload: dict[str, Any]) -> dict[str, str]:
         candidates: list[Any] = [payload.get("cookies")]
@@ -1246,21 +1254,22 @@ class PlatformMixin:
         self.populate_retrade_offers_table(offers)
 
     def _parse_max_items_input(self) -> int:
+        default_max_items = PlatformLoadConfig.from_config().max_items
         override = getattr(self, "_trades_load_max_items_override", None)
         if override is not None:
             try:
                 value = int(override)
             except (TypeError, ValueError):
-                value = 50
-            return value if value >= 0 else 50
+                value = default_max_items
+            return value if value >= 0 else default_max_items
 
-        max_items = 50
+        max_items = default_max_items
         try:
             max_items = int(self.input_limit.text())
         except (TypeError, ValueError, AttributeError):
-            max_items = 50
+            max_items = default_max_items
         if max_items <= 0:
-            max_items = 50
+            max_items = default_max_items
         return max_items
 
     def populate_trades_table(self, trades: list[dict[str, Any]]) -> None:

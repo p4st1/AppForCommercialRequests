@@ -10,6 +10,14 @@
         "pathToDB": "",
         "ExcelIndent": "0",
         "lastTable": "",
+        "platformTradeLoad": {
+            "default_limit": 20,
+            "max_items": 50,
+            "timeout": [
+                10.0,
+                180.0
+            ]
+        },
         "paymentTemplates": [
             "на дату подписания спецификации Поставщиком",
             "на дату оплаты"
@@ -22,8 +30,5 @@
         "openLastTab": true,
         "testFeature": false
     },
-    "cookies": {
-    "JSESSIONID": "46052C544D1BE9D019A2EE099B42C01F",
-    "__Host-refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzMDcxMTQ3MzQiLCJleHAiOjE3NzY1MDQ5NjEsImlhdCI6MTc3NjQxODU2MX0.2hSptUF2AO7CHudQgWh9FYpbbnVqQ9t6YMlbQ45i_c4"
-  }
+    "cookies": {}
 }

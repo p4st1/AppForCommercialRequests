@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from app.ui.table_autosize import configure_table_autosize, resize_table_to_contents
 from config import Config
 from services.excel_processor import ExcelProcessor
+from services.platform.cookies import normalize_cookies
 from tools import DatabaseTools as Tool
 
 from .submission_playwright import SubmissionPlaywright
@@ -798,14 +799,9 @@ QTableWidget::item:selected:!active {
             else None,
         ]
         for candidate in candidates:
-            if isinstance(candidate, dict):
-                cookies = {
-                    str(key).strip(): str(value).strip()
-                    for key, value in candidate.items()
-                    if str(key).strip() and str(value).strip()
-                }
-                if cookies:
-                    return cookies
+            cookies = normalize_cookies(candidate)
+            if cookies:
+                return cookies
         return {}
 
     def _load_submission_cookies(self) -> dict[str, str]:

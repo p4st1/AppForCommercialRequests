@@ -1,0 +1,20 @@
+BASE_URL = "https://etp.metal-it.ru"
+GRAPHQL_ENDPOINT = f"{BASE_URL}/graphql/tradeSearch"
+TRADE_DETAILS_ENDPOINT_PATTERN = "{base_url}/trades/{trade_id}"
+
+DEFAULT_SITEMAP_PAGE = "purchases.trades.filters.BID_SUBMISSION"
+RETRADING_SITEMAP_PAGE = "purchases.trades.filters.RETRADING"
+
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
+DEFAULT_REQUEST_TIMEOUT = 30.0
+DEFAULT_REQUEST_RETRIES = 0
+DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
+
+DEFAULT_PLATFORM_LIMIT = 20
+DEFAULT_PLATFORM_MAX_ITEMS = 50
+DEFAULT_PLATFORM_TIMEOUT = (10.0, 180.0)

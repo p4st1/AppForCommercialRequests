@@ -148,6 +148,11 @@ def _ensure_pyside_stubs() -> None:
         def getOpenFileName(*_args, **_kwargs):
             return ("", "")
 
+    class _QInputDialog:
+        @staticmethod
+        def getText(*_args, **_kwargs):
+            return ("", False)
+
     class _QMessageBox:
         @staticmethod
         def warning(*_args, **_kwargs):
@@ -210,6 +215,7 @@ def _ensure_pyside_stubs() -> None:
         "QCheckBox": _Widget,
         "QDoubleSpinBox": _Widget,
         "QFileDialog": _QFileDialog,
+        "QInputDialog": _QInputDialog,
         "QHeaderView": _QHeaderView,
         "QHBoxLayout": _Widget,
         "QLabel": _Widget,
@@ -235,6 +241,7 @@ try:
 except ModuleNotFoundError:
     sys.modules["requests"] = ModuleType("requests")
 
+import ui_mixins.export_mixin as export_mixin_module
 from ui_mixins.export_mixin import ExportMixin
 
 
@@ -336,7 +343,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 ],
                 [
                     {"value": 2, "currency": None},
-                    {"value": 5, "currency": None},
+                    {"value": 5, "currency": "RUB"},
                 ],
             ],
         )
@@ -404,6 +411,17 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             [[{"value": 1, "currency": None}, {"value": 100, "currency": "RUB"}]],
         )
 
+    def test_parse_propagates_currency_within_column(self):
+        parsed = ExportMixin._parse_retrade_calculations(
+            [
+                [{"value": "№", "currency": None}, {"value": "Цена", "currency": None}],
+                [{"value": 1, "currency": None}, {"value": 100, "currency": "CNY"}],
+                [{"value": 2, "currency": None}, {"value": 200, "currency": None}],
+            ]
+        )
+
+        self.assertEqual(parsed["rows"][1][1]["currency"], "CNY")
+
     def test_worksheet_visible_rows_skip_empty_rows_before_and_after_headers(self):
         workbook = Workbook()
         worksheet = workbook.active
@@ -423,6 +441,25 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][0], 4)
         self.assertEqual([cell["value"] for cell in rows[0][1]], [1, 100])
+
+    def test_worksheet_visible_rows_skip_empty_internal_columns(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["№", "Срок поставщика", None, None, "Рейтинг"])
+        worksheet.append([1, "30 дней", None, None, 3])
+        worksheet.cell(row=1, column=3).number_format = '#,##0.00 "₽"'
+        worksheet.cell(row=2, column=4).number_format = '#,##0.00 "₽"'
+
+        headers, rows, column_count = ExportMixin._worksheet_to_visible_retrade_rows(
+            worksheet
+        )
+
+        self.assertEqual(column_count, 3)
+        self.assertEqual(
+            [cell["value"] for cell in headers],
+            ["№", "Срок поставщика", "Рейтинг"],
+        )
+        self.assertEqual([cell["value"] for cell in rows[0][1]], [1, "30 дней", 3])
 
     def test_parse_returns_empty_structure_for_empty_file(self):
         parsed = ExportMixin._parse_retrade_calculations(
@@ -580,12 +617,14 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertEqual(ExportMixin._detect_currency(1000, '#,##0.00 "₽"'), "RUB")
         self.assertEqual(ExportMixin._detect_currency(1000, '#,##0.00 "$"'), "USD")
         self.assertEqual(ExportMixin._detect_currency(1000, '#,##0.00 "EUR"'), "EUR")
+        self.assertEqual(ExportMixin._detect_currency(1000, '#,##0.00 "¥"'), "CNY")
 
     def test_detect_currency_from_string_fallback(self):
         self.assertEqual(ExportMixin._detect_currency("1000 руб", "General"), "RUB")
         self.assertEqual(ExportMixin._detect_currency("1 000,00 ₽", "General"), "RUB")
         self.assertEqual(ExportMixin._detect_currency("Total $100", "General"), "USD")
         self.assertEqual(ExportMixin._detect_currency("Amount 50 eur", "General"), "EUR")
+        self.assertEqual(ExportMixin._detect_currency("Amount 50 CNY", "General"), "CNY")
 
     def test_format_number_ru(self):
         self.assertEqual(ExportMixin._format_number_ru(100000), "100 000,00")
@@ -610,6 +649,27 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 {"value": 1234.5, "currency": "EUR"}
             ),
             "1 234,50 €",
+        )
+        self.assertEqual(
+            ExportMixin._format_retrade_calculations_cell_for_display(
+                {"value": 1234.5, "currency": "CNY"}
+            ),
+            "1 234,50 ¥",
+        )
+
+    def test_format_calculations_display_value_uses_cell_currency_for_prices(self):
+        mixin = ExportMixin()
+
+        self.assertEqual(
+            mixin._format_calculations_display_value(
+                1234.5,
+                col_index=1,
+                header="Цена за ед.",
+                price_columns={1},
+                rating_columns=set(),
+                currency="CNY",
+            ),
+            "1 234,50 ¥",
         )
 
     def test_format_cell_returns_non_numeric_as_is(self):
@@ -1302,6 +1362,108 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             "Переторжка 3",
         )
 
+    def test_populate_retrade_sheets_list_selects_requested_sheet(self):
+        class _FakeListWidgetItem:
+            def __init__(self, text):
+                self._text = str(text)
+
+            def text(self):
+                return self._text
+
+            def setBackground(self, *_args, **_kwargs):
+                pass
+
+        class _FakeSheetsList:
+            def __init__(self):
+                self.items = []
+                self.current_row = -1
+                self.signals_blocked = False
+
+            def blockSignals(self, value):
+                self.signals_blocked = bool(value)
+
+            def clear(self):
+                self.items.clear()
+                self.current_row = -1
+
+            def addItem(self, item):
+                self.items.append(item)
+
+            def count(self):
+                return len(self.items)
+
+            def setCurrentRow(self, row):
+                self.current_row = int(row)
+
+            def currentItem(self):
+                if self.current_row < 0 or self.current_row >= len(self.items):
+                    return None
+                return self.items[self.current_row]
+
+        original_list_widget = export_mixin_module.QListWidget
+        original_list_widget_item = export_mixin_module.QListWidgetItem
+        original_color = export_mixin_module.QColor
+        export_mixin_module.QListWidget = _FakeSheetsList
+        export_mixin_module.QListWidgetItem = _FakeListWidgetItem
+        export_mixin_module.QColor = lambda *_args, **_kwargs: object()
+        try:
+            mixin = ExportMixin()
+            mixin.workbook = SimpleNamespace(
+                sheetnames=["Рассчеты", "Переторжка 1", "Переторжка 2"]
+            )
+            mixin.sheetsList = _FakeSheetsList()
+            selected_sheets = []
+            mixin.on_sheet_selected = selected_sheets.append
+
+            mixin._populate_retrade_sheets_list(
+                selected_sheet_name="Переторжка 2"
+            )
+
+            self.assertEqual(mixin.sheetsList.current_row, 2)
+            self.assertEqual(selected_sheets, ["Переторжка 2"])
+            self.assertFalse(mixin.sheetsList.signals_blocked)
+        finally:
+            export_mixin_module.QListWidget = original_list_widget
+            export_mixin_module.QListWidgetItem = original_list_widget_item
+            export_mixin_module.QColor = original_color
+
+    def test_load_retrade_calculations_workbook_evaluates_uncached_formulas(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Рассчеты"
+        headers = [f"Колонка {index}" for index in range(1, 20)]
+        headers[9] = "Цена за ед. без НДС"
+        headers[10] = "Цена реализации за ед. без НДС"
+        headers[16] = "Лучшая цена за ед."
+        headers[17] = "Рейтинг"
+        headers[18] = "Скорректированный рейтинг"
+        worksheet.append(headers)
+        worksheet.cell(row=2, column=10).value = 100
+        worksheet.cell(row=2, column=17).value = 125
+        worksheet.cell(row=2, column=18).value = "=ROUND(Q2/J2, 2)"
+        worksheet.cell(row=2, column=19).value = (
+            "=ROUND(IF(R2-0.02<1.15,1.15,R2-0.02), 2)"
+        )
+        worksheet.cell(row=2, column=11).value = "=ROUND(J2*S2, 2)"
+        worksheet.cell(row=3, column=10).value = "=SUM(J2:K2)"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "calc.xlsx"
+            workbook.save(file_path)
+            workbook.close()
+
+            loaded_workbook = ExportMixin._load_retrade_calculations_workbook(
+                str(file_path)
+            )
+            try:
+                loaded_sheet = loaded_workbook["Рассчеты"]
+                self.assertEqual(loaded_sheet.cell(row=2, column=18).value, 1.25)
+                self.assertEqual(loaded_sheet.cell(row=2, column=19).value, 1.23)
+                self.assertEqual(loaded_sheet.cell(row=2, column=11).value, 123.0)
+                self.assertEqual(loaded_sheet.cell(row=3, column=10).value, 223.0)
+            finally:
+                loaded_workbook.close()
+
     def test_write_best_prices_to_calculations_file_creates_updated_sheet(self):
         workbook = Workbook()
         worksheet = workbook.active
@@ -1441,6 +1603,47 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                     result_sheet.column_dimensions[get_column_letter(real_rating_col_index)].width,
                     18,
                 )
+            finally:
+                result_workbook.close()
+        finally:
+            workbook.close()
+            Path(file_path).unlink(missing_ok=True)
+
+    def test_write_best_prices_ignores_blank_formatted_columns(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Расчет"
+        headers = [f"Колонка {index}" for index in range(1, 16)]
+        headers[9] = "Цена за ед."
+        headers[10] = "Цена реализации за ед. без НДС"
+        worksheet.append(headers)
+        worksheet.append([1, None, None, None, None, None, None, None, None, 100, None])
+        worksheet.cell(row=1, column=26).number_format = '#,##0.00 "₽"'
+        worksheet.cell(row=2, column=26).number_format = '#,##0.00 "₽"'
+
+        temp_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        temp_file.close()
+        file_path = temp_file.name
+
+        try:
+            workbook.save(file_path)
+            workbook.close()
+
+            sheet_title = ExportMixin._write_best_prices_to_calculations_file(
+                file_path,
+                [125],
+                ratings=[1.25],
+                min_margin=1.15,
+                delta_percent=2,
+            )
+
+            result_workbook = load_workbook(file_path, data_only=False)
+            try:
+                result_sheet = result_workbook[sheet_title]
+                self.assertEqual(result_sheet.max_column, 26)
+                self.assertEqual(result_sheet.cell(row=1, column=16).value, "Рейтинг (таблица)")
+                self.assertEqual(result_sheet.cell(row=1, column=19).value, "Скорректированный рейтинг")
+                self.assertIsNone(result_sheet.cell(row=1, column=20).value)
             finally:
                 result_workbook.close()
         finally:
