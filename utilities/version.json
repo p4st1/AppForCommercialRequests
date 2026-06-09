@@ -1,6 +1,6 @@
 {
-  "version": "2.0.0",
-  "repo": "p4st1/AppForCommercialRequests",
-  "release_branch": "release",
-  "release_url": "https://github.com/p4st1/AppForCommercialRequests/releases"
+  "version": "3.1.12",
+  "repo": "p4st1/AppForCommercialRequestsRelease",
+  "release_branch": "main",
+  "release_url": "https://github.com/p4st1/AppForCommercialRequestsRelease"
 }
