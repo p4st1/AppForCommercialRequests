@@ -50,7 +50,28 @@ def _ensure_pyside_stubs() -> None:
         def isActive(self):
             return False
 
+        def start(self, *_args, **_kwargs):
+            pass
+
+        def stop(self):
+            pass
+
+    class _QDateTime:
+        @staticmethod
+        def currentDateTime():
+            return _QDateTime()
+
+        def addSecs(self, *_args, **_kwargs):
+            return self
+
+        def msecsTo(self, *_args, **_kwargs):
+            return 0
+
+        def toString(self, *_args, **_kwargs):
+            return ""
+
     qtcore.QSettings = getattr(qtcore, "QSettings", _QSettings)
+    qtcore.QDateTime = getattr(qtcore, "QDateTime", _QDateTime)
     qtcore.QThread = getattr(qtcore, "QThread", _QThread)
     qtcore.Signal = getattr(qtcore, "Signal", _Signal)
     qtcore.QTimer = getattr(qtcore, "QTimer", _QTimer)
@@ -116,11 +137,24 @@ def _ensure_pyside_stubs() -> None:
         def getText(*_args, **_kwargs):
             return ("", False)
 
+    class _QDialog(_Widget):
+        class DialogCode:
+            Accepted = 1
+
+    class _QDialogButtonBox(_Widget):
+        class StandardButton:
+            Ok = 1
+            Cancel = 2
+
     for name, value in {
         "QAbstractItemView": _Widget,
         "QCheckBox": _Widget,
+        "QDateTimeEdit": _Widget,
+        "QDialog": _QDialog,
+        "QDialogButtonBox": _QDialogButtonBox,
         "QDoubleSpinBox": _Widget,
         "QFileDialog": _QFileDialog,
+        "QFormLayout": _Widget,
         "QHeaderView": _Widget,
         "QHBoxLayout": _Widget,
         "QInputDialog": _QInputDialog,
@@ -133,6 +167,7 @@ def _ensure_pyside_stubs() -> None:
         "QTableWidget": _Widget,
         "QTableWidgetItem": _Widget,
         "QTabWidget": _Widget,
+        "QVBoxLayout": _Widget,
         "QWidget": _Widget,
     }.items():
         setattr(qtwidgets, name, getattr(qtwidgets, name, value))
@@ -163,6 +198,7 @@ class _FakeButton:
         self.object_name = ""
         self.properties = {}
         self.stylesheet = ""
+        self.tooltip = ""
         self.clicked = _FakeSignal()
 
     def setObjectName(self, name):
@@ -188,6 +224,9 @@ class _FakeButton:
 
     def setEnabled(self, _enabled):
         pass
+
+    def setToolTip(self, tooltip):
+        self.tooltip = tooltip
 
 
 class _FakeHBoxLayout:
@@ -429,11 +468,71 @@ class RetradeContextTests(unittest.TestCase):
         self.assertEqual(window.import_button.text(), "Обновить предложение")
         self.assertEqual(window.import_button.object_name, "import_button")
         self.assertEqual(window.import_button.properties.get("variant"), "primary")
+        self.assertEqual(
+            window.delayed_retrade_button.text(),
+            "Отложенная подача",
+        )
+        self.assertEqual(
+            window.delayed_retrade_button.object_name,
+            "delayed_retrade_button",
+        )
         self.assertEqual(window.import_button.stylesheet, "")
         self.assertEqual(
             window.retrade_controls_layout.widgets,
-            [window.import_button, window.label_auto_trade_status],
+            [
+                window.import_button,
+                window.delayed_retrade_button,
+                window.label_auto_trade_status,
+            ],
         )
+
+    def test_delayed_retrade_runs_generate_update_and_import_sequence(self):
+        window = _FakeExportWindow()
+        window._delayed_retrade_job = None
+        window._delayed_retrade_running = False
+        window._delayed_retrade_pending_after_generation = False
+        window._retrade_import_worker = None
+        calls = []
+
+        def generate(*, refresh_from_site=False):
+            calls.append(("generate", refresh_from_site))
+            return True
+
+        def update_positions():
+            calls.append(("update_positions",))
+            return True
+
+        def import_clicked():
+            calls.append(("import",))
+            window._retrade_import_worker = object()
+
+        window.generate_retrade_calculation = generate
+        window.update_retrade_positions = update_positions
+        window.on_import_clicked = import_clicked
+
+        window._run_delayed_retrade_job(
+            {
+                "min_margin": 1.5,
+                "delta_percent": 2.5,
+                "retrade_context": {},
+                "calculations_file_path": "/tmp/calc.xlsx",
+            }
+        )
+
+        self.assertEqual(
+            calls,
+            [
+                ("generate", True),
+                ("update_positions",),
+                ("import",),
+            ],
+        )
+        self.assertTrue(window._delayed_retrade_running)
+        self.assertFalse(window._delayed_retrade_pending_after_generation)
+
+        window._on_retrade_import_finished("/tmp/retrade.xlsx")
+
+        self.assertFalse(window._delayed_retrade_running)
 
 
 if __name__ == "__main__":

@@ -11,14 +11,18 @@ import pandas as pd
 from docx import Document
 from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string, get_column_letter, range_boundaries
-from PySide6.QtCore import QSettings, QThread, Signal, QTimer, Qt
+from PySide6.QtCore import QDateTime, QSettings, QThread, Signal, QTimer, Qt
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QDateTimeEdit,
+    QDialog,
+    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
+    QFormLayout,
     QHeaderView,
     QHBoxLayout,
     QInputDialog,
@@ -31,6 +35,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -184,6 +189,10 @@ class ExportMixin:
         self._retrade_import_worker: ImportRetradeWorker | None = None
         self.excel_processor = ExcelProcessor()
         self._auto_trade_timer: QTimer | None = None
+        self._delayed_retrade_timer: QTimer | None = None
+        self._delayed_retrade_job: dict[str, Any] | None = None
+        self._delayed_retrade_running = False
+        self._delayed_retrade_pending_after_generation = False
         self.current_retrade_excel_path = ""
         self.current_retrade = ""
         self.current_retrade_context: dict[str, Any] = {}
@@ -223,6 +232,7 @@ class ExportMixin:
             },
         }
         self._ensure_auto_trade_timer()
+        self._ensure_delayed_retrade_timer()
         self._apply_main_table_font_settings()
         self._ensure_retrade_tab()
         self._ensure_auto_resize_columns_action()
@@ -709,13 +719,20 @@ QTableWidget::indicator {{
             style.polish(self.import_button)
         self.import_button.update()
 
+        self.delayed_retrade_button = QPushButton("Отложенная подача", parent)
+        self.delayed_retrade_button.setObjectName("delayed_retrade_button")
+
         insert_index = controls_layout.indexOf(self.label_auto_trade_status)
         if insert_index < 0:
             insert_index = controls_layout.count()
         controls_layout.insertWidget(insert_index, self.import_button)
+        controls_layout.insertWidget(insert_index + 1, self.delayed_retrade_button)
 
         self.ui.import_button = self.import_button
+        self.ui.delayed_retrade_button = self.delayed_retrade_button
         self.import_button.clicked.connect(self.on_import_clicked)
+        self.delayed_retrade_button.clicked.connect(self._on_delayed_retrade_clicked)
+        self._refresh_delayed_retrade_button()
 
     @staticmethod
     def _load_retrade_excel_rows(file_path: str) -> list[list[Any]]:
@@ -1637,12 +1654,19 @@ QTableWidget::indicator {{
     def _on_retrade_import_finished(self, file_path: str) -> None:
         Tool.write_log(f"Обновление предложения завершено: {file_path}")
         self._finish_retrade_import("Предложение обновлено")
+        if bool(getattr(self, "_delayed_retrade_running", False)):
+            self._finish_delayed_retrade("Отложенная подача завершена")
 
     def _on_retrade_import_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка обновления предложения: {error_text}")
         QMessageBox.warning(self, "Ошибка обновления предложения", error_text)
         self._finish_retrade_import("Ошибка обновления предложения")
+        if bool(getattr(self, "_delayed_retrade_running", False)):
+            self._finish_delayed_retrade(
+                f"Отложенная подача остановлена: {error_text}",
+                error=True,
+            )
 
     def load_retrade_excel(self) -> None:
         default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
@@ -3431,23 +3455,27 @@ QTableWidget::indicator {{
         except Exception as exc:
             self._generate_retrade_after_export = False
             QMessageBox.warning(self, "Ошибка экспорта заявки", str(exc))
-            return True
+            return False
 
-    def generate_retrade_calculation(self, *, refresh_from_site: bool = False) -> None:
+    def generate_retrade_calculation(
+        self,
+        *,
+        refresh_from_site: bool = False,
+    ) -> bool | None:
         calculations_file_path = str(
             getattr(self, "calculations_file_path", "") or ""
         ).strip()
         if not calculations_file_path:
             QMessageBox.warning(self, "Ошибка", "Файл расчетов не выбран")
-            return
+            return False
 
         if refresh_from_site and self._start_retrade_export_for_generation():
-            return
+            return None
 
         table = self._get_retrade_source_table()
         if table is None:
             QMessageBox.warning(self, "Ошибка", "Таблица Переторжка не найдена")
-            return
+            return False
 
         selected_rows = self.get_selected_rows()
 
@@ -3464,7 +3492,7 @@ QTableWidget::indicator {{
             error_text = f"Не удалось обновить расчет: {exc}"
             Tool.write_log(error_text)
             QMessageBox.warning(self, "Ошибка", error_text)
-            return
+            return False
 
         recalc_error = ""
         recalc_skipped = False
@@ -3539,7 +3567,11 @@ QTableWidget::indicator {{
             for message in (recalc_error, drive_error, view_error)
             if message
         ]
+        show_dialogs = not bool(getattr(self, "_delayed_retrade_running", False))
         if warnings:
+            if not show_dialogs:
+                Tool.write_log("Отложенная подача: " + "; ".join(warnings))
+                return True
             QMessageBox.warning(
                 self,
                 "Готово с предупреждением",
@@ -3551,22 +3583,25 @@ QTableWidget::indicator {{
                 message = f"{message}\nФайл сохранен на Google Drive."
             if view_reloaded:
                 message = f"{message}\nОткрыт лист: {sheet_title}."
-            QMessageBox.information(
-                self,
-                "Готово",
-                message,
-            )
+            if show_dialogs:
+                QMessageBox.information(
+                    self,
+                    "Готово",
+                    message,
+                )
         else:
             message = "Расчет успешно обновлен и пересчитан"
             if drive_file_id:
                 message = f"{message}\nФайл сохранен на Google Drive."
             if view_reloaded:
                 message = f"{message}\nОткрыт лист: {sheet_title}."
-            QMessageBox.information(
-                self,
-                "Готово",
-                message,
-            )
+            if show_dialogs:
+                QMessageBox.information(
+                    self,
+                    "Готово",
+                    message,
+                )
+        return True
 
     @staticmethod
     def _load_retrade_calculations_cells_data(file_path: str) -> list[list[dict[str, Any]]]:
@@ -4686,16 +4721,16 @@ QTableWidget::indicator {{
         finally:
             workbook.close()
 
-    def update_retrade_positions(self) -> None:
+    def update_retrade_positions(self) -> bool:
         calculations_table = getattr(self, "retrade_calculations_table", None)
         if not isinstance(calculations_table, QTableWidget):
             QMessageBox.warning(self, "Ошибка", "Таблица расчетов не найдена")
-            return
+            return False
 
         main_table = self._get_retrade_source_table()
         if not isinstance(main_table, QTableWidget):
             QMessageBox.warning(self, "Ошибка", "Основная таблица не найдена")
-            return
+            return False
 
         calculations_headers = self._table_headers(calculations_table)
         calculations_rows = self._table_payload_rows(calculations_table)
@@ -4711,7 +4746,7 @@ QTableWidget::indicator {{
                 "Ошибка",
                 'Не найдена колонка "Предлагаемая цена за ед." в основной таблице',
             )
-            return
+            return False
 
         try:
             updates, sale_price_col = self._calculate_updated_position_prices(
@@ -4721,7 +4756,7 @@ QTableWidget::indicator {{
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Ошибка", str(exc))
-            return
+            return False
 
         formula_row_indices = self._formula_update_row_indices(
             calculations_headers,
@@ -4729,12 +4764,17 @@ QTableWidget::indicator {{
             column_offset=column_offset,
         )
         if not formula_row_indices:
+            if bool(getattr(self, "_delayed_retrade_running", False)):
+                Tool.write_log(
+                    "Отложенная подача: нет строк с заполненной исходной ценой"
+                )
+                return False
             QMessageBox.information(
                 self,
                 "Обновить цены",
                 "Нет строк с заполненной исходной ценой",
             )
-            return
+            return False
 
         excel_rows_by_table_row = self._table_rows_to_excel_rows(
             calculations_table,
@@ -4758,7 +4798,7 @@ QTableWidget::indicator {{
             error_text = f"Не удалось обновить формулы в файле расчетов: {exc}"
             Tool.write_log(error_text)
             QMessageBox.warning(self, "Ошибка", error_text)
-            return
+            return False
 
         updated_count = 0
         main_row_count = main_table.rowCount()
@@ -4815,6 +4855,11 @@ QTableWidget::indicator {{
                 5_000,
             )
         if updated_count == 0:
+            if bool(getattr(self, "_delayed_retrade_running", False)):
+                Tool.write_log(
+                    "Отложенная подача: формулы сохранены, но цены не обновлены"
+                )
+                return False
             QMessageBox.information(
                 self,
                 "Обновить цены",
@@ -4823,6 +4868,8 @@ QTableWidget::indicator {{
                     "нужны заполненные цена и скорректированный рейтинг."
                 ),
             )
+            return False
+        return True
 
     def _set_retrade_calculations_loaded_status(self, is_loaded: bool) -> None:
         self.retrade_calculations_loaded = bool(is_loaded)
@@ -4960,6 +5007,335 @@ QTableWidget::indicator {{
     def _log_auto_trade(message: str) -> None:
         text = f"[AUTO TRADE] {message}"
         Tool.write_log(text)
+
+    @staticmethod
+    def _log_delayed_retrade(message: str) -> None:
+        text = f"[DELAYED RETRADE] {message}"
+        Tool.write_log(text)
+
+    def _ensure_delayed_retrade_timer(self) -> QTimer:
+        timer = getattr(self, "_delayed_retrade_timer", None)
+        if isinstance(timer, QTimer):
+            return timer
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self._on_delayed_retrade_timer_timeout)
+        self._delayed_retrade_timer = timer
+        return timer
+
+    def _stop_delayed_retrade_timer(self) -> None:
+        timer = self._ensure_delayed_retrade_timer()
+        if timer.isActive():
+            timer.stop()
+
+    def _refresh_delayed_retrade_button(self) -> None:
+        button = getattr(self, "delayed_retrade_button", None)
+        if not isinstance(button, QPushButton):
+            return
+
+        job = getattr(self, "_delayed_retrade_job", None)
+        if isinstance(job, dict):
+            run_at = job.get("run_at")
+            run_at_text = (
+                run_at.toString("dd.MM.yyyy HH:mm")
+                if isinstance(run_at, QDateTime)
+                else str(job.get("run_at_text") or "").strip()
+            )
+            button.setText("Отложено...")
+            button.setToolTip(
+                f"Отложенная подача запланирована на {run_at_text}"
+                if run_at_text
+                else "Отложенная подача запланирована"
+            )
+            return
+
+        button.setText("Отложенная подача")
+        button.setToolTip("")
+
+    def _current_retrade_calculations_description(self) -> str:
+        drive_name = str(
+            getattr(self, "current_retrade_calculations_drive_name", "") or ""
+        ).strip()
+        if drive_name:
+            return drive_name
+
+        file_path = str(getattr(self, "calculations_file_path", "") or "").strip()
+        if file_path:
+            return Path(file_path).name
+        return "Расчеты не выбраны"
+
+    def _has_retrade_calculations_for_delayed_submit(self) -> bool:
+        file_path = str(getattr(self, "calculations_file_path", "") or "").strip()
+        return bool(file_path and Path(file_path).expanduser().exists())
+
+    def _show_delayed_retrade_dialog(self) -> dict[str, Any] | None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Отложенная подача")
+
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        now = QDateTime.currentDateTime()
+        date_time_edit = QDateTimeEdit(dialog)
+        date_time_edit.setCalendarPopup(True)
+        date_time_edit.setDisplayFormat("dd.MM.yyyy HH:mm")
+        date_time_edit.setMinimumDateTime(now)
+        date_time_edit.setDateTime(now.addSecs(5 * 60))
+
+        min_margin_input = QDoubleSpinBox(dialog)
+        min_margin_input.setRange(0, 100)
+        min_margin_input.setDecimals(2)
+        min_margin_input.setSingleStep(0.1)
+        min_margin_input.setValue(self.get_min_margin())
+
+        delta_input = QDoubleSpinBox(dialog)
+        delta_input.setRange(0, 100)
+        delta_input.setDecimals(2)
+        delta_input.setSingleStep(0.5)
+        delta_input.setValue(self.get_delta_percent())
+
+        calculations_widget = QWidget(dialog)
+        calculations_layout = QHBoxLayout(calculations_widget)
+        calculations_layout.setContentsMargins(0, 0, 0, 0)
+        calculations_label = QLabel(
+            self._current_retrade_calculations_description(),
+            calculations_widget,
+        )
+        calculations_button = QPushButton("Выбрать расчеты", calculations_widget)
+        calculations_layout.addWidget(calculations_label, 1)
+        calculations_layout.addWidget(calculations_button)
+
+        def choose_calculations() -> None:
+            self._open_retrade_calculations()
+            calculations_label.setText(
+                self._current_retrade_calculations_description()
+            )
+
+        calculations_button.clicked.connect(choose_calculations)
+
+        form.addRow("Дата и время:", date_time_edit)
+        form.addRow("Минимальная наценка:", min_margin_input)
+        form.addRow("Дельта, %:", delta_input)
+        form.addRow("Расчеты:", calculations_widget)
+
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel,
+            dialog,
+        )
+        layout.addWidget(button_box)
+
+        def accept_if_valid() -> None:
+            run_at = date_time_edit.dateTime()
+            if QDateTime.currentDateTime().msecsTo(run_at) <= 0:
+                QMessageBox.warning(
+                    dialog,
+                    "Отложенная подача",
+                    "Выберите время в будущем.",
+                )
+                return
+
+            if self._get_current_retrade_bid_id() is None:
+                QMessageBox.warning(
+                    dialog,
+                    "Отложенная подача",
+                    "Сначала закрепите текущую переторжку за заявкой.",
+                )
+                return
+
+            if not self._has_retrade_calculations_for_delayed_submit():
+                QMessageBox.warning(
+                    dialog,
+                    "Отложенная подача",
+                    "Выберите расчеты перед отложенной подачей.",
+                )
+                return
+
+            dialog.accept()
+
+        button_box.accepted.connect(accept_if_valid)
+        button_box.rejected.connect(dialog.reject)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+
+        return {
+            "run_at": date_time_edit.dateTime(),
+            "run_at_text": date_time_edit.dateTime().toString("dd.MM.yyyy HH:mm"),
+            "min_margin": float(min_margin_input.value()),
+            "delta_percent": float(delta_input.value()),
+            "calculations_file_path": str(
+                getattr(self, "calculations_file_path", "") or ""
+            ).strip(),
+            "calculations_sheet_name": str(
+                getattr(self, "current_calculations_sheet_name", "") or ""
+            ).strip(),
+            "retrade_context": self.get_current_retrade_context(),
+            "retrade_excel_path": str(
+                getattr(self, "current_retrade_excel_path", "") or ""
+            ).strip(),
+        }
+
+    def _on_delayed_retrade_clicked(self) -> None:
+        existing_job = getattr(self, "_delayed_retrade_job", None)
+        if isinstance(existing_job, dict):
+            answer = QMessageBox.question(
+                self,
+                "Отложенная подача",
+                "Отложенная подача уже запланирована. Переназначить?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self._stop_delayed_retrade_timer()
+            self._delayed_retrade_job = None
+            self._refresh_delayed_retrade_button()
+
+        job = self._show_delayed_retrade_dialog()
+        if not job:
+            return
+
+        self._schedule_delayed_retrade_job(job)
+
+    def _schedule_delayed_retrade_job(self, job: dict[str, Any]) -> None:
+        self._delayed_retrade_job = dict(job)
+        self._refresh_delayed_retrade_button()
+        self._start_delayed_retrade_timer_for_job()
+        run_at_text = str(job.get("run_at_text") or "").strip()
+        self._log_delayed_retrade(
+            "запланирована"
+            + (f" на {run_at_text}" if run_at_text else "")
+            + f", наценка={job.get('min_margin')}, дельта={job.get('delta_percent')}"
+        )
+        self._show_export_status(
+            f"Отложенная подача запланирована на {run_at_text}",
+            5_000,
+        )
+
+    def _start_delayed_retrade_timer_for_job(self) -> None:
+        job = getattr(self, "_delayed_retrade_job", None)
+        if not isinstance(job, dict):
+            return
+
+        run_at = job.get("run_at")
+        if not isinstance(run_at, QDateTime):
+            return
+
+        remaining_ms = QDateTime.currentDateTime().msecsTo(run_at)
+        timer = self._ensure_delayed_retrade_timer()
+        if remaining_ms <= 0:
+            timer.start(0)
+            return
+
+        max_interval_ms = 24 * 60 * 60 * 1000
+        timer.start(int(min(remaining_ms, max_interval_ms)))
+
+    def _on_delayed_retrade_timer_timeout(self) -> None:
+        job = getattr(self, "_delayed_retrade_job", None)
+        if not isinstance(job, dict):
+            self._refresh_delayed_retrade_button()
+            return
+
+        run_at = job.get("run_at")
+        if isinstance(run_at, QDateTime) and QDateTime.currentDateTime().msecsTo(run_at) > 0:
+            self._start_delayed_retrade_timer_for_job()
+            return
+
+        self._run_delayed_retrade_job(job)
+
+    def _apply_delayed_retrade_job_context(self, job: dict[str, Any]) -> None:
+        context = job.get("retrade_context")
+        if isinstance(context, dict) and context:
+            self._set_current_retrade_context(context)
+
+        calculations_file_path = str(job.get("calculations_file_path") or "").strip()
+        if calculations_file_path:
+            self.calculations_file_path = calculations_file_path
+
+        calculations_sheet_name = str(job.get("calculations_sheet_name") or "").strip()
+        if calculations_sheet_name:
+            self.current_calculations_sheet_name = calculations_sheet_name
+            self._reload_retrade_calculations_view(
+                selected_sheet_name=calculations_sheet_name,
+            )
+
+        retrade_excel_path = str(job.get("retrade_excel_path") or "").strip()
+        if retrade_excel_path:
+            self.current_retrade_excel_path = retrade_excel_path
+
+        min_margin_input = getattr(self, "minMarginInput", None)
+        if isinstance(min_margin_input, QDoubleSpinBox):
+            min_margin_input.setValue(float(job.get("min_margin", self.get_min_margin())))
+
+        delta_input = getattr(self, "deltaInput", None)
+        if isinstance(delta_input, QDoubleSpinBox):
+            delta_input.setValue(float(job.get("delta_percent", self.get_delta_percent())))
+
+    def _run_delayed_retrade_job(self, job: dict[str, Any]) -> None:
+        self._delayed_retrade_job = None
+        self._refresh_delayed_retrade_button()
+
+        if self._delayed_retrade_running:
+            self._log_delayed_retrade("пропуск: предыдущая отложенная подача еще выполняется")
+            return
+
+        try:
+            self._apply_delayed_retrade_job_context(job)
+            self._delayed_retrade_running = True
+            self._delayed_retrade_pending_after_generation = True
+            self._log_delayed_retrade("старт")
+            result = self.generate_retrade_calculation(refresh_from_site=True)
+            if result is True:
+                self._continue_delayed_retrade_after_generation()
+            elif result is False:
+                self._finish_delayed_retrade(
+                    "Отложенная подача остановлена: расчет не сформирован",
+                    error=True,
+                )
+        except Exception as exc:
+            self._finish_delayed_retrade(
+                f"Ошибка отложенной подачи: {exc}",
+                error=True,
+            )
+
+    def _continue_delayed_retrade_after_generation(self) -> None:
+        if not self._delayed_retrade_running:
+            return
+
+        self._delayed_retrade_pending_after_generation = False
+        self._log_delayed_retrade("обновление цен")
+        try:
+            if not self.update_retrade_positions():
+                self._finish_delayed_retrade(
+                    "Отложенная подача остановлена: цены не обновлены",
+                    error=True,
+                )
+                return
+
+            self._log_delayed_retrade("обновление предложения")
+            self.on_import_clicked()
+            worker = getattr(self, "_retrade_import_worker", None)
+            if worker is None:
+                self._finish_delayed_retrade(
+                    "Отложенная подача остановлена: импорт не запущен",
+                    error=True,
+                )
+        except Exception as exc:
+            self._finish_delayed_retrade(
+                f"Ошибка отложенной подачи: {exc}",
+                error=True,
+            )
+
+    def _finish_delayed_retrade(self, message: str, *, error: bool = False) -> None:
+        self._delayed_retrade_running = False
+        self._delayed_retrade_pending_after_generation = False
+        self._refresh_delayed_retrade_button()
+        self._log_delayed_retrade(message)
+        self._show_export_status(message, 5_000)
+        if error:
+            Tool.write_log(message)
 
     def _ensure_export_button(self) -> None:
         if hasattr(self, "btn_export_trade") and hasattr(self, "btn_export_retrade"):
@@ -6254,7 +6630,15 @@ QTableWidget::indicator {{
                 "Свежий экспорт переторжки загружен, продолжаю формирование расчета"
             )
             self._finish_export("Excel переторжки обновлен")
-            self.generate_retrade_calculation(refresh_from_site=False)
+            generated = self.generate_retrade_calculation(refresh_from_site=False)
+            if bool(getattr(self, "_delayed_retrade_pending_after_generation", False)):
+                if generated is True:
+                    self._continue_delayed_retrade_after_generation()
+                else:
+                    self._finish_delayed_retrade(
+                        "Отложенная подача остановлена: расчет не сформирован",
+                        error=True,
+                    )
             return
 
         info_text = (
@@ -6270,4 +6654,12 @@ QTableWidget::indicator {{
         error_text = str(message or "Неизвестная ошибка")
         Tool.write_log(f"Ошибка экспорта заявки: {error_text}")
         QMessageBox.warning(self, "Ошибка экспорта заявки", error_text)
+        delayed_pending = bool(
+            getattr(self, "_delayed_retrade_pending_after_generation", False)
+        )
         self._finish_export("Ошибка экспорта заявки")
+        if delayed_pending:
+            self._finish_delayed_retrade(
+                f"Отложенная подача остановлена: ошибка экспорта заявки: {error_text}",
+                error=True,
+            )
