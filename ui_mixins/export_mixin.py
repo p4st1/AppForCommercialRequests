@@ -113,17 +113,29 @@ class ImportRetradeWorker(QThread):
         *,
         bid_id: int,
         file_path: str,
+        trade_id: int | None = None,
+        lot_id: int | None = None,
+        bid_number: str = "",
+        bidder_title: str = "",
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
         self._bid_id = int(bid_id)
         self._file_path = str(file_path)
+        self._trade_id = int(trade_id) if trade_id is not None else None
+        self._lot_id = int(lot_id) if lot_id is not None else None
+        self._bid_number = str(bid_number or "")
+        self._bidder_title = str(bidder_title or "")
 
     def run(self) -> None:
         try:
             imported_path = RetradeService.import_excel(
                 bid_id=self._bid_id,
                 file_path=self._file_path,
+                trade_id=self._trade_id,
+                lot_id=self._lot_id,
+                bid_number=self._bid_number,
+                bidder_title=self._bidder_title,
             )
             self.finished.emit(imported_path)
         except Exception as exc:
@@ -737,7 +749,12 @@ QTableWidget::indicator {{
             return "$"
         if "€" in text or "EUR" in upper_text:
             return "€"
-        if "¥" in text or "CNY" in upper_text or "JPY" in upper_text:
+        if (
+            "¥" in text
+            or "CNY" in upper_text
+            or "CYN" in upper_text
+            or "JPY" in upper_text
+        ):
             return "¥"
         if "₸" in text or "KZT" in upper_text:
             return "₸"
@@ -786,6 +803,8 @@ QTableWidget::indicator {{
             .replace("eur", "")
             .replace("CNY", "")
             .replace("cny", "")
+            .replace("CYN", "")
+            .replace("cyn", "")
             .replace("JPY", "")
             .replace("jpy", "")
             .replace("KZT", "")
@@ -1477,10 +1496,60 @@ QTableWidget::indicator {{
             return
 
         try:
-            bid_id = self._get_retrade_bid_id_for_import()
-            self._start_retrade_import_worker(bid_id=bid_id, file_path=file_path)
+            import_context = self._get_retrade_context_for_import()
+            self._start_retrade_import_worker(
+                bid_id=int(import_context["bid_id"]),
+                file_path=file_path,
+                trade_id=import_context.get("trade_id"),
+                lot_id=import_context.get("lot_id"),
+                bid_number=str(import_context.get("bid_number") or ""),
+                bidder_title=str(import_context.get("bidder_title") or ""),
+            )
         except Exception as exc:
             self._on_retrade_import_error(str(exc))
+
+    def _get_retrade_context_for_import(self) -> dict[str, Any]:
+        bid_id = self._get_retrade_bid_id_for_import()
+        context = getattr(self, "current_retrade_context", {})
+        context = dict(context) if isinstance(context, dict) else {}
+
+        trade_id: int | None = None
+        lot_id: int | None = None
+        raw_trade_id = context.get(
+            "trade_id",
+            getattr(self, "current_retrade_trade_id", None),
+        )
+        raw_lot_id = context.get(
+            "lot_id",
+            getattr(self, "current_retrade_lot_id", None),
+        )
+        if raw_trade_id is not None:
+            try:
+                trade_id = self._parse_positive_trade_id(raw_trade_id)
+            except Exception:
+                Tool.write_log(
+                    f"Некорректный trade_id текущей переторжки: {raw_trade_id}"
+                )
+        if raw_lot_id is not None:
+            try:
+                lot_id = self._parse_positive_lot_id(raw_lot_id)
+            except Exception:
+                Tool.write_log(
+                    f"Некорректный lot_id текущей переторжки: {raw_lot_id}"
+                )
+
+        return {
+            "bid_id": bid_id,
+            "trade_id": trade_id,
+            "lot_id": lot_id,
+            "bid_number": str(
+                context.get("bid_number")
+                or context.get("number")
+                or getattr(self, "current_retrade", "")
+                or ""
+            ).strip(),
+            "bidder_title": str(context.get("bidder_title") or "").strip(),
+        }
 
     def _get_retrade_bid_id_for_import(self) -> int:
         stored_bid_id = self._get_current_retrade_bid_id()
@@ -1514,7 +1583,16 @@ QTableWidget::indicator {{
                 )
         return None
 
-    def _start_retrade_import_worker(self, *, bid_id: int, file_path: str) -> None:
+    def _start_retrade_import_worker(
+        self,
+        *,
+        bid_id: int,
+        file_path: str,
+        trade_id: int | None = None,
+        lot_id: int | None = None,
+        bid_number: str = "",
+        bidder_title: str = "",
+    ) -> None:
         worker = getattr(self, "_retrade_import_worker", None)
         is_running = getattr(worker, "isRunning", None)
         if worker is not None and callable(is_running) and is_running():
@@ -1524,6 +1602,10 @@ QTableWidget::indicator {{
         worker = ImportRetradeWorker(
             bid_id=bid_id,
             file_path=file_path,
+            trade_id=trade_id,
+            lot_id=lot_id,
+            bid_number=bid_number,
+            bidder_title=bidder_title,
             parent=self,
         )
         worker.finished.connect(self._on_retrade_import_finished)
@@ -3604,6 +3686,8 @@ QTableWidget::indicator {{
                 .replace("eur", "")
                 .replace("CNY", "")
                 .replace("cny", "")
+                .replace("CYN", "")
+                .replace("cyn", "")
                 .replace("JPY", "")
                 .replace("jpy", "")
                 .replace("KZT", "")
@@ -3637,6 +3721,8 @@ QTableWidget::indicator {{
                 .replace("eur", "")
                 .replace("CNY", "")
                 .replace("cny", "")
+                .replace("CYN", "")
+                .replace("cyn", "")
                 .replace("JPY", "")
                 .replace("jpy", "")
                 .replace("KZT", "")

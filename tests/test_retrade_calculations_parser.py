@@ -625,6 +625,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertEqual(ExportMixin._detect_currency("Total $100", "General"), "USD")
         self.assertEqual(ExportMixin._detect_currency("Amount 50 eur", "General"), "EUR")
         self.assertEqual(ExportMixin._detect_currency("Amount 50 CNY", "General"), "CNY")
+        self.assertEqual(ExportMixin._detect_currency("Amount 50 CYN", "General"), "CNY")
 
     def test_format_number_ru(self):
         self.assertEqual(ExportMixin._format_number_ru(100000), "100 000,00")
@@ -682,6 +683,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
 
     def test_parse_number_accepts_currency_and_decimal_comma(self):
         self.assertEqual(ExportMixin.parse_number("30 033,85 ₽"), 30033.85)
+        self.assertEqual(ExportMixin.parse_number("30 033,85 CYN"), 30033.85)
         self.assertEqual(ExportMixin.parse_number("1,25"), 1.25)
         self.assertEqual(ExportMixin.parse_number(None), 0.0)
 

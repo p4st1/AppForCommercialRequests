@@ -108,6 +108,44 @@ class ProposalImportServiceTests(unittest.TestCase):
         self.assertEqual(rows[0]["unitPrice"], 0)
         self.assertEqual(rows[1]["unitPrice"], 100)
 
+    def test_parse_source_rows_detects_currency_code_from_price_header(self):
+        df = _FakeTable(
+            [
+                [
+                    "№",
+                    "Наименование",
+                    "Каталожный номер",
+                    "Ед.",
+                    "Кол-во",
+                    "Цена, USD",
+                    "Срок",
+                ],
+                ["1", "Насос", "SKU-1", "шт.", "2", "100", "20 дней"],
+            ]
+        )
+
+        rows, warnings = self.service.parse_source_rows(df)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["currency"], "$")
+        self.assertEqual(rows[0]["unitPrice"], 100)
+
+    def test_parse_source_rows_accepts_cyn_price_code_alias(self):
+        df = _FakeTable(
+            [
+                ["№", "Наименование", "Каталожный номер", "Ед.", "Кол-во", "Цена", "Срок"],
+                ["1", "Насос", "SKU-1", "шт.", "2", "100 CYN", "20 дней"],
+            ]
+        )
+
+        rows, warnings = self.service.parse_source_rows(df)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["currency"], "¥")
+        self.assertEqual(rows[0]["unitPrice"], 100)
+
     def test_parse_source_rows_raises_when_no_valid_rows(self):
         df = _FakeTable(
             [

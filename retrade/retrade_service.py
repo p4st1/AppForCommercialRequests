@@ -55,6 +55,10 @@ class RetradeService:
         *,
         bid_id: Any,
         file_path: str | Path,
+        trade_id: Any = None,
+        lot_id: Any = None,
+        bid_number: str = "",
+        bidder_title: str = "",
     ) -> str:
         context = cls.validate_excel_path(file_path, bid_id=bid_id)
 
@@ -65,5 +69,9 @@ class RetradeService:
             exporter.import_retrade_bid_data(
                 bid_id=context.bid_id,
                 file_path=str(context.file_path),
+                trade_id=trade_id,
+                lot_id=lot_id,
+                bid_number=bid_number,
+                bidder_title=bidder_title,
             )
         )

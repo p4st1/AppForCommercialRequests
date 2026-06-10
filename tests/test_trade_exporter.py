@@ -84,6 +84,10 @@ class _FakeLocator:
     def is_enabled(self, **_kwargs):
         return self._enabled
 
+    @property
+    def first(self):
+        return self
+
 
 class _FakeLocatorPage:
     def __init__(self, selector_counts):
@@ -104,6 +108,9 @@ class _FakeClosablePage:
     def close(self):
         self.closed = True
 
+    def is_closed(self):
+        return self.closed
+
 
 class _FakeBrowserContext:
     def __init__(self):
@@ -111,6 +118,87 @@ class _FakeBrowserContext:
 
     def new_page(self):
         return self.page
+
+
+class _FakeAuthContext:
+    def __init__(self, cookies=None):
+        self._cookies = list(cookies or [])
+        self.added_cookies = []
+        self.closed = False
+
+    def cookies(self, *_args):
+        return list(self._cookies)
+
+    def add_cookies(self, cookies):
+        self.added_cookies.append(list(cookies))
+        self._cookies = list(cookies)
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeDownload:
+    suggested_filename = "retrade.xlsx"
+
+
+class _FakeDownloadInfo:
+    def __init__(self, download):
+        self.value = download
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _FakeDownloadPage(_FakeClosablePage):
+    def __init__(self, downloads):
+        super().__init__()
+        self.downloads = list(downloads)
+        self.expect_download_calls = 0
+        self.reload_calls = []
+        self.timeout_calls = []
+
+    def expect_download(self, **_kwargs):
+        self.expect_download_calls += 1
+        return _FakeDownloadInfo(self.downloads.pop(0))
+
+    def wait_for_timeout(self, timeout_ms):
+        self.timeout_calls.append(timeout_ms)
+
+    def reload(self, **kwargs):
+        self.reload_calls.append(kwargs)
+
+    def wait_for_load_state(self, *_args, **_kwargs):
+        return None
+
+
+class _FakeDownloadContext:
+    def __init__(self, downloads):
+        self.page = _FakeDownloadPage(downloads)
+
+    def new_page(self):
+        return self.page
+
+
+class _FakeExportSpecification:
+    def __init__(self):
+        self.export_button = _FakeLocator(count=1)
+
+    def locator(self, _selector):
+        return self.export_button
+
+
+class _FakePlaywrightManager:
+    def __init__(self, playwright):
+        self.playwright = playwright
+
+    def __enter__(self):
+        return self.playwright
+
+    def __exit__(self, *_args):
+        return False
 
 
 class TradeExporterTests(unittest.TestCase):
@@ -451,6 +539,150 @@ class TradeExporterTests(unittest.TestCase):
             )
             self.assertEqual(saved_path, target_path)
 
+    def test_export_retrade_bid_via_page_validates_download(self):
+        download = _FakeDownload()
+        context = _FakeDownloadContext([download])
+        specification = _FakeExportSpecification()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_path = Path(tmpdir) / "retrade.xlsx"
+            with (
+                patch.object(self.exporter, "_goto_retrade_bid_page"),
+                patch.object(
+                    self.exporter,
+                    "_get_retrade_specification_section",
+                    return_value=specification,
+                ),
+                patch.object(self.exporter, "_click_locator_with_fallback"),
+                patch.object(
+                    self.exporter,
+                    "_save_export_download_or_response",
+                    return_value=str(target_path),
+                ) as save_mock,
+            ):
+                saved_path = self.exporter._export_retrade_bid_via_page(
+                    context=context,
+                    bid_id=2,
+                    target_path=target_path,
+                )
+
+        save_mock.assert_called_once_with(download, target_path.resolve())
+        self.assertEqual(saved_path, str(target_path))
+        self.assertTrue(context.page.closed)
+
+    def test_export_retrade_bid_via_page_retries_access_denied_download(self):
+        context = _FakeDownloadContext([_FakeDownload(), _FakeDownload()])
+        specification = _FakeExportSpecification()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_path = Path(tmpdir) / "retrade.xlsx"
+            with (
+                patch.object(self.exporter, "_goto_retrade_bid_page"),
+                patch.object(
+                    self.exporter,
+                    "_get_retrade_specification_section",
+                    return_value=specification,
+                ),
+                patch.object(self.exporter, "_click_locator_with_fallback"),
+                patch.object(
+                    self.exporter,
+                    "_save_export_download_or_response",
+                    side_effect=[
+                        RuntimeError(
+                            "Площадка вернула HTML/страницу отказа вместо Excel"
+                        ),
+                        str(target_path),
+                    ],
+                ) as save_mock,
+                patch("services.trade_exporter.Tool.write_log"),
+            ):
+                saved_path = self.exporter._export_retrade_bid_via_page(
+                    context=context,
+                    bid_id=2,
+                    target_path=target_path,
+                )
+
+        self.assertEqual(saved_path, str(target_path))
+        self.assertEqual(save_mock.call_count, 2)
+        self.assertEqual(context.page.expect_download_calls, 2)
+        self.assertEqual(len(context.page.reload_calls), 1)
+
+    def test_prepare_retrade_context_keeps_existing_profile_session(self):
+        context = _FakeAuthContext(
+            cookies=[{"name": "JSESSIONID", "value": "fresh-profile-session"}]
+        )
+        config_cookies = [
+            {
+                "name": "JSESSIONID",
+                "value": "old-config-session",
+                "url": TradeExporter.BASE_URL,
+            }
+        ]
+
+        with patch("services.trade_exporter.Tool.write_log"):
+            self.exporter._prepare_retrade_context_cookies(context, config_cookies)
+
+        self.assertEqual(context.added_cookies, [])
+        self.assertEqual(
+            context.cookies(),
+            [{"name": "JSESSIONID", "value": "fresh-profile-session"}],
+        )
+
+    def test_prepare_retrade_context_adds_config_when_profile_has_no_session(self):
+        context = _FakeAuthContext(cookies=[])
+        config_cookies = [
+            {
+                "name": "JSESSIONID",
+                "value": "config-session",
+                "url": TradeExporter.BASE_URL,
+            }
+        ]
+
+        self.exporter._prepare_retrade_context_cookies(context, config_cookies)
+
+        self.assertEqual(context.added_cookies, [config_cookies])
+
+    def test_retrade_context_operation_retries_access_denied_with_config_cookies(self):
+        context = _FakeAuthContext(
+            cookies=[{"name": "JSESSIONID", "value": "profile-session"}]
+        )
+        config_cookies = [
+            {
+                "name": "JSESSIONID",
+                "value": "config-session",
+                "url": TradeExporter.BASE_URL,
+            }
+        ]
+        attempts = []
+
+        def operation(_context):
+            attempts.append(_context.cookies())
+            if len(attempts) == 1:
+                raise RuntimeError("Площадка вернула страницу отказа доступа")
+            return "ok"
+
+        with (
+            patch.object(
+                self.exporter,
+                "_launch_retrade_persistent_context",
+                return_value=context,
+            ),
+            patch.object(self.exporter, "_save_context_cookies_to_config") as save_mock,
+            patch("services.trade_exporter.Tool.write_log"),
+        ):
+            result = self.exporter._run_retrade_context_operation(
+                playwright=object(),
+                playwright_cookies=config_cookies,
+                operation=operation,
+                retry_log_message="retry",
+            )
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(context.added_cookies, [config_cookies])
+        save_mock.assert_called_once_with(context)
+        self.assertTrue(context.closed)
+
     def test_import_retrade_lot_data_delegates_to_bid_import_when_bid_id_provided(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             source_path = os.path.join(tmpdir, "retrade.xlsx")
@@ -470,8 +702,194 @@ class TradeExporterTests(unittest.TestCase):
             import_bid_mock.assert_called_once_with(
                 bid_id=2,
                 file_path=source_path,
+                trade_id=999,
             )
             self.assertEqual(imported_path, source_path)
+
+    def test_choose_retrade_bid_candidate_prefers_matching_bidder_latest_bid(self):
+        selected_bid_id = self.exporter._choose_retrade_bid_candidate(
+            [
+                {
+                    "ID": 7001,
+                    "Номер": "BID-001",
+                    "Компания": "ООО Ромашка",
+                    "Дата": 1711111111111,
+                },
+                {
+                    "ID": 7002,
+                    "Номер": "BID-002",
+                    "Компания": "ООО Лютик",
+                    "Дата": 1711111112222,
+                },
+                {
+                    "ID": 7003,
+                    "Номер": "BID-003",
+                    "Компания": "ООО Ромашка",
+                    "Дата": 1711111113333,
+                },
+            ],
+            original_bid_id=7001,
+            bidder_title="ООО Ромашка",
+        )
+
+        self.assertEqual(selected_bid_id, 7003)
+
+    def test_import_retrade_bid_data_retries_with_resolved_current_bid(self):
+        context = _FakeAuthContext(
+            cookies=[{"name": "JSESSIONID", "value": "profile-session"}]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "retrade.xlsx"
+            source_path.write_bytes(b"placeholder")
+            with (
+                patch.object(
+                    self.exporter,
+                    "_load_cookies_for_export",
+                    return_value={"JSESSIONID": "config-session"},
+                ),
+                patch.object(
+                    self.exporter,
+                    "_build_playwright_cookies",
+                    return_value=[
+                        {
+                            "name": "JSESSIONID",
+                            "value": "config-session",
+                            "url": TradeExporter.BASE_URL,
+                        }
+                    ],
+                ),
+                patch(
+                    "services.trade_exporter.sync_playwright",
+                    return_value=_FakePlaywrightManager(object()),
+                ),
+                patch.object(
+                    self.exporter,
+                    "_launch_retrade_persistent_context",
+                    return_value=context,
+                ),
+                patch.object(
+                    self.exporter,
+                    "_import_retrade_bid_via_page",
+                    side_effect=[
+                        RuntimeError("Площадка вернула страницу отказа доступа"),
+                        str(source_path),
+                    ],
+                ) as import_mock,
+                patch.object(
+                    self.exporter,
+                    "_resolve_retrade_bid_id_for_import",
+                    side_effect=[None, 7003],
+                ) as resolve_mock,
+                patch.object(self.exporter, "_save_context_cookies_to_config"),
+                patch("services.trade_exporter.Tool.write_log"),
+            ):
+                imported_path = self.exporter.import_retrade_bid_data(
+                    bid_id=7001,
+                    file_path=str(source_path),
+                    trade_id=999,
+                    lot_id=55,
+                    bid_number="BID-001",
+                    bidder_title="ООО Ромашка",
+                )
+
+        self.assertEqual(imported_path, str(source_path))
+        self.assertEqual(import_mock.call_count, 2)
+        self.assertEqual(import_mock.call_args_list[0].kwargs["bid_id"], 7001)
+        self.assertEqual(import_mock.call_args_list[1].kwargs["bid_id"], 7003)
+        self.assertEqual(resolve_mock.call_count, 2)
+        self.assertEqual(
+            resolve_mock.call_args_list[0].kwargs,
+            {
+                "cookies": {"JSESSIONID": "config-session"},
+                "original_bid_id": 7001,
+                "trade_id": 999,
+                "lot_id": 55,
+                "bid_number": "BID-001",
+                "bidder_title": "ООО Ромашка",
+            },
+        )
+        self.assertEqual(
+            resolve_mock.call_args_list[1].kwargs,
+            {
+                "cookies": {"JSESSIONID": "config-session"},
+                "original_bid_id": 7001,
+                "trade_id": 999,
+                "lot_id": 55,
+                "bid_number": "BID-001",
+                "bidder_title": "ООО Ромашка",
+            },
+        )
+        self.assertTrue(context.closed)
+
+    def test_import_retrade_bid_data_uses_preflight_resolved_bid_once(self):
+        context = _FakeAuthContext(
+            cookies=[{"name": "JSESSIONID", "value": "profile-session"}]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "retrade.xlsx"
+            source_path.write_bytes(b"placeholder")
+            with (
+                patch.object(
+                    self.exporter,
+                    "_load_cookies_for_export",
+                    return_value={"JSESSIONID": "config-session"},
+                ),
+                patch.object(
+                    self.exporter,
+                    "_build_playwright_cookies",
+                    return_value=[
+                        {
+                            "name": "JSESSIONID",
+                            "value": "config-session",
+                            "url": TradeExporter.BASE_URL,
+                        }
+                    ],
+                ),
+                patch(
+                    "services.trade_exporter.sync_playwright",
+                    return_value=_FakePlaywrightManager(object()),
+                ),
+                patch.object(
+                    self.exporter,
+                    "_launch_retrade_persistent_context",
+                    return_value=context,
+                ),
+                patch.object(
+                    self.exporter,
+                    "_import_retrade_bid_via_page",
+                    return_value=str(source_path),
+                ) as import_mock,
+                patch.object(
+                    self.exporter,
+                    "_resolve_retrade_bid_id_for_import",
+                    return_value=7003,
+                ) as resolve_mock,
+                patch.object(self.exporter, "_save_context_cookies_to_config"),
+                patch("services.trade_exporter.Tool.write_log"),
+            ):
+                imported_path = self.exporter.import_retrade_bid_data(
+                    bid_id=7001,
+                    file_path=str(source_path),
+                    trade_id=999,
+                    lot_id=55,
+                    bid_number="BID-001",
+                    bidder_title="ООО Ромашка",
+                )
+
+        self.assertEqual(imported_path, str(source_path))
+        import_mock.assert_called_once()
+        self.assertEqual(import_mock.call_args.kwargs["bid_id"], 7003)
+        resolve_mock.assert_called_once_with(
+            cookies={"JSESSIONID": "config-session"},
+            original_bid_id=7001,
+            trade_id=999,
+            lot_id=55,
+            bid_number="BID-001",
+            bidder_title="ООО Ромашка",
+        )
+        self.assertTrue(context.closed)
 
     def test_validate_import_file_path_requires_existing_excel(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -488,6 +906,53 @@ class TradeExporterTests(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 self.exporter._validate_import_file_path(str(source_path.with_suffix(".csv")))
+
+    def test_import_retrade_bid_via_page_waits_for_manual_site_action(self):
+        context = _FakeBrowserContext()
+        import_button = _FakeLocator(count=1)
+        import_root = _FakeLocator(count=1)
+        specification = object()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "retrade.xlsx"
+            source_path.write_bytes(b"placeholder")
+            with (
+                patch.object(self.exporter, "_goto_retrade_bid_page"),
+                patch.object(
+                    self.exporter,
+                    "_get_retrade_specification_section",
+                    return_value=specification,
+                ),
+                patch.object(
+                    self.exporter,
+                    "_find_retrade_import_button",
+                    return_value=(import_button, import_root),
+                ),
+                patch.object(self.exporter, "_select_retrade_import_file"),
+                patch.object(
+                    self.exporter,
+                    "_confirm_retrade_import_if_needed",
+                    side_effect=AssertionError("auto confirm must not be used"),
+                ),
+                patch.object(
+                    self.exporter,
+                    "_wait_for_user_retrade_import_action",
+                ) as wait_mock,
+                patch.object(
+                    self.exporter,
+                    "_wait_for_retrade_import_completion",
+                ) as done_mock,
+            ):
+                imported_path = self.exporter._import_retrade_bid_via_page(
+                    context=context,
+                    bid_id=2,
+                    source_path=source_path,
+                )
+
+        wait_mock.assert_called_once_with(context.page)
+        done_mock.assert_called_once_with(context.page)
+        self.assertEqual(imported_path, str(source_path))
+        self.assertTrue(context.page.closed)
 
 
 if __name__ == "__main__":
