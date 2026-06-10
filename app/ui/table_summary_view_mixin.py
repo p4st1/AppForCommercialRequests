@@ -11,7 +11,9 @@ from app.ui.table_autosize import (
 
 class TableSummaryViewMixin:
     def _setup_total_tab_table(self):
-        table = self.ui.tableWidget_3
+        table = getattr(self.ui, "tableWidget_3", None)
+        if table is None:
+            return
         table.setColumnCount(len(self.SUMMARY_HEADERS))
         table.setHorizontalHeaderLabels(self.SUMMARY_HEADERS)
         table.setRowCount(0)
@@ -32,7 +34,9 @@ class TableSummaryViewMixin:
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
     def _update_total_tab_table(self):
-        table = self.ui.tableWidget_3
+        table = getattr(self.ui, "tableWidget_3", None)
+        if table is None:
+            return
         rows = self.getTableData() if self.ui.KpTable.rowCount() > 0 else []
 
         with table_update_guard(table):

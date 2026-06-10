@@ -680,7 +680,7 @@ QTableWidget::indicator {{
         self._refresh_retrade_context_labels()
 
     def _ensure_retrade_main_table_controls(self) -> None:
-        if isinstance(getattr(self, "save_button", None), QPushButton):
+        if isinstance(getattr(self, "import_button", None), QPushButton):
             return
 
         controls_layout = getattr(self, "retrade_controls_layout", None)
@@ -688,20 +688,41 @@ QTableWidget::indicator {{
             return
 
         parent = getattr(self, "retrade_tab", None)
-        self.save_button = QPushButton("Сохранить", parent)
-        self.save_button.setObjectName("save_button")
-        self.import_button = QPushButton("Импорт", parent)
+        self.import_button = QPushButton("Обновить предложение", parent)
         self.import_button.setObjectName("import_button")
+        self.import_button.setStyleSheet(
+            """
+QPushButton {
+    background-color: #007aff;
+    color: #ffffff;
+    border: 1px solid #0071eb;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    min-height: 32px;
+    min-width: 120px;
+}
+QPushButton:hover {
+    background-color: #0a84ff;
+}
+QPushButton:pressed {
+    background-color: #006bd6;
+}
+QPushButton:disabled {
+    background-color: #d2d2d7;
+    color: #ffffff;
+    border: 1px solid #c7c7cc;
+}
+"""
+        )
 
         insert_index = controls_layout.indexOf(self.label_auto_trade_status)
         if insert_index < 0:
             insert_index = controls_layout.count()
-        controls_layout.insertWidget(insert_index, self.save_button)
-        controls_layout.insertWidget(insert_index + 1, self.import_button)
+        controls_layout.insertWidget(insert_index, self.import_button)
 
-        self.ui.save_button = self.save_button
         self.ui.import_button = self.import_button
-        self.save_button.clicked.connect(self.on_save_clicked)
         self.import_button.clicked.connect(self.on_import_clicked)
 
     @staticmethod
@@ -1517,7 +1538,7 @@ QTableWidget::indicator {{
         worker = getattr(self, "_retrade_import_worker", None)
         is_running = getattr(worker, "isRunning", None)
         if worker is not None and callable(is_running) and is_running():
-            raise RuntimeError("Импорт таблицы уже выполняется")
+            raise RuntimeError("Обновление предложения уже выполняется")
 
         self._set_retrade_import_loading_state(is_loading=True)
         worker = ImportRetradeWorker(
@@ -1534,10 +1555,12 @@ QTableWidget::indicator {{
         import_button = getattr(self, "import_button", None)
         if isinstance(import_button, QPushButton):
             import_button.setEnabled(not is_loading)
-            import_button.setText("Импорт..." if is_loading else "Импорт")
+            import_button.setText(
+                "Обновление..." if is_loading else "Обновить предложение"
+            )
 
         if is_loading:
-            self._show_export_status("Импорт таблицы...")
+            self._show_export_status("Обновление предложения...")
 
     def _finish_retrade_import(self, status_message: str) -> None:
         self._set_retrade_import_loading_state(is_loading=False)
@@ -1550,14 +1573,14 @@ QTableWidget::indicator {{
         self._show_export_status(status_message, 5_000)
 
     def _on_retrade_import_finished(self, file_path: str) -> None:
-        Tool.write_log(f"Импорт переторжки завершен: {file_path}")
-        self._finish_retrade_import("Импорт завершен")
+        Tool.write_log(f"Обновление предложения завершено: {file_path}")
+        self._finish_retrade_import("Предложение обновлено")
 
     def _on_retrade_import_error(self, message: str) -> None:
         error_text = str(message or "Неизвестная ошибка")
-        Tool.write_log(f"Ошибка импорта переторжки: {error_text}")
-        QMessageBox.warning(self, "Ошибка импорта", error_text)
-        self._finish_retrade_import("Ошибка импорта")
+        Tool.write_log(f"Ошибка обновления предложения: {error_text}")
+        QMessageBox.warning(self, "Ошибка обновления предложения", error_text)
+        self._finish_retrade_import("Ошибка обновления предложения")
 
     def load_retrade_excel(self) -> None:
         default_dir_raw = str(Config.config.get("pathToSaveExcel", "")).strip()
@@ -1698,7 +1721,7 @@ QTableWidget::indicator {{
         self.roundingInput.setValue(2)
 
         self.btn_update_retrade_positions = QPushButton(
-            "Обновить позиции",
+            "Обновить цены",
             controls_widget,
         )
         self.btn_update_retrade_positions.setObjectName("btn_update_retrade_positions")
@@ -4642,7 +4665,7 @@ QTableWidget::indicator {{
         if not formula_row_indices:
             QMessageBox.information(
                 self,
-                "Обновить позиции",
+                "Обновить цены",
                 "Нет строк с заполненной исходной ценой",
             )
             return
@@ -4720,7 +4743,7 @@ QTableWidget::indicator {{
         if status_bar is not None:
             status_bar.showMessage(
                 (
-                    f"Обновлено позиций: {updated_count}; "
+                    f"Обновлено цен: {updated_count}; "
                     f"формулы сохранены: {len(formulas_by_row)}"
                 ),
                 5_000,
@@ -4728,7 +4751,7 @@ QTableWidget::indicator {{
         if updated_count == 0:
             QMessageBox.information(
                 self,
-                "Обновить позиции",
+                "Обновить цены",
                 (
                     "Формулы сохранены в Excel. Для отображения чисел в таблицах "
                     "нужны заполненные цена и скорректированный рейтинг."
@@ -5910,11 +5933,11 @@ QTableWidget::indicator {{
 
         web_tab = getattr(getattr(self, "ui", None), "webTab", None)
         if web_tab is None:
-            raise RuntimeError("Вкладка 'Прием заявок' не найдена")
+            raise RuntimeError("Вкладка 'Загрузка с ЭТП' не найдена")
 
         root_layout = web_tab.layout()
         if root_layout is None:
-            raise RuntimeError("Не найден layout вкладки 'Прием заявок'")
+            raise RuntimeError("Не найден layout вкладки 'Загрузка с ЭТП'")
 
         label = QLabel("Экспорт приема заявок", web_tab)
         label.setObjectName("submissionAcceptanceExportLabel")
@@ -6016,7 +6039,7 @@ QTableWidget::indicator {{
                 self._pending_submission_export_metadata = metadata
             if not source_rows:
                 Tool.write_log(
-                    "Заполнение файла приема заявок пропущено: Полная таблица пуста"
+                    "Заполнение файла приема заявок пропущено: Подготовка КП пуста"
                 )
                 return
 

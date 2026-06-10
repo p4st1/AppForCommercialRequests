@@ -212,6 +212,28 @@ class PlatformMixinSearchTests(unittest.TestCase):
         self.assertEqual([trade["id"] for trade in filtered], [2])
 
 
+class PlatformMixinLoadActionTests(unittest.TestCase):
+    def test_load_trades_entrypoints_load_all_trades(self):
+        calls = []
+
+        class _Window(PlatformMixin):
+            def _start_trades_loading(self, **kwargs):
+                calls.append(kwargs)
+
+        window = _Window()
+
+        window.load_trades_clicked()
+        window.load_trades()
+
+        self.assertEqual(
+            calls,
+            [
+                {"max_items": 0, "requested_all": True},
+                {"max_items": 0, "requested_all": True},
+            ],
+        )
+
+
 class SiteStatusWorkerTests(unittest.TestCase):
     def test_site_connection_returns_available_for_success_status(self):
         fake_requests = _FakeRequests(_FakeResponse(200))

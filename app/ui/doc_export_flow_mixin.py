@@ -173,20 +173,20 @@ class DocExportFlowMixin:
         self._set_web_pipeline_submission_context(submission_context)
 
         try:
-            self.set_pipeline_status("🌐 Переход на вкладку Прием заявок...")
+            self.set_pipeline_status("🌐 Переход на вкладку Загрузка с ЭТП...")
             ensure_tab = getattr(self, "_ensure_platform_tab", None)
             if callable(ensure_tab):
                 ensure_tab()
             index_web = self.ui.tabWidget.indexOf(self.ui.webTab)
             if index_web < 0:
-                raise RuntimeError("Вкладка 'Прием заявок' не найдена")
+                raise RuntimeError("Вкладка 'Загрузка с ЭТП' не найдена")
             self.ui.tabWidget.setCurrentIndex(index_web)
         except Exception as exc:
             self._set_pipeline_error_status()
             QMessageBox.critical(
                 self,
                 "Ошибка",
-                self._pipeline_error_text("переключение на вкладку 'Прием заявок'", str(exc)),
+                self._pipeline_error_text("переключение на вкладку 'Загрузка с ЭТП'", str(exc)),
             )
             return
 

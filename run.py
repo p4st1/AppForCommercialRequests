@@ -1,8 +1,11 @@
 from pathlib import Path
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import traceback
+from urllib.request import Request, urlopen
 
 from config import Config
 from tools import DatabaseTools as Tool
@@ -10,10 +13,100 @@ from version_check import check_release_version
 
 
 APP_NAME = "MyApp"
+WINDOWS_UPDATE_ASSET_NAME = "MyApp-windows.zip"
+UPDATER_EXE_NAME = "updater.exe"
+UPDATE_DOWNLOAD_HEADERS = {
+    "User-Agent": "AppForCommercialRequests-Updater",
+}
 
 
 def resourcePath(relativePath):
     return Tool.resourcePath(relativePath)
+
+
+def _windows_update_download_url(release_url: str) -> str:
+    normalized_url = str(release_url or "").strip().rstrip("/")
+    if not normalized_url:
+        raise ValueError("Не указан URL release")
+
+    tag_marker = "/releases/tag/"
+    if tag_marker in normalized_url:
+        repo_url, tag_name = normalized_url.split(tag_marker, 1)
+        tag_name = tag_name.strip("/")
+        if not tag_name:
+            raise ValueError(f"Не удалось определить tag release из URL: {release_url}")
+        return f"{repo_url}/releases/download/{tag_name}/{WINDOWS_UPDATE_ASSET_NAME}"
+
+    return f"{normalized_url}/download/{WINDOWS_UPDATE_ASSET_NAME}"
+
+
+def _download_update_archive(download_url: str) -> Path:
+    update_dir = Path(tempfile.mkdtemp(prefix=f"{APP_NAME}_update_"))
+    archive_path = update_dir / WINDOWS_UPDATE_ASSET_NAME
+    request = Request(download_url, headers=UPDATE_DOWNLOAD_HEADERS)
+
+    try:
+        with urlopen(request, timeout=120) as response:
+            with open(archive_path, "wb") as target:
+                shutil.copyfileobj(response, target)
+    except Exception:
+        shutil.rmtree(update_dir, ignore_errors=True)
+        raise
+
+    return archive_path
+
+
+def _creation_flags(*names: str) -> int:
+    flags = 0
+    for name in names:
+        flags |= int(getattr(subprocess, name, 0) or 0)
+    return flags
+
+
+def _install_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Tool.app_dir()
+
+
+def _start_windows_update(version_check_result) -> None:
+    if os.name != "nt":
+        raise RuntimeError("Автообновление через updater.exe доступно только на Windows")
+
+    install_dir = _install_dir()
+    updater_path = install_dir / UPDATER_EXE_NAME
+    if not updater_path.exists():
+        raise RuntimeError(f"Не найден updater.exe: {updater_path}")
+
+    download_url = _windows_update_download_url(version_check_result.release_url)
+    Tool.write_log(f"Downloading update archive: {download_url}")
+    archive_path = _download_update_archive(download_url)
+    Tool.write_log(f"Update archive downloaded: {archive_path}")
+
+    command = [
+        str(updater_path),
+        "--zip",
+        str(archive_path),
+        "--install-dir",
+        str(install_dir),
+        "--pid",
+        str(os.getpid()),
+    ]
+    kwargs = {
+        "cwd": str(install_dir),
+        "close_fds": True,
+    }
+    flags = _creation_flags("DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP", "CREATE_NO_WINDOW")
+    if flags:
+        kwargs["creationflags"] = flags
+
+    try:
+        subprocess.Popen(command, **kwargs)
+    except Exception:
+        shutil.rmtree(archive_path.parent, ignore_errors=True)
+        raise
+
+    Tool.write_log(f"Updater started: {updater_path}")
 
 
 def _configure_log_path(user_dir: Path) -> None:
@@ -187,16 +280,50 @@ def main(argv: list[str] | None = None) -> int:
 
         if version_check_result.status == "outdated":
             def show_update_message():
-                QMessageBox.warning(
-                    ex,
-                    "Версия устарела",
-                    (
-                        "У вас установлена устаревшая версия приложения.\n\n"
-                        f"Текущая версия: {version_check_result.local_version}\n"
-                        f"Актуальная версия release: {version_check_result.remote_version}\n\n"
-                        f"Скачать обновление: {version_check_result.release_url}"
-                    ),
+                message = (
+                    "У вас установлена устаревшая версия приложения.\n\n"
+                    f"Текущая версия: {version_check_result.local_version}\n"
+                    f"Актуальная версия release: {version_check_result.remote_version}\n\n"
+                    f"Скачать обновление: {version_check_result.release_url}"
                 )
+                if os.name != "nt":
+                    QMessageBox.warning(ex, "Версия устарела", message)
+                    return
+
+                message_box = QMessageBox(ex)
+                message_box.setWindowTitle("Доступно обновление")
+                message_box.setIcon(QMessageBox.Icon.Warning)
+                message_box.setText(message)
+                update_button = message_box.addButton(
+                    "Обновить",
+                    QMessageBox.ButtonRole.AcceptRole,
+                )
+                message_box.addButton(
+                    "Позже",
+                    QMessageBox.ButtonRole.RejectRole,
+                )
+                message_box.exec()
+
+                if message_box.clickedButton() is not update_button:
+                    return
+
+                try:
+                    _start_windows_update(version_check_result)
+                except Exception as error:
+                    Tool.log_exception(
+                        "Не удалось запустить автообновление",
+                        error,
+                        include_traceback=True,
+                    )
+                    QMessageBox.critical(
+                        ex,
+                        "Ошибка обновления",
+                        f"Не удалось запустить обновление:\n{error}",
+                    )
+                    return
+
+                ex.close()
+                QTimer.singleShot(0, app.quit)
 
             QTimer.singleShot(0, show_update_message)
 

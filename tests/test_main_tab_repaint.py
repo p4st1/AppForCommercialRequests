@@ -73,6 +73,97 @@ class _FakeTabWidget:
         return self._current_widget
 
 
+class _FakeOrderTabWidget:
+    def __init__(self, tabs, current_widget=None):
+        self._tabs = [
+            {
+                "widget": widget,
+                "text": text,
+                "icon": None,
+                "enabled": True,
+                "visible": True,
+                "tooltip": "",
+                "whats_this": "",
+                "data": None,
+            }
+            for widget, text in tabs
+        ]
+        self._current_widget = current_widget
+
+    def count(self):
+        return len(self._tabs)
+
+    def currentWidget(self):
+        return self._current_widget
+
+    def setCurrentWidget(self, widget):
+        self._current_widget = widget
+
+    def indexOf(self, widget):
+        for index, tab in enumerate(self._tabs):
+            if tab["widget"] is widget:
+                return index
+        return -1
+
+    def removeTab(self, index):
+        self._tabs.pop(index)
+
+    def insertTab(self, index, widget, icon, text):
+        self._tabs.insert(
+            index,
+            {
+                "widget": widget,
+                "text": text,
+                "icon": icon,
+                "enabled": True,
+                "visible": True,
+                "tooltip": "",
+                "whats_this": "",
+                "data": None,
+            },
+        )
+        return index
+
+    def tabIcon(self, index):
+        return self._tabs[index]["icon"]
+
+    def isTabEnabled(self, index):
+        return self._tabs[index]["enabled"]
+
+    def setTabEnabled(self, index, enabled):
+        self._tabs[index]["enabled"] = enabled
+
+    def isTabVisible(self, index):
+        return self._tabs[index]["visible"]
+
+    def setTabVisible(self, index, visible):
+        self._tabs[index]["visible"] = visible
+
+    def tabToolTip(self, index):
+        return self._tabs[index]["tooltip"]
+
+    def setTabToolTip(self, index, tooltip):
+        self._tabs[index]["tooltip"] = tooltip
+
+    def tabWhatsThis(self, index):
+        return self._tabs[index]["whats_this"]
+
+    def setTabWhatsThis(self, index, whats_this):
+        self._tabs[index]["whats_this"] = whats_this
+
+    def tabData(self, index):
+        return self._tabs[index]["data"]
+
+    def setTabData(self, index, data):
+        self._tabs[index]["data"] = data
+
+    def tab_titles(self):
+        return [tab["text"] for tab in self._tabs]
+
+    def tab_widgets(self):
+        return [tab["widget"] for tab in self._tabs]
+
+
 class MainTabRepaintTests(unittest.TestCase):
     @staticmethod
     def _ensure_real_pyside6():
@@ -132,6 +223,60 @@ class MainTabRepaintTests(unittest.TestCase):
         self.assertGreaterEqual(summary_table.geometry_calls, 1)
         self.assertGreaterEqual(summary_table.viewport().update_calls, 1)
         self.assertFalse(full_table.visible)
+
+    def test_apply_main_tab_order_removes_total_tab_and_orders_workflow_tabs(self):
+        self._ensure_real_pyside6()
+        from main import mainWindow
+
+        full_tab = object()
+        updates_tab = object()
+        history_tab = object()
+        platform_tab = object()
+        retrade_tab = object()
+        submission_tab = object()
+        total_tab = object()
+        tabs = _FakeOrderTabWidget(
+            [
+                (retrade_tab, "Переторжка"),
+                (total_tab, "Итого"),
+                (full_tab, "Полная таблица"),
+                (updates_tab, "Обновления"),
+                (history_tab, "История"),
+                (platform_tab, "Прием заявок"),
+                (submission_tab, "Подача заявки"),
+            ],
+            current_widget=full_tab,
+        )
+        window = SimpleNamespace(
+            ui=SimpleNamespace(
+                tabWidget=tabs,
+                tab=full_tab,
+                tab_2=updates_tab,
+                tab_3=total_tab,
+                webTab=platform_tab,
+                historyTab=history_tab,
+            ),
+            retrade_tab=retrade_tab,
+            submission_tab=submission_tab,
+            MAIN_TAB_ORDER=mainWindow.MAIN_TAB_ORDER,
+        )
+        window._main_tab_widget = mainWindow._main_tab_widget.__get__(window)
+
+        mainWindow._apply_main_tab_order(window)
+
+        self.assertEqual(
+            tabs.tab_titles(),
+            [
+                "Подготовка КП",
+                "Загрузка с ЭТП",
+                "Подача заявки",
+                "Переторжка",
+                "История",
+                "Обновления",
+            ],
+        )
+        self.assertNotIn(total_tab, tabs.tab_widgets())
+        self.assertIs(tabs.currentWidget(), full_tab)
 
 
 if __name__ == "__main__":
