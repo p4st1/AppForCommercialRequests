@@ -161,14 +161,24 @@ class _FakeButton:
     def __init__(self, text="", _parent=None):
         self._text = text
         self.object_name = ""
+        self.properties = {}
         self.stylesheet = ""
         self.clicked = _FakeSignal()
 
     def setObjectName(self, name):
         self.object_name = name
 
+    def setProperty(self, name, value):
+        self.properties[name] = value
+
     def setStyleSheet(self, stylesheet):
         self.stylesheet = stylesheet
+
+    def style(self):
+        return None
+
+    def update(self):
+        pass
 
     def text(self):
         return self._text
@@ -418,7 +428,8 @@ class RetradeContextTests(unittest.TestCase):
         self.assertFalse(hasattr(window, "save_button"))
         self.assertEqual(window.import_button.text(), "Обновить предложение")
         self.assertEqual(window.import_button.object_name, "import_button")
-        self.assertIn("#007aff", window.import_button.stylesheet)
+        self.assertEqual(window.import_button.properties.get("variant"), "primary")
+        self.assertEqual(window.import_button.stylesheet, "")
         self.assertEqual(
             window.retrade_controls_layout.widgets,
             [window.import_button, window.label_auto_trade_status],

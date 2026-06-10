@@ -690,32 +690,12 @@ QTableWidget::indicator {{
         parent = getattr(self, "retrade_tab", None)
         self.import_button = QPushButton("Обновить предложение", parent)
         self.import_button.setObjectName("import_button")
-        self.import_button.setStyleSheet(
-            """
-QPushButton {
-    background-color: #007aff;
-    color: #ffffff;
-    border: 1px solid #0071eb;
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 13px;
-    min-height: 32px;
-    min-width: 120px;
-}
-QPushButton:hover {
-    background-color: #0a84ff;
-}
-QPushButton:pressed {
-    background-color: #006bd6;
-}
-QPushButton:disabled {
-    background-color: #d2d2d7;
-    color: #ffffff;
-    border: 1px solid #c7c7cc;
-}
-"""
-        )
+        self.import_button.setProperty("variant", "primary")
+        style = self.import_button.style()
+        if style is not None:
+            style.unpolish(self.import_button)
+            style.polish(self.import_button)
+        self.import_button.update()
 
         insert_index = controls_layout.indexOf(self.label_auto_trade_status)
         if insert_index < 0:
