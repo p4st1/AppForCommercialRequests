@@ -92,6 +92,7 @@ class VersionCheckTests(unittest.TestCase):
 
         request = mocked_urlopen.call_args.args[0]
         self.assertEqual(result, "v2.0.1")
+        self.assertIn("context", mocked_urlopen.call_args.kwargs)
         self.assertEqual(
             request.full_url,
             "https://api.github.com/repos/example/repo/releases/latest",
@@ -126,6 +127,92 @@ class VersionCheckTests(unittest.TestCase):
         self.assertEqual(
             fallback_request.full_url,
             "https://raw.githubusercontent.com/example/repo/main/utilities/version.json",
+        )
+
+    def test_fetch_release_version_falls_back_to_root_version_json(self):
+        meta = VersionMeta(
+            version="2.0.0",
+            repo="example/repo",
+            release_branch="main",
+            release_url="https://example.com/releases/latest",
+        )
+        latest_release_error = HTTPError(
+            "https://api.github.com/repos/example/repo/releases/latest",
+            404,
+            "Not found",
+            hdrs=None,
+            fp=None,
+        )
+        utilities_version_error = HTTPError(
+            "https://raw.githubusercontent.com/example/repo/main/utilities/version.json",
+            404,
+            "Not found",
+            hdrs=None,
+            fp=None,
+        )
+
+        with patch(
+            "version_check.urlopen",
+            side_effect=[
+                latest_release_error,
+                utilities_version_error,
+                FakeUrlResponse({"version": "2.0.2"}),
+            ],
+        ) as mocked_urlopen:
+            result = fetch_release_version(meta)
+
+        root_request = mocked_urlopen.call_args_list[2].args[0]
+        self.assertEqual(result, "2.0.2")
+        self.assertEqual(
+            root_request.full_url,
+            "https://raw.githubusercontent.com/example/repo/main/version.json",
+        )
+
+    def test_fetch_release_version_falls_back_to_release_asset_version_json(self):
+        meta = VersionMeta(
+            version="2.0.0",
+            repo="example/repo",
+            release_branch="main",
+            release_url="https://example.com/releases/latest",
+        )
+        latest_release_error = HTTPError(
+            "https://api.github.com/repos/example/repo/releases/latest",
+            404,
+            "Not found",
+            hdrs=None,
+            fp=None,
+        )
+        utilities_version_error = HTTPError(
+            "https://raw.githubusercontent.com/example/repo/main/utilities/version.json",
+            404,
+            "Not found",
+            hdrs=None,
+            fp=None,
+        )
+        root_version_error = HTTPError(
+            "https://raw.githubusercontent.com/example/repo/main/version.json",
+            404,
+            "Not found",
+            hdrs=None,
+            fp=None,
+        )
+
+        with patch(
+            "version_check.urlopen",
+            side_effect=[
+                latest_release_error,
+                utilities_version_error,
+                root_version_error,
+                FakeUrlResponse({"version": "2.0.3"}),
+            ],
+        ) as mocked_urlopen:
+            result = fetch_release_version(meta)
+
+        asset_request = mocked_urlopen.call_args_list[3].args[0]
+        self.assertEqual(result, "2.0.3")
+        self.assertEqual(
+            asset_request.full_url,
+            "https://github.com/example/repo/releases/latest/download/version.json",
         )
 
     def test_check_release_version_outdated(self):

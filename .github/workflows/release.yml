@@ -199,6 +199,7 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --name $env:APP_NAME `
             --paths . `
             --hidden-import=main `
+            --hidden-import=certifi `
             --icon assets/app.ico `
             --add-data=utilities:utilities `
             --add-data=database:database `
@@ -398,6 +399,7 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --name "${APP_NAME}" \
             --paths . \
             --hidden-import=main \
+            --hidden-import=certifi \
             --target-arch "${TARCH}" \
             --icon assets/app.icns \
             --add-data=assets/app.ico:assets \
@@ -477,6 +479,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -498,12 +503,15 @@ jobs:
           test -f "MyApp-windows.zip"
           test -f "MyApp-macos-arm64.zip"
           test -f "MyApp-macos-x86_64.zip"
+          cp utilities/version.json version.json
+          test -f "version.json"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
+            version.json
             MyAppSetup.exe
             MyApp-windows.zip
             MyApp-macos-arm64.zip

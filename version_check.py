@@ -1,10 +1,16 @@
 import json
 import re
+import ssl
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
+
+try:
+    import certifi
+except Exception:
+    certifi = None
 
 VERSION_CHECK_HEADERS = {
     "User-Agent": "AppForCommercialRequests-Version-Check",
@@ -40,6 +46,14 @@ def _remote_version_json_url(meta: VersionMeta) -> str:
     )
 
 
+def _remote_version_json_urls(meta: VersionMeta) -> list[str]:
+    return [
+        _remote_version_json_url(meta),
+        f"https://raw.githubusercontent.com/{meta.repo}/{meta.release_branch}/version.json",
+        f"https://github.com/{meta.repo}/releases/latest/download/version.json",
+    ]
+
+
 def _safe_text(value: object, default: str = "") -> str:
     text = str(value or "").strip()
     return text or default
@@ -67,9 +81,15 @@ def load_local_version_meta(resource_path: Callable[[str], str]) -> VersionMeta:
     )
 
 
+def trusted_ssl_context() -> ssl.SSLContext:
+    if certifi is not None:
+        return ssl.create_default_context(cafile=certifi.where())
+    return ssl.create_default_context()
+
+
 def _fetch_json(url: str, timeout_seconds: float) -> object:
     request = Request(url, headers=VERSION_CHECK_HEADERS)
-    with urlopen(request, timeout=timeout_seconds) as response:
+    with urlopen(request, timeout=timeout_seconds, context=trusted_ssl_context()) as response:
         payload = response.read().decode("utf-8")
     return json.loads(payload)
 
@@ -101,13 +121,20 @@ def _fetch_remote_version_json_version(
     meta: VersionMeta,
     timeout_seconds: float,
 ) -> str:
-    raw = _fetch_json(_remote_version_json_url(meta), timeout_seconds)
-    if not isinstance(raw, dict):
-        raise ValueError("Удаленный version.json должен содержать JSON-объект")
-    remote_version = _safe_text(raw.get("version"))
-    if not remote_version:
-        raise ValueError("В удаленном version.json отсутствует поле version")
-    return remote_version
+    errors = []
+    for url in _remote_version_json_urls(meta):
+        try:
+            raw = _fetch_json(url, timeout_seconds)
+            if not isinstance(raw, dict):
+                raise ValueError("Удаленный version.json должен содержать JSON-объект")
+            remote_version = _safe_text(raw.get("version"))
+            if not remote_version:
+                raise ValueError("В удаленном version.json отсутствует поле version")
+            return remote_version
+        except Exception as error:
+            errors.append(f"{url}: {error}")
+
+    raise URLError("; ".join(errors))
 
 
 def fetch_release_version(meta: VersionMeta, timeout_seconds: float = 2.5) -> str:

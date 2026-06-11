@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 
 from config import Config
 from tools import DatabaseTools as Tool
-from version_check import check_release_version
+from version_check import check_release_version, trusted_ssl_context
 
 
 APP_NAME = "MyApp"
@@ -46,7 +46,7 @@ def _download_update_archive(download_url: str) -> Path:
     request = Request(download_url, headers=UPDATE_DOWNLOAD_HEADERS)
 
     try:
-        with urlopen(request, timeout=120) as response:
+        with urlopen(request, timeout=120, context=trusted_ssl_context()) as response:
             with open(archive_path, "wb") as target:
                 shutil.copyfileobj(response, target)
     except Exception:
