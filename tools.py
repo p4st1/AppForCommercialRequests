@@ -21,6 +21,16 @@ from utilities.paths import (
 )
 
 class DatabaseTools:
+    CURRENCY_TOKEN_TO_SYMBOL = {
+        "RUB": "₽",
+        "RUR": "₽",
+        "РУБ": "₽",
+        "USD": "$",
+        "EUR": "€",
+        "CNY": "¥",
+        "CYN": "¥",
+    }
+
     def __init__(self):
         pass
 
@@ -686,32 +696,58 @@ class DatabaseTools:
         return f'{res.strip()},{mantissa}'
 
     @staticmethod
-    def parsePrice(line):
-        currency_ind = 0
-        line = str(line or "").strip()
+    def normalize_currency_symbol(currency):
+        text = str(currency or "").strip()
+        if not text:
+            return ""
+        if text in Config.currency:
+            return text
+
+        normalized = text.upper().replace("Ё", "Е").rstrip(".")
+        return DatabaseTools.CURRENCY_TOKEN_TO_SYMBOL.get(normalized, "")
+
+    @staticmethod
+    def _find_currency_token(line):
+        matches = []
         for symb in Config.currencySymb:
-            if symb in line:
-                currency_ind = line.find(symb)
-                break
-        else:
-            if "€" in line:
-                currency_ind = line.find("€")
-                symb = "€"
-            else:
-                return "", line
-        if currency_ind == 0:
-            return symb, line[1:].strip()
-        return symb, line.replace(symb, "").strip()
+            currency_ind = line.find(symb)
+            if currency_ind >= 0:
+                matches.append((currency_ind, currency_ind + len(symb), symb))
+
+        token_pattern = re.compile(
+            r"(?<![A-ZА-ЯЁ])(?:RUB|RUR|USD|EUR|CNY|CYN|РУБ\.?)(?![A-ZА-ЯЁ])",
+            re.IGNORECASE,
+        )
+        for match in token_pattern.finditer(line):
+            symbol = DatabaseTools.normalize_currency_symbol(match.group(0))
+            if symbol:
+                matches.append((match.start(), match.end(), symbol))
+
+        if not matches:
+            return None
+        return min(matches, key=lambda item: item[0])
+
+    @staticmethod
+    def parsePrice(line):
+        line = str(line or "").strip()
+        token = DatabaseTools._find_currency_token(line)
+        if token is None:
+            return "", line
+
+        start, end, symb = token
+        price_text = f"{line[:start]}{line[end:]}".strip()
+        return symb, price_text
 
     @staticmethod
     def formatPrice(price, currency):
         price_text = DatabaseTools.num2text(str(price).replace(" ", "").replace(",", "."))
-        if not currency:
+        currency_symbol = DatabaseTools.normalize_currency_symbol(currency)
+        if not currency_symbol:
             return price_text
-        if currency == '₽':
-            return price_text + currency
-        if currency in ['$', '¥', '€']:
-            return currency + price_text
+        if currency_symbol == '₽':
+            return price_text + currency_symbol
+        if currency_symbol in ['$', '¥', '€']:
+            return currency_symbol + price_text
         return price_text
 
     @staticmethod

@@ -11,9 +11,12 @@ from create import (
     _apply_top_indent_for_multipage_table,
     _format_delivery_days_text,
     _format_delivery_period,
+    _normalize_offer_terms_paragraphs,
+    _normalize_products_table_headers,
     _optimize_products_table_layout,
     _section_text_width_dxa,
     _set_row_bold,
+    _table_indent_dxa,
 )
 
 
@@ -52,6 +55,67 @@ class CreateDocxLayoutTests(unittest.TestCase):
 
         header = table.rows[0]._tr.get_or_add_trPr().find(qn("w:tblHeader"))
         self.assertIsNone(header)
+
+    def test_product_table_layout_centers_table(self):
+        document = Document()
+        table = document.add_table(rows=1, cols=len(FULL_PRODUCTS_TABLE_WIDTHS))
+
+        tbl_ind = OxmlElement("w:tblInd")
+        tbl_ind.set(qn("w:w"), "432")
+        tbl_ind.set(qn("w:type"), "dxa")
+        table._tbl.tblPr.append(tbl_ind)
+
+        _optimize_products_table_layout(
+            table,
+            document.sections[0],
+            include_days=True,
+            header_idx=0,
+        )
+
+        self.assertEqual(_table_indent_dxa(table), 0)
+        table_alignment = table._tbl.tblPr.find(qn("w:jc"))
+        self.assertIsNotNone(table_alignment)
+        self.assertEqual(table_alignment.get(qn("w:val")), "center")
+
+    def test_products_table_headers_use_requested_wording(self):
+        document = Document()
+        table = document.add_table(rows=1, cols=2)
+
+        unit_paragraph = table.rows[0].cells[0].paragraphs[0]
+        unit_paragraph.add_run("Ед. ")
+        unit_paragraph.add_run("изм")
+        price_paragraph = table.rows[0].cells[1].paragraphs[0]
+        price_paragraph.add_run("Цена за ед. без ")
+        price_paragraph.add_run("ндс")
+
+        _normalize_products_table_headers(table, 0)
+
+        self.assertEqual(table.rows[0].cells[0].text, "Ед. изм.")
+        self.assertEqual(table.rows[0].cells[1].text, "Цена за ед. без НДС")
+
+    def test_offer_terms_are_normalized_after_template_fill(self):
+        document = Document()
+        warranty = document.add_paragraph(
+            "Срок гарантии - 12 месяцев, с момента отгрузки гарантия не "
+            "распространяется на быстроизнашивающиеся части;"
+        )
+        payment = document.add_paragraph(
+            "Оплата осуществляется в Рублях РФ по курсу Центрального банка РФ "
+            "на дату оплаты."
+        )
+
+        _normalize_offer_terms_paragraphs(document)
+
+        self.assertEqual(
+            warranty.text,
+            "Срок гарантии - 12 месяцев с момента поставки. "
+            "Гарантия не распространяется на быстроизнашиваемые части;",
+        )
+        self.assertEqual(
+            payment.text,
+            "Оплата осуществляется в Рублях РФ по курсу Центрального банка РФ "
+            "на дату оплаты;",
+        )
 
     def test_set_row_bold_formats_every_total_cell_run(self):
         document = Document()

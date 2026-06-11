@@ -22,6 +22,9 @@ from pathlib import Path
 FULL_PRODUCTS_TABLE_WIDTHS = (420, 1800, 1550, 560, 700, 1080, 1220, 1220, 1139)
 SHORT_PRODUCTS_TABLE_WIDTHS = (430, 2600, 1600, 600, 650, 1250, 1279, 1279)
 MULTIPAGE_TABLE_TOP_MARGIN_PT = 92
+WARRANTY_CLAUSE_SUFFIX = (
+    " с момента поставки. Гарантия не распространяется на быстроизнашиваемые части;"
+)
 
 
 def _length_to_dxa(length) -> int:
@@ -57,6 +60,109 @@ def _set_or_append(parent, tag: str):
         child = OxmlElement(tag)
         parent.append(child)
     return child
+
+
+def _set_paragraph_text_keep_style(paragraph, text: str) -> None:
+    if not paragraph.runs:
+        paragraph.add_run(text)
+        return
+
+    paragraph.runs[0].text = text
+    for run in paragraph.runs[1:]:
+        run.text = ""
+
+
+def _set_cell_text_keep_style(cell, text: str) -> None:
+    p = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
+    _set_paragraph_text_keep_style(p, text)
+    for extra_p in cell.paragraphs[1:]:
+        for r in extra_p.runs:
+            r.text = ""
+
+
+def _canonical_docx_text(value) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip().casefold()
+
+
+def _normalize_products_table_headers(table, header_idx: int) -> None:
+    if not (0 <= header_idx < len(table.rows)):
+        return
+
+    replacements = {
+        "ед. изм": "Ед. изм.",
+        "ед. изм.": "Ед. изм.",
+        "цена за ед. без ндс": "Цена за ед. без НДС",
+    }
+    for cell in table.rows[header_idx].cells:
+        replacement = replacements.get(_canonical_docx_text(cell.text))
+        if replacement:
+            _set_cell_text_keep_style(cell, replacement)
+
+
+def _table_indent_dxa(table) -> int:
+    tbl_pr = table._tbl.tblPr
+    if tbl_pr is None:
+        return 0
+    tbl_ind = tbl_pr.find(qn("w:tblInd"))
+    if tbl_ind is None:
+        return 0
+    try:
+        return int(tbl_ind.get(qn("w:w"), "0"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _center_table(table) -> None:
+    tbl = table._tbl
+    tbl_pr = tbl.tblPr
+    if tbl_pr is None:
+        tbl_pr = OxmlElement("w:tblPr")
+        tbl.insert(0, tbl_pr)
+
+    jc = _set_or_append(tbl_pr, "w:jc")
+    jc.set(qn("w:val"), "center")
+
+    tbl_ind = _set_or_append(tbl_pr, "w:tblInd")
+    tbl_ind.set(qn("w:type"), "dxa")
+    tbl_ind.set(qn("w:w"), "0")
+
+
+def _normalize_warranty_clause_text(text: str) -> str:
+    value = str(text or "")
+    if "срок гарантии" not in value.casefold():
+        return value
+
+    match = re.match(r"^(.*?срок\s+гарантии\s*[-:]\s*)(.*)$", value, flags=re.IGNORECASE)
+    if not match:
+        return value
+
+    prefix, rest = match.groups()
+    period = re.split(
+        r",?\s*с\s+момента\s+(?:отгрузки|поставки)\b",
+        rest,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    period = period.strip().rstrip(" ,.;")
+    if not period:
+        return f"{prefix.rstrip()}{WARRANTY_CLAUSE_SUFFIX}"
+    return f"{prefix}{period}{WARRANTY_CLAUSE_SUFFIX}"
+
+
+def _normalize_payment_clause_text(text: str) -> str:
+    value = str(text or "")
+    if "оплата осуществляется" not in value.casefold():
+        return value
+    return value.rstrip().rstrip(".,;") + ";"
+
+
+def _normalize_offer_terms_paragraphs(doc: Document) -> None:
+    for paragraph in doc.paragraphs:
+        original = paragraph.text
+        normalized = _normalize_warranty_clause_text(original)
+        normalized = _normalize_payment_clause_text(normalized)
+        if normalized != original:
+            _set_paragraph_text_keep_style(paragraph, normalized)
 
 
 def _cell_grid_span(tc) -> int:
@@ -138,6 +244,7 @@ def _optimize_products_table_layout(table, section, *, include_days: bool, heade
     widths = _scaled_widths(base_widths, _section_text_width_dxa(section))
     table.autofit = False
     _set_table_grid_widths(table, widths)
+    _center_table(table)
     if 0 <= header_idx < len(table.rows):
         _clear_repeat_table_header(table.rows[header_idx])
 
@@ -518,6 +625,7 @@ class createTextFile:
 
             header_idx = _find_header_row_idx(table)
             total_idx = _find_total_row_idx(table)
+            _normalize_products_table_headers(table, header_idx)
 
             template_idx = _find_row_idx_by_token(table, "<<Name>>")
             if template_idx is None:
@@ -635,6 +743,7 @@ class createTextFile:
             mapping["<<TOTAL_W_CNY>>"] = fmt_money_no_symbol(total_w)
 
             replace_placeholders_everywhere(doc, mapping)
+            _normalize_offer_terms_paragraphs(doc)
 
             doc.save(OUTPUT_PATH)
 

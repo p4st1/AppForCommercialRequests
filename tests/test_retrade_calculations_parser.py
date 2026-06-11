@@ -61,8 +61,14 @@ def _ensure_pyside_stubs() -> None:
         def __init__(self, *_args, **_kwargs):
             self.timeout = _Signal()
 
+        def setSingleShot(self, *_args, **_kwargs):
+            pass
+
         def setInterval(self, *_args, **_kwargs):
             pass
+
+        def isActive(self):
+            return False
 
         def start(self, *_args, **_kwargs):
             pass
@@ -70,7 +76,22 @@ def _ensure_pyside_stubs() -> None:
         def stop(self):
             pass
 
+    class _QDateTime:
+        @staticmethod
+        def currentDateTime():
+            return _QDateTime()
+
+        def addSecs(self, *_args, **_kwargs):
+            return self
+
+        def msecsTo(self, *_args, **_kwargs):
+            return 0
+
+        def toString(self, *_args, **_kwargs):
+            return ""
+
     qtcore.QSettings = getattr(qtcore, "QSettings", _QSettings)
+    qtcore.QDateTime = getattr(qtcore, "QDateTime", _QDateTime)
     qtcore.QThread = getattr(qtcore, "QThread", _QThread)
     qtcore.Signal = getattr(qtcore, "Signal", _Signal)
     qtcore.QTimer = getattr(qtcore, "QTimer", _QTimer)
@@ -153,6 +174,15 @@ def _ensure_pyside_stubs() -> None:
         def getText(*_args, **_kwargs):
             return ("", False)
 
+    class _QDialog(_Widget):
+        class DialogCode:
+            Accepted = 1
+
+    class _QDialogButtonBox(_Widget):
+        class StandardButton:
+            Ok = 1
+            Cancel = 2
+
     class _QMessageBox:
         @staticmethod
         def warning(*_args, **_kwargs):
@@ -213,8 +243,12 @@ def _ensure_pyside_stubs() -> None:
     for name, value in {
         "QAbstractItemView": _QAbstractItemView,
         "QCheckBox": _Widget,
+        "QDateTimeEdit": _Widget,
+        "QDialog": _QDialog,
+        "QDialogButtonBox": _QDialogButtonBox,
         "QDoubleSpinBox": _Widget,
         "QFileDialog": _QFileDialog,
+        "QFormLayout": _Widget,
         "QInputDialog": _QInputDialog,
         "QHeaderView": _QHeaderView,
         "QHBoxLayout": _Widget,
@@ -227,6 +261,7 @@ def _ensure_pyside_stubs() -> None:
         "QTableWidget": _Widget,
         "QTableWidgetItem": _QTableWidgetItem,
         "QTabWidget": _Widget,
+        "QVBoxLayout": _Widget,
         "QWidget": _Widget,
     }.items():
         if not hasattr(qtwidgets, name):
@@ -625,6 +660,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         self.assertEqual(ExportMixin._detect_currency("Total $100", "General"), "USD")
         self.assertEqual(ExportMixin._detect_currency("Amount 50 eur", "General"), "EUR")
         self.assertEqual(ExportMixin._detect_currency("Amount 50 CNY", "General"), "CNY")
+        self.assertEqual(ExportMixin._detect_currency("Amount 50 CYN", "General"), "CNY")
 
     def test_format_number_ru(self):
         self.assertEqual(ExportMixin._format_number_ru(100000), "100 000,00")
@@ -682,6 +718,7 @@ class RetradeCalculationsParserTests(unittest.TestCase):
 
     def test_parse_number_accepts_currency_and_decimal_comma(self):
         self.assertEqual(ExportMixin.parse_number("30 033,85 ₽"), 30033.85)
+        self.assertEqual(ExportMixin.parse_number("30 033,85 CYN"), 30033.85)
         self.assertEqual(ExportMixin.parse_number("1,25"), 1.25)
         self.assertEqual(ExportMixin.parse_number(None), 0.0)
 

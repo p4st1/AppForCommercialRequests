@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import requests
@@ -36,6 +36,9 @@ class TradeExporter:
     DEFAULT_SITEMAP_PAGE = "purchases.trades.filters.BID_SUBMISSION"
     RETRADING_SITEMAP_PAGE = "purchases.trades.filters.RETRADING"
     MANUAL_SUBMISSION_EXPORT_TIMEOUT_MS = 10 * 60 * 1000
+    RETRADE_EXPORT_MAX_ATTEMPTS = 2
+    RETRADE_BROWSER_AUTH_MAX_ATTEMPTS = 2
+    SESSION_COOKIE_NAMES = ("__Host-JSESSIONID", "JSESSIONID")
 
     TRADE_SEARCH_QUERY = """
 query tradeSearch($tradeQueryDto: TradeQueryDtoInput, $limit: Int, $skip: Int) {
@@ -301,12 +304,91 @@ query tradeWithCurrentStage($id: Int) {
     def _goto_retrade_bid_page(self, page: Page, *, bid_id: int) -> None:
         bid_id_int = self._parse_positive_int(bid_id, name="bid_id")
         retrading_url = f"{self.BASE_URL}/bids/{bid_id_int}/retrading"
-        page.goto(
+        self._log_import(f"opening retrade page bid_id={bid_id_int}")
+        response = page.goto(
             retrading_url,
             wait_until="domcontentloaded",
             timeout=max(60_000, self._timeout_ms),
         )
         page.wait_for_timeout(4000)
+        self._raise_for_retrade_page_access_rejection(page, response=response)
+
+    @staticmethod
+    def _response_status(response: Any) -> int | None:
+        raw_status = getattr(response, "status", None)
+        if callable(raw_status):
+            try:
+                raw_status = raw_status()
+            except Exception:
+                raw_status = None
+        try:
+            parsed = int(raw_status)
+        except (TypeError, ValueError):
+            return None
+        return parsed
+
+    @staticmethod
+    def _is_access_denied_text(text: str) -> bool:
+        lowered = str(text or "").lower()
+        return (
+            "доступ запрещ" in lowered
+            or "access denied" in lowered
+            or "forbidden" in lowered
+            or "unauthorized" in lowered
+        )
+
+    @staticmethod
+    def _looks_like_login_page(page: Page, body_text: str) -> bool:
+        url = str(getattr(page, "url", "") or "").lower()
+        text = str(body_text or "").lower()
+        if "login" in url or "frame/index.html" in url:
+            return True
+        return "логин" in text and "пароль" in text
+
+    @staticmethod
+    def _page_url(page: Page) -> str:
+        return str(getattr(page, "url", "") or "")
+
+    @staticmethod
+    def _compact_log_snippet(text: str, *, limit: int = 240) -> str:
+        snippet = " ".join(str(text or "").split())
+        if len(snippet) > limit:
+            return snippet[:limit] + "..."
+        return snippet
+
+    def _raise_for_retrade_page_access_rejection(
+        self,
+        page: Page,
+        *,
+        response: Any = None,
+    ) -> None:
+        status = self._response_status(response)
+        if status in (401, 403):
+            Tool.write_log(
+                "Переторжка: отказ доступа при открытии страницы: "
+                f"url={self._page_url(page)}, status={status}"
+            )
+            raise RuntimeError(f"Площадка вернула отказ доступа (HTTP {status})")
+
+        body_text = ""
+        try:
+            body_text = page.locator("body").inner_text(timeout=3_000)
+        except Exception:
+            body_text = ""
+
+        if self._is_access_denied_text(body_text):
+            Tool.write_log(
+                "Переторжка: страница отказа доступа: "
+                f"url={self._page_url(page)}, "
+                f"text={self._compact_log_snippet(body_text)}"
+            )
+            raise RuntimeError("Площадка вернула страницу отказа доступа")
+        if self._looks_like_login_page(page, body_text):
+            Tool.write_log(
+                "Переторжка: площадка открыла страницу входа: "
+                f"url={self._page_url(page)}"
+            )
+            raise RuntimeError("Сессия площадки истекла, требуется авторизация")
 
     @staticmethod
     def _get_retrade_specification_section(page: Page) -> Locator:
@@ -761,10 +843,11 @@ query tradeWithCurrentStage($id: Int) {
 
         head = path.read_bytes()[:2048]
         lowered_head = head.lower()
+        lowered_text = head.decode("utf-8", errors="ignore").lower()
         if (
             b"<!doctype html" in lowered_head
             or b"<html" in lowered_head
-            or "доступ запрещ".encode("utf-8") in lowered_head
+            or "доступ запрещ" in lowered_text
             or b"access denied" in lowered_head
             or b"forbidden" in lowered_head
         ):
@@ -793,6 +876,44 @@ query tradeWithCurrentStage($id: Int) {
         saved_path = Path(self._save_response_body(download_or_response, target_path_resolved))
         self._validate_saved_export_file(saved_path)
         return str(saved_path)
+
+    @staticmethod
+    def _is_retryable_access_rejection(error: Exception) -> bool:
+        text = str(error or "").lower()
+        return (
+            "страницу отказа" in text
+            or "страница отказа" in text
+            or "отказ доступа" in text
+            or "доступ запрещ" in text
+            or "access denied" in text
+            or "forbidden" in text
+            or "unauthorized" in text
+            or "http 401" in text
+            or "http 403" in text
+            or "ошибка авторизации" in text
+            or "сессия площадки истекла" in text
+        )
+
+    @staticmethod
+    def _is_retryable_export_rejection(error: Exception) -> bool:
+        return TradeExporter._is_retryable_access_rejection(error)
+
+    def _refresh_page_after_retrade_export_rejection(self, page: Page) -> None:
+        try:
+            page.wait_for_timeout(2_000)
+        except Exception:
+            pass
+        try:
+            page.reload(
+                wait_until="domcontentloaded",
+                timeout=max(60_000, self._timeout_ms),
+            )
+        except Exception:
+            return
+        try:
+            page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception:
+            pass
 
     @staticmethod
     def _attach_submission_download_watchers(
@@ -1138,38 +1259,64 @@ query tradeWithCurrentStage($id: Int) {
 
         try:
             self._goto_retrade_bid_page(page, bid_id=bid_id_int)
-            specification_section = self._get_retrade_specification_section(page)
 
-            export_button = specification_section.locator("button:has-text('Экспорт')").first
-            if export_button.count() == 0:
-                self._write_page_debug_dump(
-                    page,
-                    screenshot_path="no_export.png",
-                    html_path="no_export.html",
-                )
-                raise RuntimeError("Кнопка 'Экспорт' не найдена в блоке 'Спецификация'")
+            last_error: Exception | None = None
+            max_attempts = max(1, int(self.RETRADE_EXPORT_MAX_ATTEMPTS))
+            for attempt in range(max_attempts):
+                if attempt > 0:
+                    self._refresh_page_after_retrade_export_rejection(page)
 
-            try:
-                with page.expect_download(timeout=15_000) as download_info:
-                    self._click_locator_with_fallback(
+                specification_section = self._get_retrade_specification_section(page)
+                export_button = specification_section.locator(
+                    "button:has-text('Экспорт')"
+                ).first
+                if export_button.count() == 0:
+                    self._write_page_debug_dump(
                         page,
-                        export_button,
-                        label="Экспорт",
+                        screenshot_path="no_export.png",
+                        html_path="no_export.html",
                     )
-            except Exception as exc:
-                raise RuntimeError("Скачивание не произошло после клика по кнопке 'Экспорт'") from exc
+                    raise RuntimeError(
+                        "Кнопка 'Экспорт' не найдена в блоке 'Спецификация'"
+                    )
 
-            try:
-                download = download_info.value
-            except Exception as exc:
-                raise RuntimeError("Не удалось получить объект скачивания после клика") from exc
+                try:
+                    with page.expect_download(timeout=15_000) as download_info:
+                        self._click_locator_with_fallback(
+                            page,
+                            export_button,
+                            label="Экспорт",
+                        )
+                except Exception as exc:
+                    raise RuntimeError(
+                        "Скачивание не произошло после клика по кнопке 'Экспорт'"
+                    ) from exc
 
-            suggested_filename = str(download.suggested_filename or "").strip()
+                try:
+                    download = download_info.value
+                except Exception as exc:
+                    raise RuntimeError(
+                        "Не удалось получить объект скачивания после клика"
+                    ) from exc
 
-            target_path_resolved.parent.mkdir(parents=True, exist_ok=True)
-            download.save_as(str(target_path_resolved))
+                try:
+                    return self._save_export_download_or_response(
+                        download,
+                        target_path_resolved,
+                    )
+                except Exception as exc:
+                    last_error = exc
+                    is_last_attempt = attempt >= max_attempts - 1
+                    if is_last_attempt or not self._is_retryable_export_rejection(exc):
+                        raise
+                    Tool.write_log(
+                        "Экспорт переторжки вернул страницу отказа вместо Excel; "
+                        "повторяю скачивание"
+                    )
 
-            return str(target_path_resolved)
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError("Экспорт переторжки не выполнен")
         except Exception:
             self._write_page_debug_dump(
                 page,
@@ -1294,6 +1441,80 @@ query tradeWithCurrentStage($id: Int) {
                 continue
 
     @staticmethod
+    def _page_is_closed(page: Page) -> bool:
+        try:
+            return bool(page.is_closed())
+        except Exception:
+            return False
+
+    @staticmethod
+    def _find_visible_retrade_import_dialog(page: Page) -> Locator | None:
+        try:
+            dialog = page.locator(
+                "[role='dialog'], .mat-dialog-container, .cdk-overlay-pane, .modal"
+            ).filter(has_text="Импорт").last
+            if dialog.count() > 0 and dialog.is_visible(timeout=500):
+                return dialog
+        except Exception:
+            return None
+        return None
+
+    def _raise_for_retrade_import_error_notification(self, page: Page) -> bool:
+        success_pattern = re.compile(
+            r"(импорт\s+выполнен|импорт.{0,80}успеш|успешно.{0,80}импорт)",
+            re.IGNORECASE,
+        )
+        error_pattern = re.compile(
+            r"(ошибка|не\s+удалось|import\s+failed|failed|error)",
+            re.IGNORECASE,
+        )
+        for text in self._visible_notification_texts(page):
+            if success_pattern.search(text):
+                return True
+            if error_pattern.search(text):
+                raise RuntimeError(f"Сайт вернул ошибку при импорте: {text}")
+        return False
+
+    def _wait_for_user_retrade_import_action(self, page: Page) -> None:
+        dialog: Locator | None = None
+        for _ in range(20):
+            if self._page_is_closed(page):
+                return
+
+            dialog = self._find_visible_retrade_import_dialog(page)
+            if dialog is not None:
+                break
+
+            if self._raise_for_retrade_import_error_notification(page):
+                return
+
+            try:
+                page.wait_for_timeout(250)
+            except Exception:
+                return
+
+        if dialog is None:
+            return
+
+        self._log_import("waiting for user confirmation on site")
+        while True:
+            if self._page_is_closed(page):
+                return
+            if self._raise_for_retrade_import_error_notification(page):
+                return
+
+            try:
+                if dialog.count() == 0 or not dialog.is_visible(timeout=500):
+                    return
+            except Exception:
+                return
+
+            try:
+                page.wait_for_timeout(500)
+            except Exception:
+                return
+
+    @staticmethod
     def _visible_notification_texts(page: Page) -> list[str]:
         selector = (
             "[role='alert'], .mat-snack-bar-container, simple-snack-bar, "
@@ -1319,6 +1540,9 @@ query tradeWithCurrentStage($id: Int) {
         return texts
 
     def _wait_for_retrade_import_completion(self, page: Page) -> None:
+        if self._page_is_closed(page):
+            return
+
         try:
             page.wait_for_load_state("networkidle", timeout=30_000)
         except Exception:
@@ -1369,6 +1593,119 @@ query tradeWithCurrentStage($id: Int) {
         if success_pattern.search(body_text):
             return
 
+    @staticmethod
+    def _playwright_cookie_list_to_dict(raw_cookies: Any) -> dict[str, str]:
+        if not isinstance(raw_cookies, list):
+            return {}
+
+        collected: dict[str, str] = {}
+        for cookie in raw_cookies:
+            if not isinstance(cookie, dict):
+                continue
+            name = str(cookie.get("name", "") or "").strip()
+            value = str(cookie.get("value", "") or "").strip()
+            if not name or not value:
+                continue
+            collected[name] = value
+        return collected
+
+    @classmethod
+    def _has_session_cookie(cls, cookies: dict[str, str]) -> bool:
+        normalized = normalize_cookies(cookies)
+        return any(
+            str(normalized.get(name, "") or "").strip()
+            for name in cls.SESSION_COOKIE_NAMES
+        )
+
+    def _context_cookies_dict(self, context: BrowserContext) -> dict[str, str]:
+        cookies_getter = getattr(context, "cookies", None)
+        if not callable(cookies_getter):
+            return {}
+
+        try:
+            raw_cookies = cookies_getter([self.BASE_URL])
+        except TypeError:
+            try:
+                raw_cookies = cookies_getter()
+            except Exception as exc:
+                Tool.write_log(f"Не удалось прочитать cookies Playwright: {exc}")
+                return {}
+        except Exception as exc:
+            Tool.write_log(f"Не удалось прочитать cookies Playwright: {exc}")
+            return {}
+
+        return self._playwright_cookie_list_to_dict(raw_cookies)
+
+    def _apply_playwright_cookies(
+        self,
+        context: BrowserContext,
+        playwright_cookies: list[dict[str, str]],
+    ) -> None:
+        if not playwright_cookies:
+            raise RuntimeError("Не удалось подготовить cookies для Playwright")
+        context.add_cookies(playwright_cookies)
+
+    def _prepare_retrade_context_cookies(
+        self,
+        context: BrowserContext,
+        playwright_cookies: list[dict[str, str]],
+    ) -> None:
+        context_cookies = self._context_cookies_dict(context)
+        if self._has_session_cookie(context_cookies):
+            Tool.write_log("Переторжка: использую сохранённую сессию Chromium")
+            return
+        self._apply_playwright_cookies(context, playwright_cookies)
+
+    def _save_context_cookies_to_config(self, context: BrowserContext) -> None:
+        cookies = self._context_cookies_dict(context)
+        if not cookies or not self._has_session_cookie(cookies):
+            return
+
+        try:
+            from services.auth_service import save_config
+
+            save_config({"cookies": cookies})
+            Tool.write_log("Переторжка: актуальные cookies сохранены")
+        except Exception as exc:
+            Tool.write_log(f"Не удалось сохранить актуальные cookies Playwright: {exc}")
+
+    def _run_retrade_context_operation(
+        self,
+        *,
+        playwright: Any,
+        playwright_cookies: list[dict[str, str]],
+        operation: Callable[[BrowserContext], str],
+        retry_log_message: str,
+    ) -> str:
+        context = self._launch_retrade_persistent_context(playwright)
+        try:
+            self._prepare_retrade_context_cookies(context, playwright_cookies)
+
+            last_error: Exception | None = None
+            max_attempts = max(1, int(self.RETRADE_BROWSER_AUTH_MAX_ATTEMPTS))
+            for attempt in range(max_attempts):
+                if attempt > 0:
+                    Tool.write_log(retry_log_message)
+                    self._apply_playwright_cookies(context, playwright_cookies)
+
+                try:
+                    result = operation(context)
+                except Exception as exc:
+                    last_error = exc
+                    is_last_attempt = attempt >= max_attempts - 1
+                    if is_last_attempt or not self._is_retryable_access_rejection(exc):
+                        raise
+                    continue
+
+                self._save_context_cookies_to_config(context)
+                return result
+
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError("Операция переторжки не выполнена")
+        finally:
+            context.close()
+
     def _import_retrade_bid_via_page(
         self,
         *,
@@ -1379,7 +1716,7 @@ query tradeWithCurrentStage($id: Int) {
         bid_id_int = self._parse_positive_int(bid_id, name="bid_id")
         page = context.new_page()
 
-        self._log_import("started")
+        self._log_import(f"started bid_id={bid_id_int}")
         try:
             self._goto_retrade_bid_page(page, bid_id=bid_id_int)
             specification_section = self._get_retrade_specification_section(page)
@@ -1398,7 +1735,7 @@ query tradeWithCurrentStage($id: Int) {
             )
             self._log_import("file selected")
 
-            self._confirm_retrade_import_if_needed(page)
+            self._wait_for_user_retrade_import_action(page)
             self._wait_for_retrade_import_completion(page)
             self._log_import("upload completed")
             return str(source_path)
@@ -1411,7 +1748,8 @@ query tradeWithCurrentStage($id: Int) {
             raise
         finally:
             try:
-                page.close()
+                if not self._page_is_closed(page):
+                    page.close()
             except Exception:
                 pass
 
@@ -1490,6 +1828,15 @@ query tradeWithCurrentStage($id: Int) {
         if parsed <= 0:
             raise ValueError(f"{name} должен быть положительным числом: {parsed}")
         return parsed
+
+    @classmethod
+    def _parse_optional_positive_int(cls, raw_value: Any, *, name: str) -> int | None:
+        if raw_value is None:
+            return None
+        text = str(raw_value).strip()
+        if not text:
+            return None
+        return cls._parse_positive_int(raw_value, name=name)
 
     @staticmethod
     def _validate_target_path(download_path: str) -> Path:
@@ -1822,6 +2169,192 @@ query tradeWithCurrentStage($id: Int) {
 
         return trade_payload
 
+    @staticmethod
+    def _normalize_match_text(value: Any) -> str:
+        return " ".join(str(value or "").casefold().replace("ё", "е").split())
+
+    @staticmethod
+    def _bid_row_id(row: dict[str, Any]) -> int | None:
+        try:
+            bid_id = int(row.get("ID"))
+        except (TypeError, ValueError):
+            return None
+        return bid_id if bid_id > 0 else None
+
+    @classmethod
+    def _bid_row_sort_key(cls, row: dict[str, Any]) -> tuple[int, int]:
+        bid_date_raw = row.get("Дата")
+        try:
+            bid_date = int(float(str(bid_date_raw).strip()))
+        except (TypeError, ValueError):
+            bid_date = 0
+        return bid_date, cls._bid_row_id(row) or 0
+
+    @classmethod
+    def _format_retrade_bid_candidates(cls, rows: list[dict[str, Any]]) -> str:
+        parts: list[str] = []
+        for row in rows[:10]:
+            parts.append(
+                "id={id}, number={number}, bidder={bidder}, status={status}, date={date}".format(
+                    id=row.get("ID"),
+                    number=row.get("Номер"),
+                    bidder=row.get("Компания"),
+                    status=row.get("Статус"),
+                    date=row.get("Дата"),
+                )
+            )
+        if len(rows) > 10:
+            parts.append(f"... ещё {len(rows) - 10}")
+        return "; ".join(parts) if parts else "нет кандидатов"
+
+    def _choose_retrade_bid_candidate(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        original_bid_id: int,
+        bid_number: str = "",
+        bidder_title: str = "",
+    ) -> int | None:
+        valid_rows = [row for row in rows if self._bid_row_id(row) is not None]
+        if not valid_rows:
+            return None
+
+        bidder_key = self._normalize_match_text(bidder_title)
+        if bidder_key:
+            bidder_matches = [
+                row
+                for row in valid_rows
+                if self._normalize_match_text(row.get("Компания")) == bidder_key
+            ]
+            if bidder_matches:
+                selected = max(bidder_matches, key=self._bid_row_sort_key)
+                return self._bid_row_id(selected)
+
+        number_key = self._normalize_match_text(bid_number)
+        if number_key:
+            number_matches = [
+                row
+                for row in valid_rows
+                if self._normalize_match_text(row.get("Номер")) == number_key
+            ]
+            if number_matches:
+                selected = max(number_matches, key=self._bid_row_sort_key)
+                return self._bid_row_id(selected)
+
+        different_rows = [
+            row for row in valid_rows if self._bid_row_id(row) != original_bid_id
+        ]
+        if len(valid_rows) == 1 and self._bid_row_id(valid_rows[0]) != original_bid_id:
+            return self._bid_row_id(valid_rows[0])
+        if len(different_rows) == 1:
+            return self._bid_row_id(different_rows[0])
+        return None
+
+    def _fetch_retrade_bid_candidates(
+        self,
+        *,
+        session: requests.Session,
+        trade_id: int,
+    ) -> list[dict[str, Any]]:
+        trade_payload = self._fetch_trade_payload_for_export(
+            session=session,
+            trade_id=trade_id,
+        )
+        bids, _ = self._extract_bid_rows(
+            trade_payload,
+            selected_bid_id=None,
+            emit_logs=False,
+        )
+        return bids
+
+    def _resolve_retrade_bid_id_for_import(
+        self,
+        *,
+        cookies: dict[str, str],
+        original_bid_id: int,
+        trade_id: int | None = None,
+        lot_id: int | None = None,
+        bid_number: str = "",
+        bidder_title: str = "",
+    ) -> int | None:
+        session = self._build_api_session(cookies)
+        try:
+            resolved_trade_id = trade_id
+            if resolved_trade_id is None and lot_id is not None:
+                try:
+                    resolved_trade_id = self._resolve_trade_id_by_lot_id(
+                        session=session,
+                        lot_id=lot_id,
+                    )
+                    Tool.write_log(
+                        "Переторжка: определён trade_id={trade_id} по lot_id={lot_id}".format(
+                            trade_id=resolved_trade_id,
+                            lot_id=lot_id,
+                        )
+                    )
+                except Exception as exc:
+                    Tool.write_log(
+                        "Переторжка: не удалось определить trade_id по lot_id={lot_id}: {error}".format(
+                            lot_id=lot_id,
+                            error=str(exc).splitlines()[0],
+                        )
+                    )
+
+            if resolved_trade_id is None:
+                try:
+                    resolved_trade_id = self._resolve_trade_id_by_bid_id(
+                        session=session,
+                        bid_id=original_bid_id,
+                    )
+                    Tool.write_log(
+                        "Переторжка: определён trade_id={trade_id} по старому bid_id={bid_id}".format(
+                            trade_id=resolved_trade_id,
+                            bid_id=original_bid_id,
+                        )
+                    )
+                except Exception as exc:
+                    Tool.write_log(
+                        "Переторжка: не удалось определить trade_id по старому bid_id={bid_id}: {error}".format(
+                            bid_id=original_bid_id,
+                            error=str(exc).splitlines()[0],
+                        )
+                    )
+                    return None
+
+            rows = self._fetch_retrade_bid_candidates(
+                session=session,
+                trade_id=resolved_trade_id,
+            )
+            Tool.write_log(
+                "Переторжка: кандидаты для восстановления bid_id: "
+                + self._format_retrade_bid_candidates(rows)
+            )
+            selected_bid_id = self._choose_retrade_bid_candidate(
+                rows,
+                original_bid_id=original_bid_id,
+                bid_number=bid_number,
+                bidder_title=bidder_title,
+            )
+            if selected_bid_id is None:
+                Tool.write_log(
+                    "Переторжка: не удалось безопасно выбрать новый bid_id "
+                    f"(старый bid_id={original_bid_id}, номер={bid_number!r}, "
+                    f"участник={bidder_title!r})"
+                )
+                return None
+            if selected_bid_id == original_bid_id:
+                Tool.write_log(
+                    "Переторжка: GraphQL вернул тот же bid_id, замены для страницы нет"
+                )
+                return None
+
+            Tool.write_log(
+                f"Переторжка: актуальный bid_id для импорта: {original_bid_id} -> {selected_bid_id}"
+            )
+            return selected_bid_id
+        finally:
+            session.close()
+
     def _export_trade_to_excel(
         self,
         *,
@@ -2116,22 +2649,29 @@ query tradeWithCurrentStage($id: Int) {
             raise RuntimeError("Не удалось подготовить cookies для Playwright")
 
         with sync_playwright() as playwright:
-            context = self._launch_retrade_persistent_context(playwright)
-            try:
-                context.add_cookies(playwright_cookies)
-                return self._export_retrade_bid_via_page(
+            return self._run_retrade_context_operation(
+                playwright=playwright,
+                playwright_cookies=playwright_cookies,
+                operation=lambda context: self._export_retrade_bid_via_page(
                     context=context,
                     bid_id=bid_id_int,
                     target_path=target_path,
-                )
-            finally:
-                context.close()
+                ),
+                retry_log_message=(
+                    "Экспорт переторжки получил отказ доступа; "
+                    "повторяю с cookies из config.json"
+                ),
+            )
 
     def import_retrade_bid_data(
         self,
         *,
         bid_id: int,
         file_path: str,
+        trade_id: int | None = None,
+        lot_id: int | None = None,
+        bid_number: str = "",
+        bidder_title: str = "",
     ) -> str:
         if sync_playwright is None:
             raise RuntimeError(
@@ -2140,23 +2680,74 @@ query tradeWithCurrentStage($id: Int) {
             )
 
         bid_id_int = self._parse_positive_int(bid_id, name="bid_id")
+        trade_id_int = self._parse_optional_positive_int(trade_id, name="trade_id")
+        lot_id_int = self._parse_optional_positive_int(lot_id, name="lot_id")
+        bid_number_text = str(bid_number or "").strip()
+        bidder_title_text = str(bidder_title or "").strip()
         source_path = self._validate_import_file_path(file_path)
         cookies = self._load_cookies_for_export()
         playwright_cookies = self._build_playwright_cookies(cookies)
         if not playwright_cookies:
             raise RuntimeError("Не удалось подготовить cookies для Playwright")
 
-        with sync_playwright() as playwright:
-            context = self._launch_retrade_persistent_context(playwright)
+        preflight_bid_id: int | None = None
+        if trade_id_int is not None or lot_id_int is not None:
             try:
-                context.add_cookies(playwright_cookies)
+                preflight_bid_id = self._resolve_retrade_bid_id_for_import(
+                    cookies=cookies,
+                    original_bid_id=bid_id_int,
+                    trade_id=trade_id_int,
+                    lot_id=lot_id_int,
+                    bid_number=bid_number_text,
+                    bidder_title=bidder_title_text,
+                )
+            except Exception as exc:
+                Tool.write_log(
+                    "Переторжка: preflight bid_id не выполнен: "
+                    f"{str(exc).splitlines()[0]}"
+                )
+
+        active_bid_id = {"value": preflight_bid_id or bid_id_int}
+
+        def _import_with_bid_refresh(context: BrowserContext) -> str:
+            try:
                 return self._import_retrade_bid_via_page(
                     context=context,
-                    bid_id=bid_id_int,
+                    bid_id=int(active_bid_id["value"]),
                     source_path=source_path,
                 )
-            finally:
-                context.close()
+            except Exception as exc:
+                if not self._is_retryable_access_rejection(exc):
+                    raise
+
+                refreshed_bid_id = self._resolve_retrade_bid_id_for_import(
+                    cookies=cookies,
+                    original_bid_id=int(active_bid_id["value"]),
+                    trade_id=trade_id_int,
+                    lot_id=lot_id_int,
+                    bid_number=bid_number_text,
+                    bidder_title=bidder_title_text,
+                )
+                if refreshed_bid_id is None:
+                    raise
+
+                active_bid_id["value"] = refreshed_bid_id
+                return self._import_retrade_bid_via_page(
+                    context=context,
+                    bid_id=refreshed_bid_id,
+                    source_path=source_path,
+                )
+
+        with sync_playwright() as playwright:
+            return self._run_retrade_context_operation(
+                playwright=playwright,
+                playwright_cookies=playwright_cookies,
+                operation=_import_with_bid_refresh,
+                retry_log_message=(
+                    "Импорт переторжки получил отказ доступа; "
+                    "повторяю с cookies из config.json"
+                ),
+            )
 
     def import_retrade_lot_data(
         self,
@@ -2175,6 +2766,7 @@ query tradeWithCurrentStage($id: Int) {
         return self.import_retrade_bid_data(
             bid_id=selected_bid_id,
             file_path=file_path,
+            trade_id=trade_id,
         )
 
     def export_trade(self, trade_id: int, download_path: str) -> str:

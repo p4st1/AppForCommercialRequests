@@ -73,7 +73,7 @@ class Config:
     log_path = ''
     logo_path = ''
 
-    currencySymb = ('¥', '$', '₽')
+    currencySymb = ('¥', '$', '₽', '€')
     currency = {
         '¥': ('CNY',
                ((u'юань', u'юаня', u'юаней'), 'm'),

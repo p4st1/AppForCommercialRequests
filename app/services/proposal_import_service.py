@@ -29,7 +29,10 @@ class _SourceTable:
 
 
 class ProposalImportService:
-    CURRENCY_PATTERN = re.compile(r"[¥$₽€]")
+    CURRENCY_PATTERN = re.compile(
+        r"[¥$₽€]|(?<![A-ZА-ЯЁ])(?:RUB|RUR|USD|EUR|CNY|CYN|РУБ\.?)(?![A-ZА-ЯЁ])",
+        re.IGNORECASE,
+    )
     DASH_PLACEHOLDER_CHARS = frozenset("-–—−")
 
     @staticmethod
@@ -44,6 +47,16 @@ class ProposalImportService:
         return bool(value) and all(char in cls.DASH_PLACEHOLDER_CHARS for char in value)
 
     def detect_price_column_currency(self, df, price_col, header_row):
+        header_text = str(df.iat[header_row, price_col]).strip()
+        currency, _price_value = Tool.parsePrice(header_text)
+        if currency:
+            return currency
+        match = self.CURRENCY_PATTERN.search(header_text)
+        if match:
+            currency = Tool.normalize_currency_symbol(match.group(0))
+            if currency:
+                return currency
+
         for row_idx in range(header_row + 1, len(df.index)):
             price_text = str(df.iat[row_idx, price_col]).strip()
             currency, _price_value = Tool.parsePrice(price_text)
@@ -51,7 +64,9 @@ class ProposalImportService:
                 return currency
             match = self.CURRENCY_PATTERN.search(price_text)
             if match:
-                return match.group(0)
+                currency = Tool.normalize_currency_symbol(match.group(0))
+                if currency:
+                    return currency
         return ""
 
     @staticmethod
@@ -236,9 +251,12 @@ class ProposalImportService:
                 if not currency:
                     match = self.CURRENCY_PATTERN.search(price_text)
                     if match:
-                        currency = match.group(0)
-                        price_value = price_text.replace(currency, "").strip()
+                        token = match.group(0)
+                        currency = Tool.normalize_currency_symbol(token)
+                        price_value = price_text.replace(token, "").strip()
                 if not currency and self.is_dash_placeholder(price_value):
+                    currency = fallback_currency
+                if not currency and fallback_currency:
                     currency = fallback_currency
                 if not currency:
                     raise ValueError("Не указана валюта")

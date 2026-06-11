@@ -24,6 +24,19 @@ class NumberParsingTests(unittest.TestCase):
     def test_num2text_keeps_tenths_place(self):
         self.assertEqual(Tool.num2text("1042,9"), "1 042,90")
 
+    def test_parse_price_accepts_currency_codes(self):
+        self.assertEqual(Tool.parsePrice("100 RUB"), ("₽", "100"))
+        self.assertEqual(Tool.parsePrice("USD100"), ("$", "100"))
+        self.assertEqual(Tool.parsePrice("100 EUR"), ("€", "100"))
+        self.assertEqual(Tool.parsePrice("CNY 100"), ("¥", "100"))
+        self.assertEqual(Tool.parsePrice("100 CYN"), ("¥", "100"))
+
+    def test_format_price_accepts_currency_codes(self):
+        self.assertEqual(Tool.formatPrice("100", "RUB"), "100,00₽")
+        self.assertEqual(Tool.formatPrice("100", "USD"), "$100,00")
+        self.assertEqual(Tool.formatPrice("100", "EUR"), "€100,00")
+        self.assertEqual(Tool.formatPrice("100", "CYN"), "¥100,00")
+
 
 if __name__ == "__main__":
     unittest.main()

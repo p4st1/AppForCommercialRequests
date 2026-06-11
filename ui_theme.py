@@ -13,6 +13,7 @@ PRIMARY_BUTTONS = {
     "createDocButton",
     "createDocFromExcelButton",
     "createExcelButton",
+    "import_button",
     "saveAndCloseButton",
     "saveButton",
 }
