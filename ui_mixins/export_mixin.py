@@ -1747,10 +1747,56 @@ QTableWidget::indicator {{
             value = default
         return max(0.0, min(100.0, value))
 
+    @classmethod
+    def _load_retrade_calculation_int_setting(
+        cls,
+        key: str,
+        default: int,
+        *,
+        minimum: int,
+        maximum: int,
+    ) -> int:
+        settings = QSettings(cls.TABLE_SETTINGS_ORG, cls.TABLE_SETTINGS_APP)
+        raw_value = settings.value(f"retrade/{key}", default)
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = default
+        return max(minimum, min(maximum, value))
+
+    @classmethod
+    def _load_retrade_calculation_bool_setting(
+        cls,
+        key: str,
+        default: bool,
+    ) -> bool:
+        settings = QSettings(cls.TABLE_SETTINGS_ORG, cls.TABLE_SETTINGS_APP)
+        raw_value = settings.value(f"retrade/{key}", default)
+        if isinstance(raw_value, bool):
+            return raw_value
+        if isinstance(raw_value, (int, float)):
+            return bool(raw_value)
+        if isinstance(raw_value, str):
+            text = raw_value.strip().lower()
+            if text in {"1", "true", "yes", "on", "да"}:
+                return True
+            if text in {"0", "false", "no", "off", "нет"}:
+                return False
+        return bool(default)
+
     def _save_retrade_calculation_settings(self, *_args: Any) -> None:
         settings = QSettings(self.TABLE_SETTINGS_ORG, self.TABLE_SETTINGS_APP)
         settings.setValue("retrade/min_margin", self.get_min_margin())
         settings.setValue("retrade/delta_percent", self.get_delta_percent())
+        settings.setValue(
+            "retrade/rounding_enabled",
+            self.is_retrade_rounding_enabled(),
+        )
+        settings.setValue("retrade/rounding_digits", self.get_rounding())
+        settings.setValue(
+            "retrade/skip_rating_one_positions",
+            self.should_skip_retrade_rating_one_positions(),
+        )
 
     def _ensure_retrade_calculations_controls(self) -> None:
         if isinstance(getattr(self, "minMarginInput", None), QDoubleSpinBox):
@@ -1800,11 +1846,38 @@ QTableWidget::indicator {{
         self.allPositionsCheckbox.setObjectName("allPositionsCheckbox")
         self.allPositionsCheckbox.setChecked(True)
 
+        self.skipRatingOneCheckbox = QCheckBox(
+            "Не менять рейтинг ЭТП = 1",
+            controls_widget,
+        )
+        self.skipRatingOneCheckbox.setObjectName("skipRatingOneCheckbox")
+        self.skipRatingOneCheckbox.setChecked(
+            self._load_retrade_calculation_bool_setting(
+                "skip_rating_one_positions",
+                False,
+            )
+        )
+
         self.roundingLabel = QLabel("Знаков после запятой:", controls_widget)
+        self.roundingEnabledCheckbox = QCheckBox("Округлять", controls_widget)
+        self.roundingEnabledCheckbox.setObjectName("roundingEnabledCheckbox")
+        self.roundingEnabledCheckbox.setChecked(
+            self._load_retrade_calculation_bool_setting(
+                "rounding_enabled",
+                True,
+            )
+        )
         self.roundingInput = QSpinBox(controls_widget)
         self.roundingInput.setObjectName("roundingInput")
         self.roundingInput.setRange(0, 6)
-        self.roundingInput.setValue(2)
+        self.roundingInput.setValue(
+            self._load_retrade_calculation_int_setting(
+                "rounding_digits",
+                2,
+                minimum=0,
+                maximum=6,
+            )
+        )
 
         self.btn_update_retrade_positions = QPushButton(
             "Обновить цены",
@@ -1819,7 +1892,9 @@ QTableWidget::indicator {{
         controlsLayout.addWidget(self.deltaInput)
         controlsLayout.addSpacing(20)
         controlsLayout.addWidget(self.allPositionsCheckbox)
+        controlsLayout.addWidget(self.skipRatingOneCheckbox)
         controlsLayout.addSpacing(20)
+        controlsLayout.addWidget(self.roundingEnabledCheckbox)
         controlsLayout.addWidget(self.roundingLabel)
         controlsLayout.addWidget(self.roundingInput)
         controlsLayout.addWidget(self.btn_update_retrade_positions)
@@ -1834,6 +1909,8 @@ QTableWidget::indicator {{
         self.ui.deltaLabel = self.deltaLabel
         self.ui.deltaInput = self.deltaInput
         self.ui.allPositionsCheckbox = self.allPositionsCheckbox
+        self.ui.skipRatingOneCheckbox = self.skipRatingOneCheckbox
+        self.ui.roundingEnabledCheckbox = self.roundingEnabledCheckbox
         self.ui.roundingLabel = self.roundingLabel
         self.ui.roundingInput = self.roundingInput
         self.ui.btn_update_retrade_positions = self.btn_update_retrade_positions
@@ -1850,10 +1927,20 @@ QTableWidget::indicator {{
         self.allPositionsCheckbox.stateChanged.connect(
             self.on_positions_mode_changed
         )
+        self.skipRatingOneCheckbox.stateChanged.connect(
+            self._save_retrade_calculation_settings
+        )
+        self.roundingEnabledCheckbox.stateChanged.connect(
+            self._on_rounding_enabled_changed
+        )
+        self.roundingInput.valueChanged.connect(
+            self._save_retrade_calculation_settings
+        )
         self.roundingInput.valueChanged.connect(self.refresh_table)
         self.btn_update_retrade_positions.clicked.connect(
             self.update_retrade_positions
         )
+        self._sync_rounding_input_enabled()
 
     def get_min_margin(self) -> float:
         input_widget = getattr(self, "minMarginInput", None)
@@ -1872,6 +1959,35 @@ QTableWidget::indicator {{
         if isinstance(input_widget, QSpinBox):
             return int(input_widget.value())
         return 2
+
+    def is_retrade_rounding_enabled(self) -> bool:
+        checkbox = getattr(self, "roundingEnabledCheckbox", None)
+        if isinstance(checkbox, QCheckBox):
+            return bool(checkbox.isChecked())
+        return True
+
+    def get_retrade_rounding_digits(self) -> int | None:
+        if not self.is_retrade_rounding_enabled():
+            return None
+        return self.get_rounding()
+
+    def should_skip_retrade_rating_one_positions(self) -> bool:
+        checkbox = getattr(self, "skipRatingOneCheckbox", None)
+        if isinstance(checkbox, QCheckBox):
+            return bool(checkbox.isChecked())
+        return False
+
+    def _sync_rounding_input_enabled(self) -> None:
+        input_widget = getattr(self, "roundingInput", None)
+        if isinstance(input_widget, QSpinBox):
+            input_widget.setEnabled(self.is_retrade_rounding_enabled())
+
+    def _on_rounding_enabled_changed(self, *_args: Any) -> None:
+        self._sync_rounding_input_enabled()
+        self._save_retrade_calculation_settings()
+        refresh = getattr(self, "refresh_table", None)
+        if callable(refresh):
+            refresh()
 
     @staticmethod
     def _qt_user_role_offset(offset: int) -> int:
@@ -1909,10 +2025,12 @@ QTableWidget::indicator {{
             header = table.horizontalHeaderItem(column)
             headers.append(self._text_from_table_item(header).strip())
 
-        try:
-            return offset + headers.index("Рейтинг")
-        except ValueError:
-            return None
+        for target_header in ("Разница", "Рейтинг"):
+            try:
+                return offset + headers.index(target_header)
+            except ValueError:
+                continue
+        return None
 
     @staticmethod
     def _parse_min_margin_rating_value(text: Any) -> float | None:
@@ -2030,6 +2148,8 @@ QTableWidget::indicator {{
         numeric_value = self._parse_retrade_numeric_value(value)
         if numeric_value is None:
             return "" if value is None else str(value)
+        if not self.is_retrade_rounding_enabled():
+            return f"{numeric_value:.12g}".replace(".", ",")
         precision = self.get_rounding()
         formatted = f"{numeric_value:,.{precision}f}"
         return formatted.replace(",", " ").replace(".", ",")
@@ -2038,7 +2158,9 @@ QTableWidget::indicator {{
         numeric_value = self._parse_retrade_numeric_value(value)
         if numeric_value is None:
             return "" if value is None else str(value)
-        return f"{numeric_value:.2f}"
+        if not self.is_retrade_rounding_enabled():
+            return f"{numeric_value:.12g}"
+        return f"{numeric_value:.{self.get_rounding()}f}"
 
     @staticmethod
     def _is_excel_date_like_value(value: Any) -> bool:
@@ -2888,7 +3010,11 @@ QTableWidget::indicator {{
                     or "цена" in header_text
                 ):
                     price_columns.add(index)
-                if "рейтинг" in header_text:
+                if (
+                    "рейтинг" in header_text
+                    or "разница" in header_text
+                    or "наценка" in header_text
+                ):
                     rating_columns.add(index)
 
             column_currencies = self._retrade_column_currencies(
@@ -3112,6 +3238,45 @@ QTableWidget::indicator {{
     def _format_excel_formula_number(value: float) -> str:
         return f"{float(value):.12g}"
 
+    @staticmethod
+    def _normalize_rounding_digits(rounding_digits: int | None) -> int | None:
+        if rounding_digits is None:
+            return None
+        try:
+            return max(0, min(6, int(rounding_digits)))
+        except (TypeError, ValueError):
+            return 2
+
+    @classmethod
+    def _excel_formula(
+        cls,
+        expression: str,
+        *,
+        rounding_digits: int | None = 2,
+    ) -> str:
+        digits = cls._normalize_rounding_digits(rounding_digits)
+        if digits is None:
+            return f"={expression}"
+        return f"=ROUND({expression}, {digits})"
+
+    @classmethod
+    def _round_generated_value(
+        cls,
+        value: float,
+        *,
+        rounding_digits: int | None = 2,
+    ) -> float:
+        digits = cls._normalize_rounding_digits(rounding_digits)
+        numeric_value = float(value)
+        if digits is None:
+            return numeric_value
+        return round(numeric_value, digits)
+
+    @classmethod
+    def _is_rating_one(cls, value: Any) -> bool:
+        numeric_value = cls._parse_retrade_number_or_none(value)
+        return numeric_value is not None and abs(numeric_value - 1.0) <= 1e-12
+
     @classmethod
     def _worksheet_header_row_index(cls, worksheet: Any) -> int | None:
         for row_number, row in enumerate(
@@ -3155,6 +3320,7 @@ QTableWidget::indicator {{
         row_indices: list[int],
         *,
         indices_are_excel_rows: bool = False,
+        rounding_digits: int | None = 2,
     ) -> dict[int, str]:
         realization_price_col = cls._find_worksheet_column_by_header(
             worksheet,
@@ -3186,7 +3352,10 @@ QTableWidget::indicator {{
             )
             if excel_row <= header_row_index:
                 continue
-            formula = f"=ROUND(J{excel_row}*S{excel_row}, 2)"
+            formula = cls._excel_formula(
+                f"J{excel_row}*S{excel_row}",
+                rounding_digits=rounding_digits,
+            )
             target_cell = worksheet.cell(
                 row=excel_row,
                 column=realization_price_col,
@@ -3308,6 +3477,8 @@ QTableWidget::indicator {{
         *,
         min_margin: float | None = None,
         delta_percent: float | None = None,
+        rounding_digits: int | None = 2,
+        skip_rating_one_positions: bool = False,
     ) -> str:
         workbook = load_workbook(file_path)
         workbook_values = None
@@ -3356,14 +3527,14 @@ QTableWidget::indicator {{
             header_row_index = cls._worksheet_header_row_index(sheet_copy) or 1
 
             sheet_copy.cell(row=header_row_index, column=real_rating_col).value = (
-                "Рейтинг (таблица)"
+                "Рейтинг ЭТП"
             )
             sheet_copy.cell(row=header_row_index, column=best_price_col).value = (
                 "Лучшая цена за ед."
             )
-            sheet_copy.cell(row=header_row_index, column=formula_col).value = "Рейтинг"
+            sheet_copy.cell(row=header_row_index, column=formula_col).value = "Разница"
             sheet_copy.cell(row=header_row_index, column=corrected_rating_col).value = (
-                "Скорректированный рейтинг"
+                "Наценка"
             )
             for column_letter in (
                 get_column_letter(formula_col),
@@ -3396,21 +3567,45 @@ QTableWidget::indicator {{
 
                 rating = rating_values[index] if index < len(rating_values) else None
                 if rating is not None:
-                    sheet_copy.cell(row=excel_row, column=real_rating_col).value = round(
-                        float(rating),
-                        2,
+                    sheet_copy.cell(row=excel_row, column=real_rating_col).value = (
+                        cls._round_generated_value(
+                            float(rating),
+                            rounding_digits=rounding_digits,
+                        )
                     )
+                    if skip_rating_one_positions and cls._is_rating_one(rating):
+                        for column in (
+                            best_price_col,
+                            formula_col,
+                            corrected_rating_col,
+                        ):
+                            sheet_copy.cell(row=excel_row, column=column).value = None
+                        continue
 
                 if best_price is not None:
-                    sheet_copy.cell(row=excel_row, column=best_price_col).value = best_price
+                    sheet_copy.cell(row=excel_row, column=best_price_col).value = (
+                        cls._round_generated_value(
+                            float(best_price),
+                            rounding_digits=rounding_digits,
+                        )
+                    )
 
-                formula = f"=ROUND({best_price_letter}{excel_row}/J{excel_row}, 2)"
+                formula = cls._excel_formula(
+                    f"{best_price_letter}{excel_row}/J{excel_row}",
+                    rounding_digits=rounding_digits,
+                )
                 sheet_copy.cell(row=excel_row, column=formula_col).value = formula
+                corrected_expression = (
+                    f"IF({formula_letter}{excel_row}-{delta_text}<"
+                    f"{min_margin_text},"
+                    f"{min_margin_text},"
+                    f"{formula_letter}{excel_row}-{delta_text})"
+                )
                 corrected_formula = (
-                    f"=ROUND(IF({formula_letter}{excel_row}-{delta_text}<"
-                    f"{min_margin_text},"
-                    f"{min_margin_text},"
-                    f"{formula_letter}{excel_row}-{delta_text}), 2)"
+                    cls._excel_formula(
+                        corrected_expression,
+                        rounding_digits=rounding_digits,
+                    )
                 )
                 sheet_copy.cell(
                     row=excel_row,
@@ -3420,7 +3615,10 @@ QTableWidget::indicator {{
                     row=excel_row,
                     column=realization_price_col,
                 ).value = (
-                    f"=ROUND(J{excel_row}*{corrected_rating_letter}{excel_row}, 2)"
+                    cls._excel_formula(
+                        f"J{excel_row}*{corrected_rating_letter}{excel_row}",
+                        rounding_digits=rounding_digits,
+                    )
                 )
 
             cls._enable_workbook_formula_recalculation(workbook)
@@ -3487,6 +3685,10 @@ QTableWidget::indicator {{
                 ratings=ratings,
                 min_margin=self.get_min_margin(),
                 delta_percent=self.get_delta_percent(),
+                rounding_digits=self.get_retrade_rounding_digits(),
+                skip_rating_one_positions=(
+                    self.should_skip_retrade_rating_one_positions()
+                ),
             )
         except Exception as exc:
             error_text = f"Не удалось обновить расчет: {exc}"
@@ -3989,7 +4191,9 @@ QTableWidget::indicator {{
                 ):
                     return index
             elif kind == "corrected_rating":
-                if "скоррект" in normalized and "рейтинг" in normalized:
+                if "наценк" in normalized or (
+                    "скоррект" in normalized and "рейтинг" in normalized
+                ):
                     return index
             elif kind == "sale_price":
                 if "реализац" in normalized and "цена" in normalized and "заед" in normalized:
@@ -4051,6 +4255,7 @@ QTableWidget::indicator {{
         rows: list[list[Any]],
         *,
         column_offset: int = 0,
+        rounding_digits: int | None = 2,
     ) -> tuple[list[dict[str, Any]], int]:
         columns = cls._get_update_positions_columns(
             headers,
@@ -4061,7 +4266,7 @@ QTableWidget::indicator {{
         if columns["source_price"] is None:
             missing.append("Цена за ед. без НДС")
         if columns["corrected_rating"] is None:
-            missing.append("Скорректированный рейтинг")
+            missing.append("Наценка")
         if columns["sale_price"] is None:
             missing.append("Цена реализации за ед. без НДС")
         if missing:
@@ -4097,7 +4302,10 @@ QTableWidget::indicator {{
             if cls._is_zero_retrade_price(price_raw):
                 continue
 
-            new_price = round(cls.parse_number(price_raw) * cls.parse_number(coef_raw), 2)
+            new_price = cls._round_generated_value(
+                cls.parse_number(price_raw) * cls.parse_number(coef_raw),
+                rounding_digits=rounding_digits,
+            )
             updates.append(
                 {
                     "row": row_index,
@@ -4714,6 +4922,7 @@ QTableWidget::indicator {{
                 worksheet,
                 row_indices,
                 indices_are_excel_rows=indices_are_excel_rows,
+                rounding_digits=self.get_retrade_rounding_digits(),
             )
             self._enable_workbook_formula_recalculation(workbook)
             workbook.save(file_path)
@@ -4753,6 +4962,7 @@ QTableWidget::indicator {{
                 calculations_headers,
                 calculations_rows,
                 column_offset=column_offset,
+                rounding_digits=self.get_retrade_rounding_digits(),
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Ошибка", str(exc))
@@ -6578,10 +6788,6 @@ QTableWidget::indicator {{
 
         if file_path_text:
             try:
-                if not self._prepare_exported_excel_for_opening(file_path_text):
-                    self._finish_export("Открытие Excel отменено")
-                    return
-
                 export_path = Path(file_path_text).expanduser()
                 if not export_path.exists() or not export_path.is_file():
                     raise FileNotFoundError(f"Excel файл не найден: {export_path}")

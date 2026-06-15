@@ -1,7 +1,9 @@
 import unittest
 import sys
+import tempfile
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 def _ensure_pyside_stubs() -> None:
@@ -286,12 +288,29 @@ class _FakeExportWindow(ExportMixin):
         self._generate_retrade_after_export = False
         self.calculations_file_path = "/tmp/calc.xlsx"
         self.loading_states = []
+        self.ui = SimpleNamespace()
+        self.logged_messages = []
+        self.updated_retrade_frames = []
+        self.retrade_tab_activated = False
+        self.export_statuses = []
 
     def _build_export_download_path(self, identifier):
         return f"/tmp/trade_{identifier}.xlsx"
 
     def _set_export_loading_state(self, *, is_loading):
         self.loading_states.append(is_loading)
+
+    def _log_ui(self, message):
+        self.logged_messages.append(message)
+
+    def update_retrade_table(self, dataframe):
+        self.updated_retrade_frames.append(dataframe)
+
+    def _activate_retrade_tab(self):
+        self.retrade_tab_activated = True
+
+    def _show_export_status(self, message, timeout_ms=0):
+        self.export_statuses.append((message, timeout_ms))
 
 
 class RetradeContextTests(unittest.TestCase):
@@ -443,6 +462,27 @@ class RetradeContextTests(unittest.TestCase):
             window.current_retrade_context["last_export_at"],
             window.current_retrade_last_export_at,
         )
+
+    def test_retrade_export_finished_skips_table_copy_post_processing(self):
+        window = _FakeExportWindow()
+        window._active_export_workflow = "retrade"
+        window._pending_retrade_bid_id = 7001
+        frame = object()
+        prepare = Mock(return_value=True)
+        window._prepare_exported_excel_for_opening = prepare
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_path = Path(temp_dir) / "retrade.xlsx"
+            export_path.write_bytes(b"")
+            expected_path = str(export_path.resolve())
+
+            with patch("ui_mixins.export_mixin.pd.read_excel", return_value=frame):
+                window._on_export_finished(str(export_path))
+
+        prepare.assert_not_called()
+        self.assertEqual(window.updated_retrade_frames, [frame])
+        self.assertTrue(window.retrade_tab_activated)
+        self.assertEqual(window.current_retrade_excel_path, expected_path)
 
     def test_retrade_main_controls_only_add_update_proposal_button(self):
         class _Window(ExportMixin):
