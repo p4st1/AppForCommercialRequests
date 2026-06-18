@@ -530,12 +530,18 @@ class TradeExporterTests(unittest.TestCase):
                     lot_id=10,
                     trade_id=999,
                     bid_id=2,
+                    bid_number="BID-001",
+                    bidder_title="ООО Ромашка",
                     download_path=target_path,
                 )
 
             export_bid_mock.assert_called_once_with(
                 bid_id=2,
                 download_path=str(Path(target_path).expanduser()),
+                trade_id=999,
+                lot_id=10,
+                bid_number="BID-001",
+                bidder_title="ООО Ромашка",
             )
             self.assertEqual(saved_path, target_path)
 
@@ -681,6 +687,164 @@ class TradeExporterTests(unittest.TestCase):
         self.assertEqual(len(attempts), 2)
         self.assertEqual(context.added_cookies, [config_cookies])
         save_mock.assert_called_once_with(context)
+        self.assertTrue(context.closed)
+
+    def test_export_retrade_bid_data_uses_preflight_resolved_bid_once(self):
+        context = _FakeAuthContext(
+            cookies=[{"name": "JSESSIONID", "value": "profile-session"}]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_path = Path(tmpdir) / "retrade.xlsx"
+            with (
+                patch.object(
+                    self.exporter,
+                    "_load_cookies_for_export",
+                    return_value={"JSESSIONID": "config-session"},
+                ),
+                patch.object(
+                    self.exporter,
+                    "_build_playwright_cookies",
+                    return_value=[
+                        {
+                            "name": "JSESSIONID",
+                            "value": "config-session",
+                            "url": TradeExporter.BASE_URL,
+                        }
+                    ],
+                ),
+                patch(
+                    "services.trade_exporter.sync_playwright",
+                    return_value=_FakePlaywrightManager(object()),
+                ),
+                patch.object(
+                    self.exporter,
+                    "_launch_retrade_persistent_context",
+                    return_value=context,
+                ),
+                patch.object(
+                    self.exporter,
+                    "_export_retrade_bid_via_page",
+                    return_value=str(target_path),
+                ) as export_mock,
+                patch.object(
+                    self.exporter,
+                    "_resolve_current_retrade_bid_id",
+                    return_value=7003,
+                ) as resolve_mock,
+                patch.object(self.exporter, "_save_context_cookies_to_config"),
+                patch("services.trade_exporter.Tool.write_log"),
+            ):
+                saved_path = self.exporter.export_retrade_bid_data(
+                    bid_id=7001,
+                    download_path=str(target_path),
+                    trade_id=999,
+                    lot_id=55,
+                    bid_number="BID-001",
+                    bidder_title="ООО Ромашка",
+                )
+
+        self.assertEqual(saved_path, str(target_path))
+        export_mock.assert_called_once()
+        self.assertEqual(export_mock.call_args.kwargs["bid_id"], 7003)
+        resolve_mock.assert_called_once_with(
+            cookies={"JSESSIONID": "config-session"},
+            original_bid_id=7001,
+            trade_id=999,
+            lot_id=55,
+            bid_number="BID-001",
+            bidder_title="ООО Ромашка",
+            purpose="экспорта",
+        )
+        self.assertTrue(context.closed)
+
+    def test_export_retrade_bid_data_retries_with_resolved_current_bid(self):
+        context = _FakeAuthContext(
+            cookies=[{"name": "JSESSIONID", "value": "profile-session"}]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_path = Path(tmpdir) / "retrade.xlsx"
+            with (
+                patch.object(
+                    self.exporter,
+                    "_load_cookies_for_export",
+                    return_value={"JSESSIONID": "config-session"},
+                ),
+                patch.object(
+                    self.exporter,
+                    "_build_playwright_cookies",
+                    return_value=[
+                        {
+                            "name": "JSESSIONID",
+                            "value": "config-session",
+                            "url": TradeExporter.BASE_URL,
+                        }
+                    ],
+                ),
+                patch(
+                    "services.trade_exporter.sync_playwright",
+                    return_value=_FakePlaywrightManager(object()),
+                ),
+                patch.object(
+                    self.exporter,
+                    "_launch_retrade_persistent_context",
+                    return_value=context,
+                ),
+                patch.object(
+                    self.exporter,
+                    "_export_retrade_bid_via_page",
+                    side_effect=[
+                        RuntimeError("Площадка вернула страницу отказа доступа"),
+                        str(target_path),
+                    ],
+                ) as export_mock,
+                patch.object(
+                    self.exporter,
+                    "_resolve_current_retrade_bid_id",
+                    side_effect=[None, 7003],
+                ) as resolve_mock,
+                patch.object(self.exporter, "_save_context_cookies_to_config"),
+                patch("services.trade_exporter.Tool.write_log"),
+            ):
+                saved_path = self.exporter.export_retrade_bid_data(
+                    bid_id=7001,
+                    download_path=str(target_path),
+                    trade_id=999,
+                    lot_id=55,
+                    bid_number="BID-001",
+                    bidder_title="ООО Ромашка",
+                )
+
+        self.assertEqual(saved_path, str(target_path))
+        self.assertEqual(export_mock.call_count, 2)
+        self.assertEqual(export_mock.call_args_list[0].kwargs["bid_id"], 7001)
+        self.assertEqual(export_mock.call_args_list[1].kwargs["bid_id"], 7003)
+        self.assertEqual(resolve_mock.call_count, 2)
+        self.assertEqual(
+            resolve_mock.call_args_list[0].kwargs,
+            {
+                "cookies": {"JSESSIONID": "config-session"},
+                "original_bid_id": 7001,
+                "trade_id": 999,
+                "lot_id": 55,
+                "bid_number": "BID-001",
+                "bidder_title": "ООО Ромашка",
+                "purpose": "экспорта",
+            },
+        )
+        self.assertEqual(
+            resolve_mock.call_args_list[1].kwargs,
+            {
+                "cookies": {"JSESSIONID": "config-session"},
+                "original_bid_id": 7001,
+                "trade_id": 999,
+                "lot_id": 55,
+                "bid_number": "BID-001",
+                "bidder_title": "ООО Ромашка",
+                "purpose": "экспорта",
+            },
+        )
         self.assertTrue(context.closed)
 
     def test_import_retrade_lot_data_delegates_to_bid_import_when_bid_id_provided(self):

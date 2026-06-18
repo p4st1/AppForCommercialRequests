@@ -183,7 +183,7 @@ try:
 except ModuleNotFoundError:
     sys.modules["requests"] = ModuleType("requests")
 
-from ui_mixins.export_mixin import ExportMixin
+from ui_mixins.export_mixin import ExportMixin, ExportTradeWorker
 
 
 class _FakeSignal:
@@ -365,9 +365,11 @@ class RetradeContextTests(unittest.TestCase):
         window.current_retrade_excel_path = "/tmp/old_retrade.xlsx"
         context = {
             "number": "740370",
+            "bid_number": "740370",
             "bid_id": 7001,
             "trade_id": 999,
             "lot_id": 55,
+            "bidder_title": "ООО Альфа",
         }
 
         with patch("ui_mixins.export_mixin.ExportTradeWorker", _FakeExportWorker):
@@ -388,6 +390,11 @@ class RetradeContextTests(unittest.TestCase):
         self.assertEqual(len(_FakeExportWorker.created), 1)
         self.assertTrue(_FakeExportWorker.created[0].started)
         self.assertEqual(_FakeExportWorker.created[0].kwargs["bid_id"], 7001)
+        self.assertEqual(_FakeExportWorker.created[0].kwargs["bid_number"], "740370")
+        self.assertEqual(
+            _FakeExportWorker.created[0].kwargs["bidder_title"],
+            "ООО Альфа",
+        )
 
     def test_attached_retrade_context_can_drive_reexport(self):
         window = _FakeExportWindow()
@@ -410,9 +417,11 @@ class RetradeContextTests(unittest.TestCase):
         window._set_current_retrade_context(
             {
                 "number": "740370",
+                "bid_number": "740370",
                 "bid_id": 7001,
                 "trade_id": 999,
                 "lot_id": 55,
+                "bidder_title": "ООО Альфа",
             }
         )
 
@@ -423,15 +432,22 @@ class RetradeContextTests(unittest.TestCase):
         self.assertEqual(_FakeExportWorker.created[0].kwargs["trade_id"], 999)
         self.assertEqual(_FakeExportWorker.created[0].kwargs["lot_id"], 55)
         self.assertEqual(_FakeExportWorker.created[0].kwargs["bid_id"], 7001)
+        self.assertEqual(_FakeExportWorker.created[0].kwargs["bid_number"], "740370")
+        self.assertEqual(
+            _FakeExportWorker.created[0].kwargs["bidder_title"],
+            "ООО Альфа",
+        )
 
     def test_generate_button_reexports_attached_retrade_first(self):
         window = _FakeExportWindow()
         window._set_current_retrade_context(
             {
                 "number": "740370",
+                "bid_number": "740370",
                 "bid_id": 7001,
                 "trade_id": 999,
                 "lot_id": 55,
+                "bidder_title": "ООО Альфа",
             }
         )
 
@@ -443,6 +459,43 @@ class RetradeContextTests(unittest.TestCase):
         self.assertEqual(_FakeExportWorker.created[0].kwargs["trade_id"], 999)
         self.assertEqual(_FakeExportWorker.created[0].kwargs["lot_id"], 55)
         self.assertEqual(_FakeExportWorker.created[0].kwargs["bid_id"], 7001)
+        self.assertEqual(_FakeExportWorker.created[0].kwargs["bid_number"], "740370")
+        self.assertEqual(
+            _FakeExportWorker.created[0].kwargs["bidder_title"],
+            "ООО Альфа",
+        )
+
+    def test_export_worker_passes_retrade_context_to_exporter(self):
+        worker = ExportTradeWorker(
+            trade_id=999,
+            lot_id=55,
+            bid_id=7001,
+            is_retrade=True,
+            bid_number="740370",
+            bidder_title="ООО Альфа",
+            download_path="/tmp/retrade.xlsx",
+        )
+        finished = []
+        errors = []
+        worker.finished.connect(finished.append)
+        worker.error.connect(errors.append)
+
+        with patch("ui_mixins.export_mixin.TradeExporter") as exporter_class:
+            exporter = exporter_class.return_value
+            exporter.export_retrade_lot_data.return_value = "/tmp/retrade.xlsx"
+
+            worker.run()
+
+        exporter.export_retrade_lot_data.assert_called_once_with(
+            lot_id=55,
+            download_path="/tmp/retrade.xlsx",
+            trade_id=999,
+            bid_id=7001,
+            bid_number="740370",
+            bidder_title="ООО Альфа",
+        )
+        self.assertEqual(finished, ["/tmp/retrade.xlsx"])
+        self.assertEqual(errors, [])
 
     def test_mark_current_retrade_table_exported_now_stores_timestamp(self):
         window = _FakeExportWindow()

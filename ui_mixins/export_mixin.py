@@ -63,6 +63,8 @@ class ExportTradeWorker(QThread):
         is_retrade: bool = False,
         is_submission_acceptance: bool = False,
         submission_search_text: str = "",
+        bid_number: str = "",
+        bidder_title: str = "",
         download_path: str,
         parent: Any = None,
     ) -> None:
@@ -73,6 +75,8 @@ class ExportTradeWorker(QThread):
         self._is_retrade = bool(is_retrade)
         self._is_submission_acceptance = bool(is_submission_acceptance)
         self._submission_search_text = str(submission_search_text or "")
+        self._bid_number = str(bid_number or "")
+        self._bidder_title = str(bidder_title or "")
         if self._trade_id is None and self._lot_id is None:
             raise ValueError("Не указан trade_id или lot_id для экспорта")
         self._download_path = str(download_path)
@@ -86,6 +90,8 @@ class ExportTradeWorker(QThread):
                     download_path=self._download_path,
                     trade_id=self._trade_id,
                     bid_id=self._bid_id,
+                    bid_number=self._bid_number,
+                    bidder_title=self._bidder_title,
                 )
             elif self._lot_id is not None and self._is_submission_acceptance:
                 saved_path = exporter.export_submission_lot_data(
@@ -174,6 +180,12 @@ class ExportMixin:
         "артикул",
         "код",
     }
+    RETRADE_GENERATED_ROUNDING_HEADER_ALIASES = (
+        ("рейтингэтп", "рейтингтаблица", "рейтинг"),
+        ("лучшаяценазаед",),
+        ("разница", "рейтинг"),
+        ("наценка", "скорректированныйрейтинг"),
+    )
     TABLE_SETTINGS_DEFAULTS = {
         "font_size": 13,
         "bg_color": "#ffffff",
@@ -2136,31 +2148,34 @@ QTableWidget::indicator {{
             == self.RETRADE_ROW_CHECKBOX_COLUMN_MARKER
         )
 
-    def format_rubles(self, value: Any) -> str:
+    def format_rubles(self, value: Any, *, use_rounding_toggle: bool = True) -> str:
         numeric_value = self._parse_retrade_numeric_value(value)
         if numeric_value is None:
             return "" if value is None else str(value)
-        precision = self.get_rounding()
+        if use_rounding_toggle and not self.is_retrade_rounding_enabled():
+            return f"{numeric_value:.12g}".replace(".", ",") + " ₽"
+        precision = self.get_rounding() if use_rounding_toggle else 2
         formatted = f"{numeric_value:,.{precision}f}"
         return formatted.replace(",", " ").replace(".", ",") + " ₽"
 
-    def format_number(self, value: Any) -> str:
+    def format_number(self, value: Any, *, use_rounding_toggle: bool = True) -> str:
         numeric_value = self._parse_retrade_numeric_value(value)
         if numeric_value is None:
             return "" if value is None else str(value)
-        if not self.is_retrade_rounding_enabled():
+        if use_rounding_toggle and not self.is_retrade_rounding_enabled():
             return f"{numeric_value:.12g}".replace(".", ",")
-        precision = self.get_rounding()
+        precision = self.get_rounding() if use_rounding_toggle else 2
         formatted = f"{numeric_value:,.{precision}f}"
         return formatted.replace(",", " ").replace(".", ",")
 
-    def format_rating(self, value: Any) -> str:
+    def format_rating(self, value: Any, *, use_rounding_toggle: bool = True) -> str:
         numeric_value = self._parse_retrade_numeric_value(value)
         if numeric_value is None:
             return "" if value is None else str(value)
-        if not self.is_retrade_rounding_enabled():
+        if use_rounding_toggle and not self.is_retrade_rounding_enabled():
             return f"{numeric_value:.12g}"
-        return f"{numeric_value:.{self.get_rounding()}f}"
+        precision = self.get_rounding() if use_rounding_toggle else 2
+        return f"{numeric_value:.{precision}f}"
 
     @staticmethod
     def _is_excel_date_like_value(value: Any) -> bool:
@@ -2170,6 +2185,19 @@ QTableWidget::indicator {{
             and hasattr(value, "day")
         )
 
+    @classmethod
+    def _generated_retrade_rounding_columns(cls, headers: list[Any]) -> set[int]:
+        alias_groups = cls.RETRADE_GENERATED_ROUNDING_HEADER_ALIASES
+        if len(headers) < len(alias_groups):
+            return set()
+
+        normalized_headers = [cls._normalize_table_header(header) for header in headers]
+        start_index = len(normalized_headers) - len(alias_groups)
+        for offset, aliases in enumerate(alias_groups):
+            if normalized_headers[start_index + offset] not in aliases:
+                return set()
+        return set(range(start_index, len(normalized_headers)))
+
     def _format_calculations_display_value(
         self,
         value: Any,
@@ -2178,16 +2206,23 @@ QTableWidget::indicator {{
         header: str,
         price_columns: set[int],
         rating_columns: set[int],
+        rounding_columns: set[int] | None = None,
         currency: str | None = None,
     ) -> str:
         if value is None:
             return ""
         header_text = str(header or "").strip()
         header_lower = header_text.lower()
+        use_rounding_toggle = (
+            rounding_columns is None or col_index in rounding_columns
+        )
         if header_lower in self.NO_FORMAT_COLUMNS:
             return str(value)
         if col_index in rating_columns:
-            return self.format_rating(value)
+            return self.format_rating(
+                value,
+                use_rounding_toggle=use_rounding_toggle,
+            )
         if isinstance(value, str):
             stripped_value = value.strip()
             if (
@@ -2202,18 +2237,36 @@ QTableWidget::indicator {{
             or self._detect_currency(value, header_text)
         )
         if detected_currency:
-            return self._format_retrade_calculations_cell_for_display(
-                {
-                    "value": value,
-                    "currency": detected_currency,
-                }
+            if use_rounding_toggle:
+                return self._format_retrade_calculations_cell_for_display(
+                    {
+                        "value": value,
+                        "currency": detected_currency,
+                    }
+                )
+            formatted_value = self.format_number(
+                value,
+                use_rounding_toggle=False,
             )
+            currency_symbol = self._currency_display_symbol(detected_currency)
+            if currency_symbol:
+                return f"{formatted_value} {currency_symbol}"
+            return formatted_value
         if "₽" in str(value) or "руб" in header_lower:
-            return self.format_rubles(value)
+            return self.format_rubles(
+                value,
+                use_rounding_toggle=use_rounding_toggle,
+            )
         if col_index in price_columns:
-            return self.format_number(value)
+            return self.format_number(
+                value,
+                use_rounding_toggle=use_rounding_toggle,
+            )
         if self._parse_retrade_numeric_value(value) is not None:
-            return self.format_number(value)
+            return self.format_number(
+                value,
+                use_rounding_toggle=use_rounding_toggle,
+            )
         return str(value)
 
     def _is_main_calculations_sheet_selected(self) -> bool:
@@ -3021,6 +3074,11 @@ QTableWidget::indicator {{
                 headers,
                 [row_cells for _excel_row, row_cells in visible_data_rows],
             )
+            rounding_columns = (
+                set()
+                if self._is_main_calculations_sheet_selected()
+                else self._generated_retrade_rounding_columns(headers)
+            )
             for row_index, (excel_row, row_cells) in enumerate(visible_data_rows):
                 for col_index in range(max_col):
                     cell_payload = (
@@ -3037,6 +3095,7 @@ QTableWidget::indicator {{
                         header=headers[col_index] if col_index < len(headers) else "",
                         price_columns=price_columns,
                         rating_columns=rating_columns,
+                        rounding_columns=rounding_columns,
                         currency=(
                             cell_payload.get("currency")
                             or (
@@ -3617,7 +3676,7 @@ QTableWidget::indicator {{
                 ).value = (
                     cls._excel_formula(
                         f"J{excel_row}*{corrected_rating_letter}{excel_row}",
-                        rounding_digits=rounding_digits,
+                        rounding_digits=2,
                     )
                 )
 
@@ -4922,7 +4981,6 @@ QTableWidget::indicator {{
                 worksheet,
                 row_indices,
                 indices_are_excel_rows=indices_are_excel_rows,
-                rounding_digits=self.get_retrade_rounding_digits(),
             )
             self._enable_workbook_formula_recalculation(workbook)
             workbook.save(file_path)
@@ -4962,7 +5020,6 @@ QTableWidget::indicator {{
                 calculations_headers,
                 calculations_rows,
                 column_offset=column_offset,
-                rounding_digits=self.get_retrade_rounding_digits(),
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Ошибка", str(exc))
@@ -6044,6 +6101,9 @@ QTableWidget::indicator {{
         if is_submission_acceptance and (lot_id is None or int(lot_id) <= 0):
             raise Exception("У выбранной заявки отсутствует lot_id")
 
+        retrade_bid_number = ""
+        retrade_bidder_title = ""
+
         if is_retrade and bid_id is not None:
             self._pending_retrade_bid_id = int(bid_id)
             pending_context = (
@@ -6058,6 +6118,15 @@ QTableWidget::indicator {{
                     "lot_id": int(lot_id),
                 }
             self._pending_retrade_context = pending_context
+            retrade_bid_number = str(
+                pending_context.get("bid_number")
+                or pending_context.get("number")
+                or bid_id
+                or ""
+            ).strip()
+            retrade_bidder_title = str(
+                pending_context.get("bidder_title") or ""
+            ).strip()
             self.current_retrade_excel_path = ""
             self._set_current_retrade_context(pending_context)
         else:
@@ -6091,6 +6160,8 @@ QTableWidget::indicator {{
             is_retrade=is_retrade,
             is_submission_acceptance=is_submission_acceptance,
             submission_search_text=submission_search_text,
+            bid_number=retrade_bid_number,
+            bidder_title=retrade_bidder_title,
             download_path=download_path,
             parent=self,
         )

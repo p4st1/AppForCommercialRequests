@@ -2267,7 +2267,7 @@ query tradeWithCurrentStage($id: Int) {
         )
         return bids
 
-    def _resolve_retrade_bid_id_for_import(
+    def _resolve_current_retrade_bid_id(
         self,
         *,
         cookies: dict[str, str],
@@ -2276,6 +2276,7 @@ query tradeWithCurrentStage($id: Int) {
         lot_id: int | None = None,
         bid_number: str = "",
         bidder_title: str = "",
+        purpose: str = "операции",
     ) -> int | None:
         session = self._build_api_session(cookies)
         try:
@@ -2349,11 +2350,36 @@ query tradeWithCurrentStage($id: Int) {
                 return None
 
             Tool.write_log(
-                f"Переторжка: актуальный bid_id для импорта: {original_bid_id} -> {selected_bid_id}"
+                "Переторжка: актуальный bid_id для {purpose}: "
+                "{old_bid_id} -> {new_bid_id}".format(
+                    purpose=purpose,
+                    old_bid_id=original_bid_id,
+                    new_bid_id=selected_bid_id,
+                )
             )
             return selected_bid_id
         finally:
             session.close()
+
+    def _resolve_retrade_bid_id_for_import(
+        self,
+        *,
+        cookies: dict[str, str],
+        original_bid_id: int,
+        trade_id: int | None = None,
+        lot_id: int | None = None,
+        bid_number: str = "",
+        bidder_title: str = "",
+    ) -> int | None:
+        return self._resolve_current_retrade_bid_id(
+            cookies=cookies,
+            original_bid_id=original_bid_id,
+            trade_id=trade_id,
+            lot_id=lot_id,
+            bid_number=bid_number,
+            bidder_title=bidder_title,
+            purpose="импорта",
+        )
 
     def _export_trade_to_excel(
         self,
@@ -2601,6 +2627,8 @@ query tradeWithCurrentStage($id: Int) {
         *,
         trade_id: int | None = None,
         bid_id: int | None = None,
+        bid_number: str = "",
+        bidder_title: str = "",
     ) -> str:
         lot_id_int = self._parse_positive_int(lot_id, name="lot_id")
         target_path = self._validate_target_path(download_path)
@@ -2610,6 +2638,10 @@ query tradeWithCurrentStage($id: Int) {
             return self.export_retrade_bid_data(
                 bid_id=selected_bid_id,
                 download_path=str(target_path),
+                trade_id=trade_id,
+                lot_id=lot_id_int,
+                bid_number=bid_number,
+                bidder_title=bidder_title,
             )
 
         cookies = self._load_cookies_for_export()
@@ -2634,6 +2666,10 @@ query tradeWithCurrentStage($id: Int) {
         *,
         bid_id: int,
         download_path: str,
+        trade_id: int | None = None,
+        lot_id: int | None = None,
+        bid_number: str = "",
+        bidder_title: str = "",
     ) -> str:
         if sync_playwright is None:
             raise RuntimeError(
@@ -2642,21 +2678,71 @@ query tradeWithCurrentStage($id: Int) {
             )
 
         bid_id_int = self._parse_positive_int(bid_id, name="bid_id")
+        trade_id_int = self._parse_optional_positive_int(trade_id, name="trade_id")
+        lot_id_int = self._parse_optional_positive_int(lot_id, name="lot_id")
+        bid_number_text = str(bid_number or "").strip()
+        bidder_title_text = str(bidder_title or "").strip()
         target_path = self._validate_target_path(download_path)
         cookies = self._load_cookies_for_export()
         playwright_cookies = self._build_playwright_cookies(cookies)
         if not playwright_cookies:
             raise RuntimeError("Не удалось подготовить cookies для Playwright")
 
+        preflight_bid_id: int | None = None
+        if trade_id_int is not None or lot_id_int is not None:
+            try:
+                preflight_bid_id = self._resolve_current_retrade_bid_id(
+                    cookies=cookies,
+                    original_bid_id=bid_id_int,
+                    trade_id=trade_id_int,
+                    lot_id=lot_id_int,
+                    bid_number=bid_number_text,
+                    bidder_title=bidder_title_text,
+                    purpose="экспорта",
+                )
+            except Exception as exc:
+                Tool.write_log(
+                    "Переторжка: preflight bid_id для экспорта не выполнен: "
+                    f"{str(exc).splitlines()[0]}"
+                )
+
+        active_bid_id = {"value": preflight_bid_id or bid_id_int}
+
+        def _export_with_bid_refresh(context: BrowserContext) -> str:
+            try:
+                return self._export_retrade_bid_via_page(
+                    context=context,
+                    bid_id=int(active_bid_id["value"]),
+                    target_path=target_path,
+                )
+            except Exception as exc:
+                if not self._is_retryable_access_rejection(exc):
+                    raise
+
+                refreshed_bid_id = self._resolve_current_retrade_bid_id(
+                    cookies=cookies,
+                    original_bid_id=int(active_bid_id["value"]),
+                    trade_id=trade_id_int,
+                    lot_id=lot_id_int,
+                    bid_number=bid_number_text,
+                    bidder_title=bidder_title_text,
+                    purpose="экспорта",
+                )
+                if refreshed_bid_id is None:
+                    raise
+
+                active_bid_id["value"] = refreshed_bid_id
+                return self._export_retrade_bid_via_page(
+                    context=context,
+                    bid_id=refreshed_bid_id,
+                    target_path=target_path,
+                )
+
         with sync_playwright() as playwright:
             return self._run_retrade_context_operation(
                 playwright=playwright,
                 playwright_cookies=playwright_cookies,
-                operation=lambda context: self._export_retrade_bid_via_page(
-                    context=context,
-                    bid_id=bid_id_int,
-                    target_path=target_path,
-                ),
+                operation=_export_with_bid_refresh,
                 retry_log_message=(
                     "Экспорт переторжки получил отказ доступа; "
                     "повторяю с cookies из config.json"

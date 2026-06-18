@@ -708,6 +708,94 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             "1 234,50 ¥",
         )
 
+    def test_generated_retrade_rounding_columns_detects_right_appended_block(self):
+        self.assertEqual(
+            ExportMixin._generated_retrade_rounding_columns(
+                [
+                    "Наименование",
+                    "Рейтинг",
+                    "Рейтинг ЭТП",
+                    "Лучшая цена за ед.",
+                    "Разница",
+                    "Наценка",
+                ]
+            ),
+            {2, 3, 4, 5},
+        )
+        self.assertEqual(
+            ExportMixin._generated_retrade_rounding_columns(
+                [
+                    "Наименование",
+                    "Рейтинг (таблица)",
+                    "Лучшая цена за ед.",
+                    "Рейтинг",
+                    "Скорректированный рейтинг",
+                ]
+            ),
+            {1, 2, 3, 4},
+        )
+        self.assertEqual(
+            ExportMixin._generated_retrade_rounding_columns(
+                [
+                    "Рейтинг",
+                    "Лучшая цена за ед.",
+                    "Наименование",
+                    "Разница",
+                    "Наценка",
+                ]
+            ),
+            set(),
+        )
+
+    def test_rounding_checkbox_applies_only_to_generated_right_columns(self):
+        mixin = ExportMixin()
+        mixin.is_retrade_rounding_enabled = lambda: False
+
+        self.assertEqual(
+            mixin._format_calculations_display_value(
+                "1,2345",
+                col_index=1,
+                header="Рейтинг",
+                price_columns=set(),
+                rating_columns={1, 4},
+                rounding_columns={3, 4, 5, 6},
+            ),
+            "1.23",
+        )
+        self.assertEqual(
+            mixin._format_calculations_display_value(
+                "1,2345",
+                col_index=4,
+                header="Рейтинг",
+                price_columns=set(),
+                rating_columns={1, 4},
+                rounding_columns={3, 4, 5, 6},
+            ),
+            "1.2345",
+        )
+        self.assertEqual(
+            mixin._format_calculations_display_value(
+                827753.714,
+                col_index=2,
+                header="Цена за ед.",
+                price_columns={2, 3},
+                rating_columns=set(),
+                rounding_columns={3, 4, 5, 6},
+            ),
+            "827 753,71",
+        )
+        self.assertEqual(
+            mixin._format_calculations_display_value(
+                827753.714,
+                col_index=3,
+                header="Лучшая цена за ед.",
+                price_columns={2, 3},
+                rating_columns=set(),
+                rounding_columns={3, 4, 5, 6},
+            ),
+            "827753,714",
+        )
+
     def test_format_cell_returns_non_numeric_as_is(self):
         self.assertEqual(
             ExportMixin._format_retrade_calculations_cell_for_display(
@@ -1703,7 +1791,10 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                     result_sheet.cell(row=2, column=19).value,
                     "=IF(R2-0.02<1.15,1.15,R2-0.02)",
                 )
-                self.assertEqual(result_sheet.cell(row=2, column=11).value, "=J2*S2")
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=11).value,
+                    "=ROUND(J2*S2, 2)",
+                )
             finally:
                 result_workbook.close()
         finally:
