@@ -30,12 +30,14 @@ class NumberParsingTests(unittest.TestCase):
         self.assertEqual(Tool.parsePrice("100 EUR"), ("€", "100"))
         self.assertEqual(Tool.parsePrice("CNY 100"), ("¥", "100"))
         self.assertEqual(Tool.parsePrice("100 CYN"), ("¥", "100"))
+        self.assertEqual(Tool.parsePrice("￥584,15"), ("¥", "584,15"))
 
     def test_format_price_accepts_currency_codes(self):
         self.assertEqual(Tool.formatPrice("100", "RUB"), "100,00₽")
         self.assertEqual(Tool.formatPrice("100", "USD"), "$100,00")
         self.assertEqual(Tool.formatPrice("100", "EUR"), "€100,00")
         self.assertEqual(Tool.formatPrice("100", "CYN"), "¥100,00")
+        self.assertEqual(Tool.formatPrice("100", "￥"), "¥100,00")
 
 
 if __name__ == "__main__":

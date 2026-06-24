@@ -30,7 +30,7 @@ class _SourceTable:
 
 class ProposalImportService:
     CURRENCY_PATTERN = re.compile(
-        r"[¥$₽€]|(?<![A-ZА-ЯЁ])(?:RUB|RUR|USD|EUR|CNY|CYN|РУБ\.?)(?![A-ZА-ЯЁ])",
+        r"[¥￥$₽€]|(?<![A-ZА-ЯЁ])(?:RUB|RUR|USD|EUR|CNY|CYN|РУБ\.?)(?![A-ZА-ЯЁ])",
         re.IGNORECASE,
     )
     DASH_PLACEHOLDER_CHARS = frozenset("-–—−")

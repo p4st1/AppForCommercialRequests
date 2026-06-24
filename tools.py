@@ -22,6 +22,7 @@ from utilities.paths import (
 
 class DatabaseTools:
     CURRENCY_TOKEN_TO_SYMBOL = {
+        "￥": "¥",
         "RUB": "₽",
         "RUR": "₽",
         "РУБ": "₽",
@@ -709,10 +710,12 @@ class DatabaseTools:
     @staticmethod
     def _find_currency_token(line):
         matches = []
-        for symb in Config.currencySymb:
+        for symb in (*Config.currencySymb, "￥"):
             currency_ind = line.find(symb)
             if currency_ind >= 0:
-                matches.append((currency_ind, currency_ind + len(symb), symb))
+                symbol = DatabaseTools.normalize_currency_symbol(symb)
+                if symbol:
+                    matches.append((currency_ind, currency_ind + len(symb), symbol))
 
         token_pattern = re.compile(
             r"(?<![A-ZА-ЯЁ])(?:RUB|RUR|USD|EUR|CNY|CYN|РУБ\.?)(?![A-ZА-ЯЁ])",

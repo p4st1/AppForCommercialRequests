@@ -175,6 +175,32 @@ class ProposalImportServiceTests(unittest.TestCase):
         self.assertEqual(rows[0]["name"], "Насос")
         self.assertEqual(rows[0]["unitPrice"], 10.5)
 
+    def test_load_source_rows_accepts_platform_csv_with_fullwidth_yen_and_empty_tail(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "platform.csv"
+            extra_columns = ";" * 19
+            path.write_text(
+                "\ufeff№;Наименование;Каталожный номер ;Ед. изм.;Кол-во;"
+                f"Цена за ед. без НДС;Срок поставки к.д.{extra_columns}\r\n"
+                f"1;Фильтр гидравлический S2-1117-08 Argo;;шт.;30;￥0,00;{extra_columns}\r\n"
+                f"2;Фильтр RS3512 Baldwin;;шт.;12;￥584,15;80{extra_columns}\r\n"
+                f";;;;;; {extra_columns}\r\n"
+                f";;;;;; {extra_columns}\r\n",
+                encoding="utf-8",
+            )
+
+            rows, warnings = self.service.load_source_rows(path)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["currency"], "¥")
+        self.assertEqual(rows[0]["unitPrice"], 0)
+        self.assertEqual(rows[0]["supplierTermDays"], 0)
+        self.assertEqual(rows[1]["name"], "Фильтр RS3512 Baldwin")
+        self.assertEqual(rows[1]["currency"], "¥")
+        self.assertEqual(rows[1]["unitPrice"], 584.15)
+        self.assertEqual(rows[1]["supplierTermDays"], 80)
+
     def test_read_source_table_reads_xlsx_in_streaming_mode(self):
         from openpyxl import Workbook
 
