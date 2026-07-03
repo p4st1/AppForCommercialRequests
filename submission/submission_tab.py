@@ -394,6 +394,7 @@ QTableWidget::item:selected:!active {
     def _submission_source_rows_for_excel(payload: SubmissionPayload) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for row in payload.rows:
+            manufacturer = str(row.manufacturer or "").strip()
             rows.append(
                 {
                     "name": row.name,
@@ -403,8 +404,10 @@ QTableWidget::item:selected:!active {
                     "unit_price": row.unit_price,
                     "total": row.total,
                     "delivery_time": row.delivery_time,
-                    "manufacturer": row.manufacturer,
-                    "technical_characteristics": row.technical,
+                    "manufacturer": manufacturer,
+                    "technical": manufacturer,
+                    "tech_characteristics": manufacturer,
+                    "technical_characteristics": manufacturer,
                     "supplier_status": row.supplier_status,
                     "warranty": row.warranty,
                 }

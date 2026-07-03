@@ -285,10 +285,18 @@ class SubmissionService:
             return None
         return round(qty * price, 2)
 
+    @staticmethod
+    def _duplicated_manufacturer_text(row: SubmissionRow) -> str:
+        manufacturer = str(row.manufacturer or "").strip()
+        if manufacturer:
+            return manufacturer
+        return str(row.technical or "").strip()
+
     @classmethod
     def normalize_row(cls, row: SubmissionRow) -> SubmissionRow:
         qty = cls.parse_number(row.qty)
         unit_price = cls.parse_number(row.unit_price)
+        manufacturer = cls._duplicated_manufacturer_text(row)
         normalized = SubmissionRow(
             name=str(row.name or "").strip(),
             qty=qty,
@@ -296,8 +304,8 @@ class SubmissionService:
             unit_price=unit_price,
             total=row.total,
             delivery_time=str(row.delivery_time or "").strip(),
-            manufacturer=str(row.manufacturer or "").strip(),
-            technical=str(row.technical or "").strip(),
+            manufacturer=manufacturer,
+            technical=manufacturer,
             supplier_status=str(row.supplier_status or "").strip(),
             warranty=str(row.warranty or "").strip(),
         )

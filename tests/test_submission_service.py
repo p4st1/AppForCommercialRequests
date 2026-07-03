@@ -74,6 +74,28 @@ class SubmissionServiceTests(unittest.TestCase):
         self.assertEqual(payload.header.delivery_order, "Доставка до склада")
         self.assertEqual(payload.header.payment_terms, "Оплата по договору")
 
+    def test_prepare_payload_duplicates_manufacturer_and_technical_fields(self):
+        payload = SubmissionService.prepare_payload(
+            SubmissionHeader(number="REQ-1", title="Заявка"),
+            [
+                SubmissionRow(
+                    name="Насос",
+                    manufacturer="Atlas Copco",
+                    technical="IP65",
+                ),
+                SubmissionRow(
+                    name="Клапан",
+                    manufacturer="",
+                    technical="Завод",
+                ),
+            ],
+        )
+
+        self.assertEqual(payload.rows[0].manufacturer, "Atlas Copco")
+        self.assertEqual(payload.rows[0].technical, "Atlas Copco")
+        self.assertEqual(payload.rows[1].manufacturer, "Завод")
+        self.assertEqual(payload.rows[1].technical, "Завод")
+
     def test_prepare_payload_preserves_trade_and_lot_ids(self):
         payload = SubmissionService.prepare_payload(
             SubmissionHeader(

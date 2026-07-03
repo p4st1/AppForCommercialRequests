@@ -1,7 +1,12 @@
 import unittest
 from unittest.mock import patch
 
-from submission.submission_service import SubmissionService
+from submission.submission_service import (
+    SubmissionHeader,
+    SubmissionPayload,
+    SubmissionRow,
+    SubmissionService,
+)
 from submission.submission_tab import SubmissionTabMixin
 
 
@@ -80,6 +85,19 @@ class SubmissionTabMixinTests(unittest.TestCase):
         )
 
         self.assertEqual(window._submission_currency_from_table(), "CNY")
+
+    def test_source_rows_for_excel_duplicates_manufacturer_to_technical_keys(self):
+        payload = SubmissionPayload(
+            header=SubmissionHeader(number="REQ-1", title="Заявка"),
+            rows=[SubmissionRow(name="Насос", manufacturer="Atlas Copco", technical="IP65")],
+        )
+
+        rows = SubmissionTabMixin._submission_source_rows_for_excel(payload)
+
+        self.assertEqual(rows[0]["manufacturer"], "Atlas Copco")
+        self.assertEqual(rows[0]["technical"], "Atlas Copco")
+        self.assertEqual(rows[0]["tech_characteristics"], "Atlas Copco")
+        self.assertEqual(rows[0]["technical_characteristics"], "Atlas Copco")
 
     @patch("submission.submission_tab.QSignalBlocker", _FakeSignalBlocker)
     def test_row_defaults_clear_status_and_warranty_for_zero_price_rows(self):
