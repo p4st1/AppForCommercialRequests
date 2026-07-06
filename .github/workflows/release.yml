@@ -27,14 +27,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
 
       - name: Install test deps
         shell: bash
         run: |
           set -eux
-          python -m pip install -U pip
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          python -m pip install --retries 10 --timeout 300 --prefer-binary --no-cache-dir -r requirements.txt
 
       - name: Run tests
         shell: bash
@@ -74,7 +73,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
 
       - name: Sanity check files
         shell: bash
@@ -103,8 +101,8 @@ jobs:
         shell: bash
         run: |
           set -eux
-          python -m pip install -U pip
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          python -m pip install --retries 10 --timeout 300 --prefer-binary --no-cache-dir -r requirements.txt
           pip install -U pyinstaller PySide6 python-docx
 
       - name: Install Playwright Chromium (Windows)
