@@ -1206,6 +1206,11 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             "=A1/B1",
         )
         self.assertEqual(
+            ExportMixin._truncate_excel_formula("A1/B1", 2),
+            "=TRUNC(A1/B1, 2)",
+        )
+        self.assertEqual(ExportMixin._excel_trunc(1.239, 2), 1.23)
+        self.assertEqual(
             ExportMixin._round_generated_value(1.236, rounding_digits=1),
             1.2,
         )
@@ -1494,6 +1499,20 @@ class RetradeCalculationsParserTests(unittest.TestCase):
             ([1.25, None, None], [102188.5, None, None]),
         )
 
+    def test_extract_retrade_proposal_prices_uses_main_table_price_column(self):
+        table = _FakeEditableTable(
+            [["Насос", "777,77 ₽", "2"], ["Клапан", None, "3"]],
+            headers=["Наименование", "Предлагаемая цена за ед.", "Кол-во"],
+        )
+
+        self.assertEqual(
+            ExportMixin._extract_retrade_proposal_prices(table),
+            [
+                {"value": 777.77, "currency": "₽"},
+                {"value": None, "currency": None},
+            ],
+        )
+
     def test_next_retrade_sheet_title_uses_next_number(self):
         workbook = Workbook()
         workbook.active.title = "Sheet"
@@ -1583,9 +1602,9 @@ class RetradeCalculationsParserTests(unittest.TestCase):
         worksheet.append(headers)
         worksheet.cell(row=2, column=10).value = 100
         worksheet.cell(row=2, column=17).value = 125
-        worksheet.cell(row=2, column=18).value = "=ROUND(Q2/J2, 2)"
+        worksheet.cell(row=2, column=18).value = "=TRUNC(Q2/J2, 2)"
         worksheet.cell(row=2, column=19).value = (
-            "=ROUND(IF(R2-0.02<1.15,1.15,R2-0.02), 2)"
+            "=TRUNC(IF(R2-0.02<1.15,1.15,R2-0.02), 2)"
         )
         worksheet.cell(row=2, column=11).value = "=ROUND(J2*S2, 2)"
         worksheet.cell(row=3, column=10).value = "=SUM(J2:K2)"
@@ -1694,27 +1713,27 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=formula_col_index).value,
-                    "=ROUND(Q2/J2, 2)",
+                    "=TRUNC(Q2/J2, 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=3, column=formula_col_index).value,
-                    "=ROUND(Q3/J3, 2)",
+                    "=TRUNC(Q3/J3, 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=4, column=formula_col_index).value,
-                    "=ROUND(Q4/J4, 2)",
+                    "=TRUNC(Q4/J4, 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=corrected_rating_col_index).value,
-                    "=ROUND(IF(R2-0.02<1.15,1.15,R2-0.02), 2)",
+                    "=TRUNC(IF(R2-0.02<1.15,1.15,R2-0.02), 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=3, column=corrected_rating_col_index).value,
-                    "=ROUND(IF(R3-0.02<1.15,1.15,R3-0.02), 2)",
+                    "=TRUNC(IF(R3-0.02<1.15,1.15,R3-0.02), 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=4, column=corrected_rating_col_index).value,
-                    "=ROUND(IF(R4-0.02<1.15,1.15,R4-0.02), 2)",
+                    "=TRUNC(IF(R4-0.02<1.15,1.15,R4-0.02), 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=realization_price_col_index).value,
@@ -1786,10 +1805,64 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 result_sheet = result_workbook[sheet_title]
                 self.assertEqual(result_sheet.cell(row=2, column=16).value, 1.2345)
                 self.assertEqual(result_sheet.cell(row=2, column=17).value, 125.6789)
-                self.assertEqual(result_sheet.cell(row=2, column=18).value, "=Q2/J2")
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=18).value,
+                    "=TRUNC(Q2/J2, 2)",
+                )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=19).value,
-                    "=IF(R2-0.02<1.15,1.15,R2-0.02)",
+                    "=TRUNC(IF(R2-0.02<1.15,1.15,R2-0.02), 2)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=11).value,
+                    "=ROUND(J2*S2, 2)",
+                )
+            finally:
+                result_workbook.close()
+        finally:
+            workbook.close()
+            Path(file_path).unlink(missing_ok=True)
+
+    def test_write_best_prices_can_disable_difference_markup_truncation(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Расчет"
+        headers = [f"Колонка {index}" for index in range(1, 16)]
+        headers[9] = "Цена за ед."
+        headers[10] = "Цена реализации за ед. без НДС"
+        row = [None for _ in headers]
+        row[9] = 100
+        worksheet.append(headers)
+        worksheet.append(row)
+
+        temp_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        temp_file.close()
+        file_path = temp_file.name
+
+        try:
+            workbook.save(file_path)
+            workbook.close()
+
+            sheet_title = ExportMixin._write_best_prices_to_calculations_file(
+                file_path,
+                [125.6789],
+                ratings=[1.2345],
+                min_margin=1.15,
+                delta_percent=2,
+                rounding_digits=3,
+                truncate_difference_markup=False,
+            )
+
+            result_workbook = load_workbook(file_path, data_only=False)
+            try:
+                result_sheet = result_workbook[sheet_title]
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=18).value,
+                    "=ROUND(Q2/J2, 3)",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=19).value,
+                    "=ROUND(IF(R2-0.02<1.15,1.15,R2-0.02), 3)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=11).value,
@@ -1860,6 +1933,91 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 self.assertEqual(
                     result_sheet.cell(row=2, column=realization_price_col_index).value,
                     "=OLD",
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=3, column=best_price_col_index).value,
+                    300,
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=3, column=realization_price_col_index).value,
+                    "=ROUND(J3*S3, 2)",
+                )
+            finally:
+                result_workbook.close()
+        finally:
+            workbook.close()
+            Path(file_path).unlink(missing_ok=True)
+
+    def test_write_best_prices_uses_table_price_for_rating_one_rows(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Расчет"
+        headers = [f"Колонка {index}" for index in range(1, 16)]
+        headers[9] = "Цена за ед."
+        headers[10] = "Цена реализации за ед. без НДС"
+        first_row = [None for _ in headers]
+        first_row[9] = 100
+        first_row[10] = 111
+        second_row = [None for _ in headers]
+        second_row[9] = 200
+        second_row[10] = 222
+        worksheet.append(headers)
+        worksheet.append(first_row)
+        worksheet.append(second_row)
+
+        temp_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        temp_file.close()
+        file_path = temp_file.name
+
+        try:
+            workbook.save(file_path)
+            workbook.close()
+
+            sheet_title = ExportMixin._write_best_prices_to_calculations_file(
+                file_path,
+                [125, 300],
+                ratings=[1, 1.5],
+                min_margin=1.15,
+                delta_percent=2,
+                skip_rating_one_positions=True,
+                rating_one_prices=[
+                    {"value": "555,55 ₽", "currency": "RUB"},
+                    {"value": 777, "currency": "RUB"},
+                ],
+            )
+
+            result_workbook = load_workbook(file_path, data_only=False)
+            try:
+                result_sheet = result_workbook[sheet_title]
+                real_rating_col_index = 16
+                best_price_col_index = 17
+                formula_col_index = 18
+                corrected_rating_col_index = 19
+                realization_price_col_index = 11
+
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=real_rating_col_index).value,
+                    1,
+                )
+                self.assertIsNone(
+                    result_sheet.cell(row=2, column=best_price_col_index).value
+                )
+                self.assertIsNone(
+                    result_sheet.cell(row=2, column=formula_col_index).value
+                )
+                self.assertIsNone(
+                    result_sheet.cell(row=2, column=corrected_rating_col_index).value
+                )
+                self.assertEqual(
+                    result_sheet.cell(row=2, column=realization_price_col_index).value,
+                    555.55,
+                )
+                self.assertEqual(
+                    result_sheet.cell(
+                        row=2,
+                        column=realization_price_col_index,
+                    ).number_format,
+                    ExportMixin._currency_format("₽"),
                 )
                 self.assertEqual(
                     result_sheet.cell(row=3, column=best_price_col_index).value,
@@ -1973,11 +2131,11 @@ class RetradeCalculationsParserTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=formula_col_index).value,
-                    "=ROUND(Q2/J2, 2)",
+                    "=TRUNC(Q2/J2, 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=corrected_rating_col_index).value,
-                    "=ROUND(IF(R2-0.02<1.15,1.15,R2-0.02), 2)",
+                    "=TRUNC(IF(R2-0.02<1.15,1.15,R2-0.02), 2)",
                 )
                 self.assertEqual(
                     result_sheet.cell(row=2, column=realization_price_col_index).value,
