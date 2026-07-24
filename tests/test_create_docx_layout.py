@@ -8,9 +8,11 @@ from docx.shared import Pt
 from create import (
     FULL_PRODUCTS_TABLE_WIDTHS,
     MULTIPAGE_TABLE_TOP_MARGIN_PT,
+    PRODUCT_CONDITION_TEXT,
     _apply_top_indent_for_multipage_table,
     _format_delivery_days_text,
     _format_delivery_period,
+    _insert_product_condition_after_delivery_terms,
     _normalize_offer_terms_paragraphs,
     _normalize_products_table_headers,
     _optimize_products_table_layout,
@@ -130,6 +132,22 @@ class CreateDocxLayoutTests(unittest.TestCase):
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     self.assertTrue(run.bold)
+
+    def test_product_condition_is_inserted_after_delivery_terms(self):
+        document = Document()
+        document.add_table(rows=3, cols=3)
+        document.add_paragraph("Итого текстом")
+        document.add_paragraph("Условия поставки: DDP")
+        document.add_paragraph("Срок гарантии - 12 месяцев")
+
+        inserted = _insert_product_condition_after_delivery_terms(document)
+
+        self.assertIsNotNone(inserted)
+        paragraphs = [paragraph.text for paragraph in document.paragraphs]
+        delivery_idx = paragraphs.index("Условия поставки: DDP")
+        self.assertEqual(paragraphs[delivery_idx + 1], PRODUCT_CONDITION_TEXT)
+        self.assertEqual(paragraphs[delivery_idx + 2], "Срок гарантии - 12 месяцев")
+        self.assertEqual(document.tables[0].rows[-1].cells[0].text, "")
 
     def test_apply_top_indent_for_multipage_table_uses_minimum_safe_margin(self):
         document = Document()

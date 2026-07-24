@@ -1,4 +1,5 @@
 from docx import Document
+from docx.text.paragraph import Paragraph
 from docx.shared import Pt
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -22,6 +23,10 @@ from pathlib import Path
 FULL_PRODUCTS_TABLE_WIDTHS = (420, 1800, 1550, 560, 700, 1080, 1220, 1220, 1139)
 SHORT_PRODUCTS_TABLE_WIDTHS = (430, 2600, 1600, 600, 650, 1250, 1279, 1279)
 MULTIPAGE_TABLE_TOP_MARGIN_PT = 92
+PRODUCT_CONDITION_TEXT = (
+    "Продукция новая, не бывшая ранее в использовании. "
+    "Год производства не позднее 2025;"
+)
 WARRANTY_CLAUSE_SUFFIX = (
     " с момента поставки. Гарантия не распространяется на быстроизнашиваемые части;"
 )
@@ -237,6 +242,24 @@ def _set_row_bold(row) -> None:
                 paragraph.add_run("")
             for run in paragraph.runs:
                 run.bold = True
+
+
+def _insert_product_condition_after_delivery_terms(
+    doc: Document,
+    text: str = PRODUCT_CONDITION_TEXT,
+) -> Paragraph | None:
+    if any(_canonical_docx_text(paragraph.text) == _canonical_docx_text(text) for paragraph in doc.paragraphs):
+        return None
+
+    for paragraph in doc.paragraphs:
+        if "условия поставки" not in _canonical_docx_text(paragraph.text):
+            continue
+        new_p = copy.deepcopy(paragraph._p)
+        paragraph._p.addnext(new_p)
+        new_paragraph = Paragraph(new_p, paragraph._parent)
+        _set_paragraph_text_keep_style(new_paragraph, text)
+        return new_paragraph
+    return None
 
 
 def _optimize_products_table_layout(table, section, *, include_days: bool, header_idx: int = 0) -> None:
@@ -737,6 +760,7 @@ class createTextFile:
             )
 
             total_wo, vat_sum, total_w = fill_products_table(doc, ITEMS)
+            _insert_product_condition_after_delivery_terms(doc)
             mapping = dict(PLACEHOLDERS)
             mapping["<<TOTAL_WO_CNY>>"] = fmt_money_no_symbol(total_wo)
             mapping["<<VAT_CNY>>"] = fmt_money_no_symbol(round(vat_sum, 2))

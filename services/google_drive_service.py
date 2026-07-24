@@ -34,6 +34,11 @@ class GoogleDriveService:
     XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     GOOGLE_SHEETS_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
     TOKEN_FILE_NAME = "google_drive_token.json"
+    LINK_EDITOR_PERMISSION = {
+        "type": "anyone",
+        "role": "writer",
+        "allowFileDiscovery": False,
+    }
 
     @classmethod
     def credentials_path(cls) -> Path | None:
@@ -235,6 +240,8 @@ class GoogleDriveService:
         if not file_id:
             raise RuntimeError("Google Drive не вернул id загруженного файла")
 
+        self._ensure_anyone_with_link_can_edit(drive, file_id)
+
         web_view_link = str(uploaded.get("webViewLink", "") or "").strip()
         if not web_view_link:
             web_view_link = f"https://drive.google.com/file/d/{file_id}/view"
@@ -279,6 +286,8 @@ class GoogleDriveService:
         )
 
         updated_file_id = str(updated.get("id", "") or normalized_file_id).strip()
+        self._ensure_anyone_with_link_can_edit(drive, updated_file_id)
+
         web_view_link = str(updated.get("webViewLink", "") or "").strip()
         if not web_view_link:
             web_view_link = f"https://drive.google.com/file/d/{updated_file_id}/view"
@@ -437,3 +446,46 @@ class GoogleDriveService:
                 "google-api-python-client."
             ) from exc
         return build, MediaFileUpload, MediaIoBaseDownload
+
+    def _ensure_anyone_with_link_can_edit(self, drive: Any, file_id: str) -> None:
+        permissions_result = self._execute_drive_request(
+            drive.permissions().list(
+                fileId=file_id,
+                fields="permissions(id,type,role,allowFileDiscovery)",
+            ),
+            "получения прав доступа Google Drive",
+        )
+        permissions = permissions_result.get("permissions", [])
+        anyone_permission = next(
+            (
+                permission
+                for permission in permissions
+                if str(permission.get("type", "")).strip() == "anyone"
+            ),
+            None,
+        )
+        permission_body = dict(self.LINK_EDITOR_PERMISSION)
+        if anyone_permission:
+            permission_body.pop("type", None)
+            permission_id = str(anyone_permission.get("id", "") or "").strip()
+            if not permission_id:
+                raise RuntimeError("Google Drive не вернул id публичного права доступа")
+            self._execute_drive_request(
+                drive.permissions().update(
+                    fileId=file_id,
+                    permissionId=permission_id,
+                    body=permission_body,
+                    fields="id,type,role,allowFileDiscovery",
+                ),
+                "обновления прав доступа Google Drive",
+            )
+            return
+
+        self._execute_drive_request(
+            drive.permissions().create(
+                fileId=file_id,
+                body=permission_body,
+                fields="id,type,role,allowFileDiscovery",
+            ),
+            "создания прав доступа Google Drive",
+        )
