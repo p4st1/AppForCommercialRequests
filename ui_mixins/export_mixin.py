@@ -3350,6 +3350,15 @@ QTableWidget::indicator {{
     def _format_excel_formula_number(value: float) -> str:
         return f"{float(value):.12g}"
 
+    @classmethod
+    def _normalize_min_margin_value(cls, value: float | None) -> float:
+        if value is None:
+            return float(cls.RETRADE_MIN_MARGIN_DEFAULT)
+        try:
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            return float(cls.RETRADE_MIN_MARGIN_DEFAULT)
+
     @staticmethod
     def _normalize_rounding_digits(rounding_digits: int | None) -> int | None:
         if rounding_digits is None:
@@ -3374,6 +3383,39 @@ QTableWidget::indicator {{
     @staticmethod
     def _truncate_excel_formula(expression: str, digits: int = 2) -> str:
         return f"=TRUNC({expression}, {digits})"
+
+    @classmethod
+    def _min_bounded_excel_formula(
+        cls,
+        expression: str,
+        *,
+        min_margin: float,
+        rounding_digits: int | None = 2,
+        truncate: bool = False,
+    ) -> str:
+        min_margin_text = cls._format_excel_formula_number(min_margin)
+        if truncate:
+            value_expression = f"TRUNC({expression}, 2)"
+        else:
+            digits = cls._normalize_rounding_digits(rounding_digits)
+            value_expression = (
+                expression if digits is None else f"ROUND({expression}, {digits})"
+            )
+        return f"=MAX({min_margin_text}, {value_expression})"
+
+    @classmethod
+    def _min_bounded_multiplier_expression(
+        cls,
+        expression: str,
+        *,
+        min_margin: float | None,
+    ) -> str:
+        if min_margin is None:
+            return expression
+        min_margin_text = cls._format_excel_formula_number(
+            cls._normalize_min_margin_value(min_margin)
+        )
+        return f"MAX({min_margin_text},{expression})"
 
     @classmethod
     def _round_generated_value(
@@ -3437,6 +3479,7 @@ QTableWidget::indicator {{
         *,
         indices_are_excel_rows: bool = False,
         rounding_digits: int | None = 2,
+        min_margin: float | None = None,
     ) -> dict[int, str]:
         realization_price_col = cls._find_worksheet_column_by_header(
             worksheet,
@@ -3468,8 +3511,12 @@ QTableWidget::indicator {{
             )
             if excel_row <= header_row_index:
                 continue
+            multiplier_expression = cls._min_bounded_multiplier_expression(
+                f"S{excel_row}",
+                min_margin=min_margin,
+            )
             formula = cls._excel_formula(
-                f"J{excel_row}*S{excel_row}",
+                f"J{excel_row}*{multiplier_expression}",
                 rounding_digits=rounding_digits,
             )
             target_cell = worksheet.cell(
@@ -3695,15 +3742,12 @@ QTableWidget::indicator {{
                 raise ValueError(
                     'Не найдена колонка "Цена реализации за ед. без НДС"'
                 )
-            min_margin_value = (
-                cls.RETRADE_MIN_MARGIN_DEFAULT if min_margin is None else min_margin
-            )
+            min_margin_value = cls._normalize_min_margin_value(min_margin)
             delta_percent_value = (
                 cls.RETRADE_DELTA_PERCENT_DEFAULT
                 if delta_percent is None
                 else delta_percent
             )
-            min_margin_text = cls._format_excel_formula_number(min_margin_value)
             delta_text = cls._format_excel_formula_number(delta_percent_value / 100)
             header_row_index = cls._worksheet_header_row_index(sheet_copy) or 1
 
@@ -3809,30 +3853,27 @@ QTableWidget::indicator {{
                     )
                 )
                 sheet_copy.cell(row=excel_row, column=formula_col).value = formula
-                corrected_expression = (
-                    f"IF({formula_letter}{excel_row}-{delta_text}<"
-                    f"{min_margin_text},"
-                    f"{min_margin_text},"
-                    f"{formula_letter}{excel_row}-{delta_text})"
-                )
-                corrected_formula = (
-                    cls._truncate_excel_formula(corrected_expression, 2)
-                    if truncate_difference_markup
-                    else cls._excel_formula(
-                        corrected_expression,
-                        rounding_digits=rounding_digits,
-                    )
+                corrected_expression = f"{formula_letter}{excel_row}-{delta_text}"
+                corrected_formula = cls._min_bounded_excel_formula(
+                    corrected_expression,
+                    min_margin=min_margin_value,
+                    rounding_digits=rounding_digits,
+                    truncate=truncate_difference_markup,
                 )
                 sheet_copy.cell(
                     row=excel_row,
                     column=corrected_rating_col,
                 ).value = corrected_formula
+                multiplier_expression = cls._min_bounded_multiplier_expression(
+                    f"{corrected_rating_letter}{excel_row}",
+                    min_margin=min_margin_value,
+                )
                 sheet_copy.cell(
                     row=excel_row,
                     column=realization_price_col,
                 ).value = (
                     cls._excel_formula(
-                        f"J{excel_row}*{corrected_rating_letter}{excel_row}",
+                        f"J{excel_row}*{multiplier_expression}",
                         rounding_digits=2,
                     )
                 )
@@ -4477,6 +4518,7 @@ QTableWidget::indicator {{
         *,
         column_offset: int = 0,
         rounding_digits: int | None = 2,
+        min_margin: float | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         columns = cls._get_update_positions_columns(
             headers,
@@ -4496,6 +4538,11 @@ QTableWidget::indicator {{
         source_price_col = int(columns["source_price"])
         corrected_rating_col = int(columns["corrected_rating"])
         sale_price_col = int(columns["sale_price"])
+        min_margin_value = (
+            cls._normalize_min_margin_value(min_margin)
+            if min_margin is not None
+            else None
+        )
         updates: list[dict[str, Any]] = []
 
         for row_index, row in enumerate(rows):
@@ -4523,8 +4570,12 @@ QTableWidget::indicator {{
             if cls._is_zero_retrade_price(price_raw):
                 continue
 
+            coefficient = cls.parse_number(coef_raw)
+            if min_margin_value is not None:
+                coefficient = max(min_margin_value, coefficient)
+
             new_price = cls._round_generated_value(
-                cls.parse_number(price_raw) * cls.parse_number(coef_raw),
+                cls.parse_number(price_raw) * coefficient,
                 rounding_digits=rounding_digits,
             )
             updates.append(
@@ -5124,6 +5175,7 @@ QTableWidget::indicator {{
         row_indices: list[int],
         *,
         indices_are_excel_rows: bool = False,
+        min_margin: float | None = None,
     ) -> dict[int, str]:
         file_path = str(getattr(self, "calculations_file_path", "") or "").strip()
         if not file_path:
@@ -5143,6 +5195,7 @@ QTableWidget::indicator {{
                 worksheet,
                 row_indices,
                 indices_are_excel_rows=indices_are_excel_rows,
+                min_margin=min_margin,
             )
             self._enable_workbook_formula_recalculation(workbook)
             workbook.save(file_path)
@@ -5182,6 +5235,7 @@ QTableWidget::indicator {{
                 calculations_headers,
                 calculations_rows,
                 column_offset=column_offset,
+                min_margin=self.get_min_margin(),
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Ошибка", str(exc))
@@ -5221,6 +5275,7 @@ QTableWidget::indicator {{
                 self._write_update_position_formulas_to_current_calculations_file(
                     formula_targets,
                     indices_are_excel_rows=use_excel_rows,
+                    min_margin=self.get_min_margin(),
                 )
             )
         except Exception as exc:
