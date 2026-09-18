@@ -30,6 +30,8 @@ class GoogleDriveDownloadResult:
 
 class GoogleDriveService:
     SCOPES = ("https://www.googleapis.com/auth/drive",)
+    OAUTH_CALLBACK_HOST = "127.0.0.1"
+    OAUTH_CALLBACK_TIMEOUT_SECONDS = 300
     DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     GOOGLE_SHEETS_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
@@ -349,13 +351,14 @@ class GoogleDriveService:
                 self.SCOPES,
             )
             try:
-                credentials = flow.run_local_server(port=0)
+                credentials = self._run_local_authorization(flow)
             except Exception as exc:
                 self.delete_saved_authorization()
                 raise RuntimeError(
                     "Не удалось авторизоваться в Google Drive. "
-                    "Сохраненная авторизация удалена, повторите действие "
-                    "и заново войдите в Google."
+                    f"{self._authorization_error_hint(exc)} "
+                    "Сохраненная авторизация удалена; повторите действие "
+                    "и завершите вход в открывшемся браузере."
                 ) from exc
         else:
             # Refreshed credentials are valid here.
@@ -364,6 +367,81 @@ class GoogleDriveService:
         token_path.parent.mkdir(parents=True, exist_ok=True)
         token_path.write_text(credentials.to_json(), encoding="utf-8")
         return credentials
+
+    @classmethod
+    def _run_local_authorization(cls, flow):
+        """Run OAuth on an explicit IPv4 loopback address.
+
+        On Windows ``localhost`` can resolve to ``::1`` while
+        google-auth-oauthlib listens on IPv4. Using the literal address for
+        both the advertised callback and the listening socket keeps the
+        browser redirect on the same interface.
+        """
+        return flow.run_local_server(
+            host=cls.OAUTH_CALLBACK_HOST,
+            bind_addr=cls.OAUTH_CALLBACK_HOST,
+            port=0,
+            timeout_seconds=cls.OAUTH_CALLBACK_TIMEOUT_SECONDS,
+            authorization_prompt_message=None,
+            success_message=(
+                "Авторизация Google Drive завершена. "
+                "Можно закрыть эту вкладку и вернуться в приложение."
+            ),
+            prompt="consent",
+        )
+
+    @staticmethod
+    def _authorization_error_hint(exc: Exception) -> str:
+        text = str(exc).lower()
+        winerror = getattr(exc, "winerror", None)
+
+        if "access_denied" in text:
+            return "Вход или доступ к Google Drive был отменен."
+        if "redirect_uri_mismatch" in text:
+            return (
+                "Google отклонил адрес возврата OAuth. Выберите JSON клиента "
+                "типа Desktop app, а не Web application."
+            )
+        if "org_internal" in text:
+            return (
+                "OAuth-клиент доступен только пользователям своей организации Google."
+            )
+        if "deleted_client" in text or "invalid_client" in text:
+            return "OAuth-клиент Google удален, отключен или настроен неверно."
+        if "unauthorized_client" in text:
+            return (
+                "Этот OAuth-клиент не поддерживает вход настольного приложения. "
+                "Создайте клиент типа Desktop app."
+            )
+        if "invalid_grant" in text:
+            return (
+                "Google отклонил код авторизации. Включите автоматическую "
+                "синхронизацию даты и времени Windows и повторите вход."
+            )
+        if "mismatchingstate" in text or "state mismatch" in text:
+            return (
+                "Получен ответ от другого или устаревшего окна входа. Закройте "
+                "старые вкладки авторизации Google и повторите действие."
+            )
+        if "timed out" in text or "timeout" in text:
+            return (
+                "Ответ от браузера не получен за 5 минут. Проверьте, что вход "
+                "был завершен и localhost не блокируется антивирусом или фаерволом."
+            )
+        if winerror == 10048 or "address already in use" in text:
+            return "Локальный порт OAuth занят другим приложением."
+        if winerror == 10013 or "permission denied" in text:
+            return (
+                "Windows запретила открыть локальный OAuth-порт. Проверьте "
+                "антивирус и правила фаервола для приложения."
+            )
+        if "connection" in text or "network" in text or "ssl" in text:
+            return (
+                "Не удалось связаться с сервером Google; проверьте интернет, "
+                "прокси и VPN."
+            )
+
+        return f"Техническая причина: {type(exc).__name__}."
 
     @staticmethod
     def _safe_download_name(file_name: str) -> str:
@@ -427,12 +505,27 @@ class GoogleDriveService:
                 "Выбранный OAuth JSON Google Drive не является корректным JSON-файлом."
             ) from exc
 
-        if not isinstance(payload, dict) or not any(
-            key in payload for key in ("installed", "web")
-        ):
+        if not isinstance(payload, dict) or "installed" not in payload:
+            if isinstance(payload, dict) and "web" in payload:
+                raise RuntimeError(
+                    "Выбран OAuth JSON типа Web application. В Google Cloud "
+                    "создайте OAuth client ID типа Desktop app, скачайте его JSON "
+                    "и выберите этот файл в настройках приложения."
+                )
             raise RuntimeError(
                 "Нужен OAuth client secrets JSON для Desktop app из Google Cloud, "
                 "а не другой тип файла."
+            )
+
+        installed_config = payload.get("installed")
+        required_fields = ("client_id", "client_secret", "auth_uri", "token_uri")
+        if not isinstance(installed_config, dict) or any(
+            not str(installed_config.get(field, "") or "").strip()
+            for field in required_fields
+        ):
+            raise RuntimeError(
+                "OAuth JSON для Desktop app неполный. Скачайте client secrets JSON "
+                "заново в Google Cloud и выберите новый файл в настройках."
             )
 
     @staticmethod

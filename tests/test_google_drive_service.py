@@ -116,11 +116,71 @@ class GoogleDriveServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Desktop app"):
                 GoogleDriveService._validate_client_secrets_file(credentials_path)
 
+    def test_validate_client_secrets_file_rejects_web_client(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            credentials_path = Path(temp_dir) / "client.json"
+            credentials_path.write_text('{"web":{}}', encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "Web application"):
+                GoogleDriveService._validate_client_secrets_file(credentials_path)
+
     def test_validate_client_secrets_file_accepts_desktop_client_json(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             credentials_path = Path(temp_dir) / "client.json"
-            credentials_path.write_text('{"installed":{}}', encoding="utf-8")
+            credentials_path.write_text(
+                """{
+                    "installed": {
+                        "client_id": "client-id",
+                        "client_secret": "client-secret",
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token"
+                    }
+                }""",
+                encoding="utf-8",
+            )
             GoogleDriveService._validate_client_secrets_file(credentials_path)
+
+    def test_validate_client_secrets_file_rejects_incomplete_desktop_client(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            credentials_path = Path(temp_dir) / "client.json"
+            credentials_path.write_text('{"installed":{}}', encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "неполный"):
+                GoogleDriveService._validate_client_secrets_file(credentials_path)
+
+    def test_local_authorization_uses_explicit_ipv4_callback(self):
+        class _FakeFlow:
+            def __init__(self):
+                self.kwargs = None
+
+            def run_local_server(self, **kwargs):
+                self.kwargs = kwargs
+                return "credentials"
+
+        flow = _FakeFlow()
+
+        credentials = GoogleDriveService._run_local_authorization(flow)
+
+        self.assertEqual(credentials, "credentials")
+        self.assertEqual(flow.kwargs["host"], "127.0.0.1")
+        self.assertEqual(flow.kwargs["bind_addr"], "127.0.0.1")
+        self.assertEqual(flow.kwargs["port"], 0)
+        self.assertEqual(flow.kwargs["timeout_seconds"], 300)
+        self.assertEqual(flow.kwargs["prompt"], "consent")
+
+    def test_authorization_error_hint_explains_windows_port_block(self):
+        exc = OSError("forbidden")
+        exc.winerror = 10013
+
+        hint = GoogleDriveService._authorization_error_hint(exc)
+
+        self.assertIn("Windows", hint)
+        self.assertIn("фаервола", hint)
+
+    def test_authorization_error_hint_explains_invalid_grant(self):
+        hint = GoogleDriveService._authorization_error_hint(
+            RuntimeError("invalid_grant")
+        )
+
+        self.assertIn("даты и времени Windows", hint)
 
     def test_extract_file_id_accepts_common_drive_links(self):
         self.assertEqual(
